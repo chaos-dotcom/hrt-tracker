@@ -1,38 +1,37 @@
-# sv
+# hrt tracker
+# (planned) features
+* localstorage, or some simple shared one you can copy / save across browsers. no login that's not the point
+* set reminders for taking hrt? but not really ideal as it's a website
+* simplest part:
+	* enter → get asked to put in current dosage, past blood results (or import)
+	* ask if you wanna set up a tracker → track various configurable things
+	* if not, simple mode -
+		* you just input whether injected / oral
+			* → time of ingestion / injection and type of hormone. ev oral? injected? hemihydrate?
+* change in graphs overtime for trackable stuff
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+## trackable stuff
+1. weight
+2. height
+3. (bmi → calculated)
+4. underbust
+5. bust
+6. → bra size
+7. bideltoid
+8. waist
+9. hip
 
-## Creating a project
 
-If you're seeing this, you've probably already done this step. Congrats!
+## routes
+index - onboarding if not setup, if setup then dashboard view, buttons to add blood test or check off dosage
 
-```bash
-# create a new project in the current directory
-npx sv create
+create/blood-test → create a new blood test entry. feature → read from pdf / image of an actual medical result using ocr. free vision model? or local? or tesseract?
+create/dosage → create a new daily hrt dosage
 
-# create a new project in my-app
-npx sv create my-app
-```
+tracker/ → view blood tests, view dosages
 
-## Developing
+/settings → idk theme option maybe? defaulting to rose pine for myself
 
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
-
-```bash
-npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
-```
-
-## Building
-
-To create a production version of your app:
-
-```bash
-npm run build
-```
-
-You can preview the production build with `npm run preview`.
-
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+optional:
+* /backup → import, export localstorage to a json
+* use remotestorage with a small self hosted server
