@@ -47,6 +47,16 @@ type DosageHistoryEntry =
       unit: string;
     };
 
+interface BloodTest {
+  date: UnixTime;
+  estradiolLevel?: number;
+  testLevel?: number;
+  estradiolUnit?: string;
+  testUnit?: string;
+  notes?: string;
+  // [key: string]: Any;
+}
+
 export const HRT_STORAGE_KEY = "hrt-meow-data:3";
 export interface HRTData {
   injectableEstradiol?: {
@@ -67,14 +77,6 @@ export interface HRTData {
     unit: string;
     frequency: string;
   };
-  bloodTests?: Array<{
-    date: UnixTime;
-    estradiolLevel?: number;
-    testLevel?: number;
-    estradiolUnit?: string;
-    testUnit?: string;
-    notes?: string;
-    // [key: string]: Any;
-  }>;
-  dosageHistory?: Array<DosageHistoryEntry>;
+  bloodTests: BloodTest[];
+  dosageHistory: DosageHistoryEntry[];
 }

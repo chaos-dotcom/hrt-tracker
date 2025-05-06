@@ -5,32 +5,27 @@ const defaultData: HRTData = {
   dosageHistory: [],
 };
 
-function loadFromStorage(): HRTData {
-  try {
-    const shared = localStorage.getItem(HRT_STORAGE_KEY);
-    if (shared !== null) {
-      setContext(HRT_STORAGE_KEY, shared);
-      return JSON.parse(shared);
-    }
-    setContext(HRT_STORAGE_KEY, defaultData);
-    return defaultData;
-  } catch (e) {
-    console.error("error loading from localstorage: ", e);
-    setContext(HRT_STORAGE_KEY, defaultData);
-    return defaultData;
-  }
-}
-
-function loadFromContext(): HRTData {
+export function loadHRTData(): HRTData {
+  // 1. try getting from context.
+  // if not there, get from localstorage.
+  // if not there, create default, save to localstorage and context
   try {
     return getContext<HRTData>(HRT_STORAGE_KEY);
-  } catch (e) {
-    console.error("error getting from context: ", e);
+  } catch (e) {}
+
+  let data: HRTData;
+  try {
+    const raw = localStorage.getItem(HRT_STORAGE_KEY);
+    data = raw ? JSON.parse(raw) : defaultData;
+  } catch {
+    data = defaultData;
   }
-  return defaultData;
+  localStorage.setItem(HRT_STORAGE_KEY, JSON.stringify(data));
+  setContext(HRT_STORAGE_KEY, data);
+  return data;
 }
 
-function saveToStorage(data: HRTData): void {
+export function saveHRTData(data: HRTData): void {
   try {
     setContext(HRT_STORAGE_KEY, data);
     localStorage.setItem(HRT_STORAGE_KEY, JSON.stringify(data));
@@ -40,9 +35,9 @@ function saveToStorage(data: HRTData): void {
 }
 
 export function updateHRTData(updaterFunction: (data: HRTData) => void): void {
-  const currentData = loadFromContext();
+  const currentData = loadHRTData();
   updaterFunction(currentData);
-  saveToStorage(currentData);
+  saveHRTData(currentData);
 }
 
 export function addBloodTest(test: HRTData["bloodTests"][0]): void {
@@ -57,8 +52,4 @@ export function addDosageRecord(record: HRTData["dosageHistory"][0]): void {
     if (!data.dosageHistory) data.dosageHistory = [];
     data.dosageHistory.push(record);
   });
-}
-
-export function initHRTStorage(): HRTData {
-  return loadFromStorage();
 }

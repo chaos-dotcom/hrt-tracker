@@ -1,6 +1,6 @@
 <script>
-    import { initHRTStorage } from "$lib/storage";
-    initHRTStorage();
+    import { loadHRTData } from "$lib/storage";
+    loadHRTData();
     let { children } = $props();
     import "../app.css";
 </script>
