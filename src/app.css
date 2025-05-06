@@ -1,0 +1,52 @@
+@import url("https://fonts.googleapis.com/css2?family=Outfit:wght@100..900&display=swap");
+@import "tailwindcss";
+@reference "tailwindcss";
+
+/* Font */
+@theme {
+    --font-outfit: "Outfit", serif;
+}
+
+@theme {
+    --color-latte-rose-pine-base: #faf4ed;
+    --color-latte-rose-pine-surface: #fffaf3;
+    --color-latte-rose-pine-overlay: #f2e9de;
+    --color-latte-rose-pine-muted: #9893a5;
+    --color-latte-rose-pine-subtle: #797593;
+    --color-latte-rose-pine-text: #575279;
+    --color-latte-rose-pine-love: #b4637a;
+    --color-latte-rose-pine-gold: #ea9d34;
+    --color-latte-rose-pine-rose: #d7827e;
+    --color-latte-rose-pine-pine: #286983;
+    --color-latte-rose-pine-foam: #56949f;
+    --color-latte-rose-pine-iris: #907aa9;
+    --color-latte-rose-pine-highlight-low: #f4ede8;
+    --color-latte-rose-pine-highlight-med: #dfdad9;
+    --color-latte-rose-pine-highlight-high: #cecacd;
+}
+
+@theme {
+    --color-rose-pine-base: #232136;
+    --color-rose-pine-surface: #2a273f;
+    --color-rose-pine-overlay: #393552;
+    --color-rose-pine-muted: #6e6a86;
+    --color-rose-pine-subtle: #908caa;
+    --color-rose-pine-text: #e0def4;
+    --color-rose-pine-love: #eb6f92;
+    --color-rose-pine-gold: #f6c177;
+    --color-rose-pine-rose: #ea9a97;
+    --color-rose-pine-pine: #3e8fb0;
+    --color-rose-pine-foam: #9ccfd8;
+    --color-rose-pine-iris: #c4a7e7;
+    --color-rose-pine-highlight-low: #2a283e;
+    --color-rose-pine-highlight-med: #44415a;
+    --color-rose-pine-highlight-high: #56526e;
+}
+
+@layer base {
+    html {
+        @apply font-outfit;
+        @apply text-latte-rose-pine-text dark:text-rose-pine-text;
+        @apply bg-latte-rose-pine-base dark:bg-rose-pine-base;
+    }
+}
