@@ -1,12 +1,11 @@
 @import url("https://fonts.googleapis.com/css2?family=Outfit:wght@100..900&display=swap");
 @import "tailwindcss";
 @reference "tailwindcss";
-
-/* Font */
+/* font */
 @theme {
     --font-outfit: "Outfit", serif;
 }
-
+/* colors */
 @theme {
     --color-latte-rose-pine-base: #faf4ed;
     --color-latte-rose-pine-surface: #fffaf3;

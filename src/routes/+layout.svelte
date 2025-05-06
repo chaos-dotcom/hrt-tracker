@@ -1,6 +1,9 @@
 <script>
+    import { browser } from "$app/environment";
     import { loadHRTData } from "$lib/storage";
-    loadHRTData();
+    if (browser) {
+        let result = loadHRTData();
+    }
     let { children } = $props();
     import "../app.css";
 </script>

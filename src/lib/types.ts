@@ -2,16 +2,16 @@
 // https://transfemscience.org/misc/
 export enum InjectableEstradiols {
   Benzoate = "Estradiol Benzoate",
-  Valerate = "Estradiol Valerate",
   Cypionate = "Estradiol Cypionate",
   Enanthate = "Estradiol Enanthate",
   Undecylate = "Estradiol Undecylate",
+  Valerate = "Estradiol Valerate",
   PolyestradiolPhosphate = "Polyestradiol Phosphate",
 }
 
 export enum OralEstradiols {
-  Valerate = "Estradiol Valerate",
   Hemihydrate = "Estradiol Hemihydrate",
+  Valerate = "Estradiol Valerate",
   Premarin = "Premarin",
 }
 
@@ -47,17 +47,23 @@ type DosageHistoryEntry =
       unit: string;
     };
 
-interface BloodTest {
+export type EstrogenType =
+  | { route: "injection"; type: InjectableEstradiols }
+  | { route: "oral"; type: OralEstradiols };
+
+export interface BloodTest {
   date: UnixTime;
   estradiolLevel?: number;
   testLevel?: number;
   estradiolUnit?: string;
   testUnit?: string;
   notes?: string;
-  // [key: string]: Any;
+  // i have to keep track of oral or injection so we gotta add those as types
+  estrogenType?: EstrogenType;
+  // basically, i can do { route: "injectable", InjectableEstradiols.Cypionate }
 }
 
-export const HRT_STORAGE_KEY = "hrt-meow-data:3";
+export const HRT_STORAGE_KEY = "hrt-meow-data";
 export interface HRTData {
   injectableEstradiol?: {
     type: InjectableEstradiols;

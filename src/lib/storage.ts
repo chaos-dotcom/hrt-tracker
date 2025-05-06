@@ -9,17 +9,26 @@ export function loadHRTData(): HRTData {
   // 1. try getting from context.
   // if not there, get from localstorage.
   // if not there, create default, save to localstorage and context
+  let contextData: HRTData | undefined = undefined;
   try {
-    return getContext<HRTData>(HRT_STORAGE_KEY);
-  } catch (e) {}
-
+    contextData = getContext<HRTData>(HRT_STORAGE_KEY);
+  } catch (e) {
+    contextData = undefined;
+  }
+  if (contextData != null || contextData !== undefined) {
+    return contextData;
+  }
+  console.log("creating data...");
   let data: HRTData;
   try {
+    console.log("getting from local storage");
     const raw = localStorage.getItem(HRT_STORAGE_KEY);
     data = raw ? JSON.parse(raw) : defaultData;
   } catch {
+    console.log("defaulting");
     data = defaultData;
   }
+  console.log(JSON.stringify(data));
   localStorage.setItem(HRT_STORAGE_KEY, JSON.stringify(data));
   setContext(HRT_STORAGE_KEY, data);
   return data;
