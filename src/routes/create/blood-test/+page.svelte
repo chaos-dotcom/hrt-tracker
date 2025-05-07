@@ -1,12 +1,6 @@
 <script lang="ts">
-    import { saveHRTData } from "$lib/storage";
-    import {
-        HRT_STORAGE_KEY,
-        type HRTData,
-        type BloodTest,
-        HormoneUnits,
-    } from "$lib/types";
-    import { getContext } from "svelte";
+    import { hrtData } from "$lib/storage.svelte";
+    import { type BloodTest, HormoneUnits } from "$lib/types";
 
     let testDateTime = $state(Date.now());
     let testLevel = $state(0);
@@ -14,7 +8,6 @@
     let testUnit: HormoneUnits = $state(HormoneUnits.T_ng_dL);
     let eUnit: HormoneUnits = $state(HormoneUnits.E2_pg_mL);
     let notes = $state("");
-    let hrtData = getContext(HRT_STORAGE_KEY) as HRTData;
 
     function enumToDropdownOptions(e: any) {
         return Object.entries(e).map(([key, val]) => ({
@@ -36,12 +29,7 @@
             estradiolUnit: eUnit,
             notes: notes,
         };
-        const updatedBloodTests = [...hrtData.bloodTests, newBloodTest];
-        const data: HRTData = {
-            bloodTests: updatedBloodTests,
-            dosageHistory: [],
-        };
-        saveHRTData(data);
+        hrtData.addBloodTest(newBloodTest);
     }
 </script>
 

@@ -1,8 +1,6 @@
 <script lang="ts">
-    import { saveHRTData, addDosageRecord } from "$lib/storage";
+    import { hrtData } from "$lib/storage.svelte";
     import {
-        HRT_STORAGE_KEY,
-        type HRTData,
         type EstrogenType,
         InjectableEstradiols,
         OralEstradiols,
@@ -10,7 +8,6 @@
         HormoneUnits,
         type DosageHistoryEntry,
     } from "$lib/types";
-    import { getContext } from "svelte";
 
     let method: "injection" | "oral" = $state("injection");
     let injectionDateTime = $state("");
@@ -42,7 +39,6 @@
     });
 
     let aa: Antiandrogens | "" = $state(Antiandrogens.CPA);
-    let hrtData = getContext(HRT_STORAGE_KEY) as HRTData;
 
     function enumToDropdownOptions(e: any) {
         return Object.entries(e).map(([key, val]) => ({
@@ -58,7 +54,6 @@
 
     function handleSubmit(event: Event) {
         event.preventDefault();
-        console.log("meowwww");
         submitDosageForm();
     }
 
@@ -93,10 +88,10 @@
                     dose: aaDose,
                     unit: aaUnit,
                 };
-                addDosageRecord(aaRecord);
+                hrtData.addDosageRecord(aaRecord);
             }
         }
-        addDosageRecord(newDosageRecord);
+        hrtData.addDosageRecord(newDosageRecord);
     }
 </script>
 
@@ -107,7 +102,7 @@
         <h1 class="text-4xl">set up / record dosage</h1>
         <a
             class="text-latte-rose-pine-iris dark:text-rose-pine-iris hover:text-rose-pine-love transition-colors"
-            href="/backup">view dosage history (todo)</a
+            href="/view">view dosage history (todo)</a
         >
     </div>
     <form onsubmit={handleSubmit} class="shadow-md rounded pt-6 pb-8 mb-4">
