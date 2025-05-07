@@ -27,11 +27,12 @@ export enum HormoneUnits {
   E2_pmol_L = "pmol/L",
   T_ng_dL = "ng/dL",
   T_nmol_L = "nmol/L",
+  mg = "mg",
 }
 
 export type UnixTime = number;
 
-type DosageHistoryEntry =
+export type DosageHistoryEntry =
   | {
       date: UnixTime;
       medicationType: "injectableEstradiol";

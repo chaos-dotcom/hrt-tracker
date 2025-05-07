@@ -59,6 +59,7 @@ export function addBloodTest(test: HRTData["bloodTests"][0]): void {
 export function addDosageRecord(record: HRTData["dosageHistory"][0]): void {
   updateHRTData((data) => {
     if (!data.dosageHistory) data.dosageHistory = [];
+    console.log("meow");
     data.dosageHistory.push(record);
   });
 }
