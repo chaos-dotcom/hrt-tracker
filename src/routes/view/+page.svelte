@@ -10,6 +10,18 @@
         OralEstradiols,
     } from "$lib/types";
     import * as Plot from "@observablehq/plot";
+    import EditModal from "$lib/components/EditModal.svelte";
+
+    let itemToEdit: BloodTest | DosageHistoryEntry | null = $state(null);
+
+    function onEdit(item: BloodTest | DosageHistoryEntry) {
+        itemToEdit = item;
+    }
+
+    function onCloseModal() {
+        itemToEdit = null;
+        renderChart();
+    }
 
     // Chart related code
     let chartDiv: HTMLElement | undefined;
@@ -376,6 +388,10 @@
     }
 </script>
 
+{#if itemToEdit}
+    <EditModal item={itemToEdit} close={onCloseModal} />
+{/if}
+
 <h1 class="text-3xl font-bold mb-2 px-4 pt-4">HRT Tracking Data</h1>
 <p class="mb-4 px-4 text-sm opacity-75">
     This chart shows your hormone levels from blood tests along with your dosage
@@ -492,24 +508,32 @@
                 {:else}
                     <ul class="space-y-2">
                         {#each [...hrtData.data.bloodTests].sort((a, b) => b.date - a.date) as t}
-                            <li class="p-2 border rounded">
-                                <div class="font-medium">
-                                    {new Date(t.date).toLocaleDateString()}
+                            <li
+                                class="p-2 border rounded flex justify-between items-center"
+                            >
+                                <div>
+                                    <div class="font-medium">
+                                        {new Date(t.date).toLocaleDateString()}
+                                    </div>
+                                    <div class="text-sm">
+                                        {#if t.estradiolLevel !== undefined}
+                                            <span
+                                                >E2: {t.estradiolLevel}
+                                                {t.estradiolUnit || "pg/mL"}</span
+                                            >
+                                        {/if}
+                                        {#if t.testLevel !== undefined}
+                                            <span class="ml-2"
+                                                >T: {t.testLevel}
+                                                {t.testUnit || "ng/dL"}</span
+                                            >
+                                        {/if}
+                                    </div>
                                 </div>
-                                <div class="text-sm">
-                                    {#if t.estradiolLevel !== undefined}
-                                        <span
-                                            >E2: {t.estradiolLevel}
-                                            {t.estradiolUnit || "pg/mL"}</span
-                                        >
-                                    {/if}
-                                    {#if t.testLevel !== undefined}
-                                        <span class="ml-2"
-                                            >T: {t.testLevel}
-                                            {t.testUnit || "ng/dL"}</span
-                                        >
-                                    {/if}
-                                </div>
+                                <button
+                                    class="px-3 py-1 text-sm rounded bg-latte-rose-pine-foam text-white hover:bg-rose-pine-pine transition-colors"
+                                    on:click={() => onEdit(t)}>Edit</button
+                                >
                             </li>
                         {/each}
                     </ul>
@@ -529,23 +553,31 @@
                 {:else}
                     <ul class="space-y-2">
                         {#each [...hrtData.data.dosageHistory].sort((a, b) => b.date - a.date) as t}
-                            <li class="p-2 border rounded">
-                                <div class="font-medium">
-                                    {new Date(t.date).toLocaleDateString()}
+                            <li
+                                class="p-2 border rounded flex justify-between items-center"
+                            >
+                                <div>
+                                    <div class="font-medium">
+                                        {new Date(t.date).toLocaleDateString()}
+                                    </div>
+                                    <div class="text-sm flex gap-2">
+                                        <span class="capitalize"
+                                            >{t.medicationType ===
+                                            "injectableEstradiol"
+                                                ? "Injection"
+                                                : t.medicationType ===
+                                                    "oralEstradiol"
+                                                  ? "Oral E"
+                                                  : "AA"}</span
+                                        >
+                                        <span>{t.type}</span>
+                                        <span>{t.dose} {t.unit || "mg"}</span>
+                                    </div>
                                 </div>
-                                <div class="text-sm flex gap-2">
-                                    <span class="capitalize"
-                                        >{t.medicationType ===
-                                        "injectableEstradiol"
-                                            ? "Injection"
-                                            : t.medicationType ===
-                                                "oralEstradiol"
-                                              ? "Oral E"
-                                              : "AA"}</span
-                                    >
-                                    <span>{t.type}</span>
-                                    <span>{t.dose} {t.unit || "mg"}</span>
-                                </div>
+                                <button
+                                    class="px-3 py-1 text-sm rounded bg-latte-rose-pine-foam text-white hover:bg-rose-pine-pine transition-colors"
+                                    on:click={() => onEdit(t)}>Edit</button
+                                >
                             </li>
                         {/each}
                     </ul>
