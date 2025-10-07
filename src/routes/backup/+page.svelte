@@ -19,7 +19,7 @@
 	<h1 class="text-4xl">backup & restore</h1>
 	<button
 		class="w-fit cursor-pointer rounded bg-latte-rose-pine-foam px-4 py-2 font-medium text-white transition-colors hover:bg-rose-pine-pine focus:outline-none focus:shadow-outline"
-		on:click={exportToJson}
+		onclick={exportToJson}
 	>
 		export to json
 	</button>

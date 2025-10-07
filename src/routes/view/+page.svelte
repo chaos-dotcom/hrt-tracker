@@ -532,7 +532,7 @@
                                 </div>
                                 <button
                                     class="px-3 py-1 text-sm rounded bg-latte-rose-pine-foam text-white hover:bg-rose-pine-pine transition-colors"
-                                    on:click={() => onEdit(t)}>Edit</button
+                                    onclick={() => onEdit(t)}>Edit</button
                                 >
                             </li>
                         {/each}
@@ -576,7 +576,7 @@
                                 </div>
                                 <button
                                     class="px-3 py-1 text-sm rounded bg-latte-rose-pine-foam text-white hover:bg-rose-pine-pine transition-colors"
-                                    on:click={() => onEdit(t)}>Edit</button
+                                    onclick={() => onEdit(t)}>Edit</button
                                 >
                             </li>
                         {/each}
