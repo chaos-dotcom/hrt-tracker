@@ -11,63 +11,6 @@
     } from "$lib/types";
     import * as Plot from "@observablehq/plot";
 
-    function recordDummy() {
-        // Create a range of test data spanning several weeks
-        const now = Date.now();
-        const dayInMs = 24 * 60 * 60 * 1000;
-
-        // Add blood tests based on the provided data
-        const bloodTest1: BloodTest = {
-            date: now - 60 * dayInMs, // 60 days ago (last month)
-            estradiolLevel: 230,
-            testLevel: 0.2,
-            estradiolUnit: HormoneUnits.E2_pg_mL,
-            testUnit: HormoneUnits.T_ng_dL,
-            notes: "Last month's test",
-        };
-
-        const bloodTest2: BloodTest = {
-            date: now - 5 * dayInMs, // 5 days ago (this month)
-            estradiolLevel: 300,
-            testLevel: 0.2,
-            estradiolUnit: HormoneUnits.E2_pg_mL,
-            testUnit: HormoneUnits.T_ng_dL,
-            notes: "This month's test",
-        };
-
-        // Add the blood test records
-        hrtData.addBloodTest(bloodTest1);
-        hrtData.addBloodTest(bloodTest2);
-
-        // Generate daily oral estradiol doses (4mg daily)
-        for (let i = 0; i < 60; i++) {
-            const oralEDose: DosageHistoryEntry = {
-                date: now - i * dayInMs,
-                medicationType: "oralEstradiol",
-                type: OralEstradiols.Valerate, // Using Valerate as specified
-                dose: 4,
-                unit: HormoneUnits.mg,
-            };
-            hrtData.addDosageRecord(oralEDose);
-        }
-
-        // Generate CPA doses (12.5mg every 2 days)
-        for (let i = 0; i < 30; i++) {
-            const cpaDose: DosageHistoryEntry = {
-                date: now - i * 2 * dayInMs, // Every 2 days
-                medicationType: "antiandrogen",
-                type: Antiandrogens.CPA,
-                dose: 12.5,
-                unit: HormoneUnits.mg,
-            };
-            hrtData.addDosageRecord(cpaDose);
-        }
-
-        alert(
-            "Added test data with daily 4mg oral estradiol and 12.5mg CPA every 2 days!",
-        );
-    }
-
     // Chart related code
     let chartDiv: HTMLElement | undefined;
     let timeRangeInDays = $state(90); // Default to showing last 90 days
@@ -440,13 +383,6 @@
 </p>
 <div class="flex flex-col p-4 w-full max-w-[100vw]">
     <div class="mb-4 flex flex-wrap gap-2">
-        <button
-            class="px-4 py-2 transition-colors bg-latte-rose-pine-foam text-latte-rose-pine-text dark:text-rose-pine-text rounded hover:bg-latte-rose-pine-pine"
-            onclick={recordDummy}
-        >
-            Add Test Data (30 days)
-        </button>
-
         <div class="ml-auto flex gap-2">
             <span class="self-center text-sm">Time Range:</span>
             <button
