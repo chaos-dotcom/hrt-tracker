@@ -8,6 +8,7 @@
     let testUnit: HormoneUnits = $state(HormoneUnits.T_ng_dL);
     let eUnit: HormoneUnits = $state(HormoneUnits.E2_pg_mL);
     let notes = $state("");
+    let showFeedback = $state(false);
 
     function enumToDropdownOptions(e: any) {
         return Object.entries(e).map(([key, val]) => ({
@@ -30,6 +31,8 @@
             notes: notes,
         };
         hrtData.addBloodTest(newBloodTest);
+        showFeedback = true;
+        setTimeout(() => (showFeedback = false), 3000);
     }
 </script>
 
@@ -143,10 +146,17 @@
         <div class="flex items-center justify-between">
             <button
                 class="cursor-pointer bg-latte-rose-pine-foam hover:bg-rose-pine-pine text-white font-medium py-2 px-4 rounded transition-colors focus:outline-none focus:shadow-outline"
-                type="button"
+                type="submit"
             >
                 create test
             </button>
+            {#if showFeedback}
+                <p
+                    class="text-latte-rose-pine-text dark:text-rose-pine-text transition-opacity"
+                >
+                    blood test added!
+                </p>
+            {/if}
         </div>
     </form>
 </div>
