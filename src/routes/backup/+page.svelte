@@ -13,14 +13,72 @@
 		document.body.removeChild(a);
 		URL.revokeObjectURL(url);
 	}
+
+	let restoreMessage = $state('');
+
+	function handleFileSelect(event: Event) {
+		const input = event.target as HTMLInputElement;
+		if (input.files && input.files.length > 0) {
+			const file = input.files[0];
+			const reader = new FileReader();
+			reader.onload = (e) => {
+				try {
+					const text = e.target?.result;
+					if (typeof text === 'string') {
+						const jsonData = JSON.parse(text);
+						// A simple validation to check for expected keys
+						if (jsonData.bloodTests && jsonData.dosageHistory) {
+							hrtData.data = jsonData;
+							restoreMessage = 'Data restored successfully!';
+						} else {
+							restoreMessage = 'Invalid JSON file format.';
+						}
+					}
+				} catch (error) {
+					restoreMessage = 'Error reading or parsing file.';
+					console.error(error);
+				}
+				setTimeout(() => (restoreMessage = ''), 3000);
+			};
+			reader.readAsText(file);
+		}
+	}
 </script>
 
 <div class="p-10 flex flex-col space-y-2 sm:space-y-10">
 	<h1 class="text-4xl">backup & restore</h1>
-	<button
-		class="w-fit cursor-pointer rounded bg-latte-rose-pine-foam px-4 py-2 font-medium text-white transition-colors hover:bg-rose-pine-pine focus:outline-none focus:shadow-outline"
-		onclick={exportToJson}
-	>
-		export to json
-	</button>
+	<div class="flex flex-col space-y-4">
+		<div>
+			<h2 class="text-2xl mb-2">Export Data</h2>
+			<button
+				class="w-fit cursor-pointer rounded bg-latte-rose-pine-foam px-4 py-2 font-medium text-white transition-colors hover:bg-rose-pine-pine focus:outline-none focus:shadow-outline"
+				onclick={exportToJson}
+			>
+				export to json
+			</button>
+		</div>
+
+		<div class="pt-6">
+			<h2 class="text-2xl mb-2">Restore Data</h2>
+			<p class="text-sm opacity-75 mb-4">
+				Select a JSON backup file to restore your data. This will overwrite any existing data.
+			</p>
+			<input
+				type="file"
+				accept=".json"
+				onchange={handleFileSelect}
+				class="block w-full max-w-xs text-sm
+            file:mr-4 file:py-2 file:px-4
+            file:rounded-full file:border-0
+            file:text-sm file:font-semibold
+            file:bg-latte-rose-pine-foam file:text-white
+            hover:file:bg-rose-pine-pine"
+			/>
+			{#if restoreMessage}
+				<p class="mt-4 text-latte-rose-pine-text dark:text-rose-pine-text">
+					{restoreMessage}
+				</p>
+			{/if}
+		</div>
+	</div>
 </div>
