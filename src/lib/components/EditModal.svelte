@@ -57,11 +57,11 @@
 
 <div
 	class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50"
-	on:click={close}
+	onclick={close}
 >
 	<div
 		class="bg-latte-rose-pine-base dark:bg-rose-pine-base max-w-md w-full rounded-lg p-6 shadow-xl"
-		on:click|stopPropagation
+		onclick={(e) => e.stopPropagation()}
 	>
 		<h2 class="mb-4 text-2xl font-bold">Edit Entry</h2>
 
@@ -162,11 +162,11 @@
 		<div class="flex justify-end gap-4 mt-6">
 			<button
 				class="px-4 py-2 rounded transition-colors bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500"
-				on:click={close}>Cancel</button
+				onclick={close}>Cancel</button
 			>
 			<button
 				class="px-4 py-2 rounded transition-colors bg-latte-rose-pine-foam text-white hover:bg-rose-pine-pine"
-				on:click={save}>Save Changes</button
+				onclick={save}>Save Changes</button
 			>
 		</div>
 	</div>
