@@ -1,0 +1,71 @@
+/*------------------*/
+/* night/day switch */
+/*------------------*/
+
+/*               WARNING              */
+/*   Do not change any of these rem   */
+/*  without proper adult supervision  */
+
+/* If you must disregard your elders, remember this wisdom:
+
+   - slider:before top should be (.slider-box height - slider height) / 2
+
+   - translateX should be
+     slider-box width - slider:before width - 2 * slider:before left
+
+   - The night/day contrast will fool you into believing
+     certain spacings aren't equals or that things have
+     changed in size.
+     Do not trust your eyes. Follow the pixels.
+
+   - Do not touch the 0's in .slider or that which must not
+     be seen will reappear and devour your slider.
+
+*/
+
+.slider-box {
+    position: relative;
+    margin-bottom: 0.49rem; /* don't you even dare. */
+    width: 3rem;
+    height: 1.38rem;
+}
+
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--background-color-day);
+    transition: 0.4s;
+}
+
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 0.9rem;
+    width: 1rem;
+    left: 0.27rem; /* should be 0.3rem, but there's a psychovisual illusion where the width of a white gap over a dark background appears wider than a dark gap over white */
+    top: 0.24rem;
+    background-color: var(--strong-foreground-day);
+    transition: 0.4s;
+}
+
+input:checked+.slider {
+    background-color: var(--background-color-night);
+}
+
+input:checked+.slider:before {
+    transform: translateX(1.4rem);
+    transition: 0.4s;
+    background-color: var(--strong-foreground-night);
+}
+
+.slider.round {
+    border-radius: 0.35rem;
+}
+
+.slider.round:before {
+    border-radius: 0.35rem;
+}
