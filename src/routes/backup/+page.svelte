@@ -16,20 +16,32 @@
 
 	let restoreMessage = $state('');
 
-	function handleFileSelect(event: Event) {
+	async function handleFileSelect(event: Event) {
 		const input = event.target as HTMLInputElement;
 		if (input.files && input.files.length > 0) {
 			const file = input.files[0];
 			const reader = new FileReader();
-			reader.onload = (e) => {
+			reader.onload = async (e) => {
 				try {
 					const text = e.target?.result;
 					if (typeof text === 'string') {
 						const jsonData = JSON.parse(text);
 						// A simple validation to check for expected keys
 						if (jsonData.bloodTests && jsonData.dosageHistory) {
-							hrtData.data = jsonData;
-							restoreMessage = 'Data restored successfully!';
+							const response = await fetch('/api/data', {
+								method: 'POST',
+								headers: {
+									'Content-Type': 'application/json',
+								},
+								body: JSON.stringify(jsonData),
+							});
+
+							if (response.ok) {
+								hrtData.data = jsonData;
+								restoreMessage = 'Data restored successfully!';
+							} else {
+								restoreMessage = 'Failed to restore data on the server.';
+							}
 						} else {
 							restoreMessage = 'Invalid JSON file format.';
 						}
