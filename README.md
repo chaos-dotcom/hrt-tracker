@@ -13,7 +13,6 @@
 ## trackable stuff
 1. weight
 2. height
-3. (bmi → calculated)
 4. underbust
 5. bust
 6. → bra size
