@@ -26,8 +26,17 @@
     // Chart related code
     let chartDiv: HTMLElement | undefined;
     let timeRangeInDays = $state(90); // Default to showing last 90 days
-    let showBloodTests = $state(true); // Filter for blood test data
     let showMedications = $state(true); // Filter for medication data
+
+    // Hormone visibility toggles
+    let showE2 = $state(true);
+    let showT = $state(true);
+    let showProg = $state(false);
+    let showFSH = $state(false);
+    let showLH = $state(false);
+    let showProlactin = $state(false);
+    let showSHBG = $state(false);
+    let showFAI = $state(false);
 
     // Process data for charting
     function processDataForChart() {
@@ -35,19 +44,27 @@
         const startTime = now - timeRangeInDays * 24 * 60 * 60 * 1000;
 
         // Filter blood tests based on time range and filter setting
-        const filteredBloodTests = showBloodTests
-            ? hrtData.data.bloodTests
-                  .filter((test) => test.date >= startTime)
-                  .map((test) => ({
-                      date: new Date(test.date),
-                      type: "Blood Test",
-                      estradiolLevel: test.estradiolLevel,
-                      testLevel: test.testLevel,
-                      estradiolUnit:
-                          test.estradiolUnit || HormoneUnits.E2_pg_mL,
-                      testUnit: test.testUnit || HormoneUnits.T_ng_dL,
-                  }))
-            : [];
+        const filteredBloodTests = hrtData.data.bloodTests
+            .filter((test) => test.date >= startTime)
+            .map((test) => ({
+                date: new Date(test.date),
+                type: "Blood Test",
+                estradiolLevel: test.estradiolLevel,
+                testLevel: test.testLevel,
+                progesteroneLevel: test.progesteroneLevel,
+                fshLevel: test.fshLevel,
+                lhLevel: test.lhLevel,
+                prolactinLevel: test.prolactinLevel,
+                shbgLevel: test.shbgLevel,
+                freeAndrogenIndex: test.freeAndrogenIndex,
+                estradiolUnit: test.estradiolUnit || HormoneUnits.E2_pg_mL,
+                testUnit: test.testUnit || HormoneUnits.T_ng_dL,
+                progesteroneUnit: test.progesteroneUnit || HormoneUnits.ng_mL,
+                fshUnit: test.fshUnit || HormoneUnits.mIU_mL,
+                lhUnit: test.lhUnit || HormoneUnits.mIU_mL,
+                prolactinUnit: test.prolactinUnit || HormoneUnits.ng_mL,
+                shbgUnit: test.shbgUnit || HormoneUnits.T_nmol_L,
+            }));
 
         // Filter dosages based on time range and filter setting
         const filteredDosages = showMedications
@@ -107,9 +124,7 @@
 
         chartDiv.firstChild?.remove(); // Remove old chart
 
-        const now = Date.now();
-        const { bloodTests, dosages, estradiolUnits, testUnits } =
-            processDataForChart();
+        const { bloodTests, dosages } = processDataForChart();
 
         // Only create chart if we have data
         if (bloodTests.length === 0 && dosages.length === 0) {
@@ -118,33 +133,76 @@
             return;
         }
 
-        // Prepare data for the main chart
-        // Create dynamic y-axis label based on detected units
-        const estradiolUnitsLabel = bloodTests.some(
-            (d) => d.estradiolLevel !== undefined,
-        )
-            ? `Estradiol (${bloodTests.find((d) => d.estradiolLevel !== undefined)?.estradiolUnit || "pg/mL"})`
-            : "";
+        // Helper to create hormone plot marks
+        const createHormoneMarks = (
+            data: any[],
+            key: string,
+            unitKey: string,
+            defaultUnit: string,
+            color: string,
+            label: string,
+        ) => {
+            if (!data.some((d) => d[key] !== undefined && d[key] > 0)) return [];
+            return [
+                Plot.line(
+                    data.filter((d) => d[key] !== undefined && d[key] > 0),
+                    {
+                        x: "date",
+                        y: key,
+                        stroke: color,
+                        strokeWidth: 2,
+                        curve: "monotone-x",
+                    },
+                ),
+                Plot.dot(
+                    data.filter((d) => d[key] !== undefined && d[key] > 0),
+                    {
+                        x: "date",
+                        y: key,
+                        fill: color,
+                        r: 5,
+                        title: (d: any) =>
+                            `${label}: ${d[key]} ${d[unitKey] || defaultUnit} (${d.date.toLocaleDateString()})`,
+                    },
+                ),
+            ];
+        };
 
-        const testUnitsLabel = bloodTests.some((d) => d.testLevel !== undefined)
-            ? `Testosterone (${bloodTests.find((d) => d.testLevel !== undefined)?.testUnit || "ng/dL"})`
-            : "";
-
-        const medicationUnitsLabel =
-            dosages.length > 0 ? "Medication (mg)" : "";
-
-        // Combine labels if multiple types are shown
-        let yAxisLabel = [
-            estradiolUnitsLabel,
-            testUnitsLabel,
-            medicationUnitsLabel,
-        ]
-            .filter((label) => label !== "")
-            .join(", ");
-
-        if (!yAxisLabel) {
-            yAxisLabel = "Hormone Levels";
-        }
+        const createFAIMarks = (data: any[]) => {
+            if (
+                !data.some(
+                    (d) => d.freeAndrogenIndex !== undefined && d.freeAndrogenIndex > 0,
+                )
+            )
+                return [];
+            return [
+                Plot.line(
+                    data.filter(
+                        (d) => d.freeAndrogenIndex !== undefined && d.freeAndrogenIndex > 0,
+                    ),
+                    {
+                        x: "date",
+                        y: "freeAndrogenIndex",
+                        stroke: "black",
+                        strokeWidth: 2,
+                        curve: "monotone-x",
+                    },
+                ),
+                Plot.dot(
+                    data.filter(
+                        (d) => d.freeAndrogenIndex !== undefined && d.freeAndrogenIndex > 0,
+                    ),
+                    {
+                        x: "date",
+                        y: "freeAndrogenIndex",
+                        fill: "black",
+                        r: 5,
+                        title: (d: any) =>
+                            `FAI: ${d.freeAndrogenIndex} (${d.date.toLocaleDateString()})`,
+                    },
+                ),
+            ];
+        };
 
         // Get container width for responsive sizing
         const containerWidth = chartDiv.clientWidth || window.innerWidth - 50;
@@ -161,80 +219,87 @@
                 type: "utc",
             },
             y: {
-                label: yAxisLabel,
+                label: "Levels",
                 grid: true,
+                // domain: [0, 400], // Example static domain
             },
             color: {
                 legend: true,
             },
             marks: [
-                // Blood test estradiol levels as a line
-                ...(showBloodTests &&
-                bloodTests.some((d) => d.estradiolLevel !== undefined)
-                    ? [
-                          Plot.line(
-                              bloodTests.filter(
-                                  (d) => d.estradiolLevel !== undefined,
-                              ),
-                              {
-                                  x: "date",
-                                  y: "estradiolLevel",
-                                  stroke: "steelblue",
-                                  strokeWidth: 2,
-                                  curve: "monotone-x",
-                              },
-                          ),
-                          // Blood test estradiol points
-                          Plot.dot(
-                              bloodTests.filter(
-                                  (d) => d.estradiolLevel !== undefined,
-                              ),
-                              {
-                                  x: "date",
-                                  y: "estradiolLevel",
-                                  fill: "steelblue",
-                                  r: 5,
-                                  title: (d) =>
-                                      `Estradiol: ${d.estradiolLevel} ${d.estradiolUnit || "pg/mL"} (${d.date.toLocaleDateString()})`,
-                              },
-                          ),
-                      ]
+                ...(showE2
+                    ? createHormoneMarks(
+                          bloodTests,
+                          "estradiolLevel",
+                          "estradiolUnit",
+                          "pg/mL",
+                          "steelblue",
+                          "Estradiol",
+                      )
                     : []),
-
-                // Blood test testosterone levels as a line (if available)
-                ...(showBloodTests &&
-                bloodTests.some((d) => d.testLevel !== undefined)
-                    ? [
-                          Plot.line(
-                              bloodTests.filter(
-                                  (d) => d.testLevel !== undefined,
-                              ),
-                              {
-                                  x: "date",
-                                  y: "testLevel",
-                                  stroke: "orangered",
-                                  strokeWidth: 2,
-                                  curve: "monotone-x",
-                              },
-                          ),
-                          // Blood test testosterone points
-                          Plot.dot(
-                              bloodTests.filter(
-                                  (d) => d.testLevel !== undefined,
-                              ),
-                              {
-                                  x: "date",
-                                  y: "testLevel",
-                                  fill: "orangered",
-                                  r: 5,
-                                  title: (d) =>
-                                      `Testosterone: ${d.testLevel} ${d.testUnit || "ng/dL"} (${d.date.toLocaleDateString()})`,
-                              },
-                          ),
-                      ]
+                ...(showT
+                    ? createHormoneMarks(
+                          bloodTests,
+                          "testLevel",
+                          "testUnit",
+                          "ng/dL",
+                          "orangered",
+                          "Testosterone",
+                      )
                     : []),
+                ...(showProg
+                    ? createHormoneMarks(
+                          bloodTests,
+                          "progesteroneLevel",
+                          "progesteroneUnit",
+                          "ng/mL",
+                          "darkviolet",
+                          "Progesterone",
+                      )
+                    : []),
+                ...(showFSH
+                    ? createHormoneMarks(
+                          bloodTests,
+                          "fshLevel",
+                          "fshUnit",
+                          "mIU/mL",
+                          "forestgreen",
+                          "FSH",
+                      )
+                    : []),
+                ...(showLH
+                    ? createHormoneMarks(
+                          bloodTests,
+                          "lhLevel",
+                          "lhUnit",
+                          "mIU/mL",
+                          "darkcyan",
+                          "LH",
+                      )
+                    : []),
+                ...(showProlactin
+                    ? createHormoneMarks(
+                          bloodTests,
+                          "prolactinLevel",
+                          "prolactinUnit",
+                          "ng/mL",
+                          "saddlebrown",
+                          "Prolactin",
+                      )
+                    : []),
+                ...(showSHBG
+                    ? createHormoneMarks(
+                          bloodTests,
+                          "shbgLevel",
+                          "shbgUnit",
+                          "nmol/L",
+                          "deeppink",
+                          "SHBG",
+                      )
+                    : []),
+                ...(showFAI ? createFAIMarks(bloodTests) : []),
 
-                // Injectable estradiol dosages as triangles
+                // Medication dosages
                 ...(showMedications &&
                 dosages.some((d) => d.type === "injectableEstradiol")
                     ? [
@@ -244,8 +309,8 @@
                               ),
                               {
                                   x: "date",
-                                  y: (d) => Math.min(d.dose * 10, 200), // Scale for visibility but cap at 200
-                                  fill: "green",
+                                  y: (d) => Math.min(d.dose * 10, 200), // Scale for visibility
+                                  fill: "limegreen",
                                   symbol: "triangle",
                                   r: 8,
                                   title: (d) =>
@@ -254,8 +319,6 @@
                           ),
                       ]
                     : []),
-
-                // Oral estradiol dosages as squares
                 ...(showMedications &&
                 dosages.some((d) => d.type === "oralEstradiol")
                     ? [
@@ -264,7 +327,7 @@
                               {
                                   x: "date",
                                   y: (d) => Math.min(d.dose * 10, 200),
-                                  fill: "purple",
+                                  fill: "blueviolet",
                                   symbol: "square",
                                   r: 7,
                                   title: (d) =>
@@ -273,8 +336,6 @@
                           ),
                       ]
                     : []),
-
-                // Antiandrogen dosages as diamonds
                 ...(showMedications &&
                 dosages.some((d) => d.type === "antiandrogen")
                     ? [
@@ -292,79 +353,6 @@
                           ),
                       ]
                     : []),
-
-                // Add a legend for the data types
-                Plot.rectY([0], {
-                    x1: "min",
-                    x2: "max",
-                    y1: 0,
-                    y2: 0,
-                    stroke: "gray",
-                    strokeWidth: 1,
-                }),
-
-                // Add a legend based on what's being shown
-                Plot.text(
-                    [
-                        // Only show blood test legends if blood tests are displayed
-                        ...(showBloodTests
-                            ? [
-                                  {
-                                      x: new Date(
-                                          now - 2 * 24 * 60 * 60 * 1000,
-                                      ),
-                                      y: 220,
-                                      text: "● Estradiol (E2)",
-                                      color: "steelblue",
-                                  },
-                                  {
-                                      x: new Date(
-                                          now - 2 * 24 * 60 * 60 * 1000,
-                                      ),
-                                      y: 205,
-                                      text: "● Testosterone (T)",
-                                      color: "orangered",
-                                  },
-                              ]
-                            : []),
-                        // Only show medication legends if medications are displayed
-                        ...(showMedications
-                            ? [
-                                  {
-                                      x: new Date(
-                                          now - 2 * 24 * 60 * 60 * 1000,
-                                      ),
-                                      y: 190,
-                                      text: "▲ Injection",
-                                      color: "green",
-                                  },
-                                  {
-                                      x: new Date(
-                                          now - 2 * 24 * 60 * 60 * 1000,
-                                      ),
-                                      y: 175,
-                                      text: "■ Oral E",
-                                      color: "purple",
-                                  },
-                                  {
-                                      x: new Date(
-                                          now - 2 * 24 * 60 * 60 * 1000,
-                                      ),
-                                      y: 160,
-                                      text: "◆ Anti-androgen",
-                                      color: "darkorange",
-                                  },
-                              ]
-                            : []),
-                    ],
-                    {
-                        x: "x",
-                        y: "y",
-                        text: "text",
-                        fill: (d) => d.color,
-                        fontSize: 12,
-                    },
-                ),
             ],
         });
 
@@ -377,10 +365,6 @@
 
     function updateTimeRange(days: number) {
         timeRangeInDays = days;
-    }
-
-    function toggleBloodTests() {
-        showBloodTests = !showBloodTests;
     }
 
     function toggleMedications() {
@@ -454,18 +438,75 @@
         </div>
     </div>
 
-    <div class="mb-4 flex flex-wrap gap-3">
-        <span class="self-center text-sm">Show:</span>
+    <div class="mb-4 flex flex-wrap gap-2">
+        <span class="self-center text-sm">Show Levels:</span>
         <button
-            class="px-3 py-1 text-sm transition-colors rounded hover:bg-latte-rose-pine-overlay dark:hover:bg-rose-pine-overlay hover:text-latte-rose-pine-text dark:hover:text-rose-pine-text"
-            class:bg-latte-rose-pine-iris={showBloodTests}
-            class:dark:bg-rose-pine-iris={showBloodTests}
-            class:text-latte-rose-pine-base={showBloodTests}
-            class:dark:text-rose-pine-base={showBloodTests}
-            onclick={toggleBloodTests}
+            class="px-3 py-1 text-sm transition-colors rounded"
+            class:bg-latte-rose-pine-iris={showE2}
+            class:dark:bg-rose-pine-iris={showE2}
+            class:text-latte-rose-pine-base={showE2}
+            class:dark:text-rose-pine-base={showE2}
+            onclick={() => (showE2 = !showE2)}>E2</button
         >
-            {showBloodTests ? "✓" : ""} Blood Test Levels
-        </button>
+        <button
+            class="px-3 py-1 text-sm transition-colors rounded"
+            class:bg-latte-rose-pine-iris={showT}
+            class:dark:bg-rose-pine-iris={showT}
+            class:text-latte-rose-pine-base={showT}
+            class:dark:text-rose-pine-base={showT}
+            onclick={() => (showT = !showT)}>T</button
+        >
+        <button
+            class="px-3 py-1 text-sm transition-colors rounded"
+            class:bg-latte-rose-pine-iris={showProg}
+            class:dark:bg-rose-pine-iris={showProg}
+            class:text-latte-rose-pine-base={showProg}
+            class:dark:text-rose-pine-base={showProg}
+            onclick={() => (showProg = !showProg)}>Prog</button
+        >
+        <button
+            class="px-3 py-1 text-sm transition-colors rounded"
+            class:bg-latte-rose-pine-iris={showFSH}
+            class:dark:bg-rose-pine-iris={showFSH}
+            class:text-latte-rose-pine-base={showFSH}
+            class:dark:text-rose-pine-base={showFSH}
+            onclick={() => (showFSH = !showFSH)}>FSH</button
+        >
+        <button
+            class="px-3 py-1 text-sm transition-colors rounded"
+            class:bg-latte-rose-pine-iris={showLH}
+            class:dark:bg-rose-pine-iris={showLH}
+            class:text-latte-rose-pine-base={showLH}
+            class:dark:text-rose-pine-base={showLH}
+            onclick={() => (showLH = !showLH)}>LH</button
+        >
+        <button
+            class="px-3 py-1 text-sm transition-colors rounded"
+            class:bg-latte-rose-pine-iris={showProlactin}
+            class:dark:bg-rose-pine-iris={showProlactin}
+            class:text-latte-rose-pine-base={showProlactin}
+            class:dark:text-rose-pine-base={showProlactin}
+            onclick={() => (showProlactin = !showProlactin)}>Prolactin</button
+        >
+        <button
+            class="px-3 py-1 text-sm transition-colors rounded"
+            class:bg-latte-rose-pine-iris={showSHBG}
+            class:dark:bg-rose-pine-iris={showSHBG}
+            class:text-latte-rose-pine-base={showSHBG}
+            class:dark:text-rose-pine-base={showSHBG}
+            onclick={() => (showSHBG = !showSHBG)}>SHBG</button
+        >
+        <button
+            class="px-3 py-1 text-sm transition-colors rounded"
+            class:bg-latte-rose-pine-iris={showFAI}
+            class:dark:bg-rose-pine-iris={showFAI}
+            class:text-latte-rose-pine-base={showFAI}
+            class:dark:text-rose-pine-base={showFAI}
+            onclick={() => (showFAI = !showFAI)}>FAI</button
+        >
+    </div>
+    <div class="mb-4 flex flex-wrap gap-3">
+        <span class="self-center text-sm">Show Dosages:</span>
         <button
             class="px-3 py-1 text-sm transition-colors rounded hover:bg-latte-rose-pine-overlay dark:hover:bg-rose-pine-overlay hover:text-latte-rose-pine-text dark:hover:text-rose-pine-text"
             class:bg-latte-rose-pine-iris={showMedications}
@@ -489,7 +530,7 @@
         <div class="mt-4 text-sm text-gray-500 dark:text-gray-400 italic">
             <p>* Dosage values are scaled for visibility on the chart.</p>
             <p>* Hover over data points for details.</p>
-            {#if showBloodTests && hrtData.data.bloodTests.length > 0}
+            {#if hrtData.data.bloodTests.length > 0}
                 <p>* Hormone measurements shown in their recorded units.</p>
             {/if}
         </div>
