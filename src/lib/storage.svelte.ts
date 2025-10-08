@@ -56,13 +56,15 @@ class hrtStore {
     };
 
     const processSchedule = (
-        schedule: { frequency: string; [key: string]: any } | undefined,
+        schedule: { frequency: string | number; [key: string]: any } | undefined,
         medicationType: DosageHistoryEntry['medicationType']
     ) => {
         if (!schedule || !schedule.frequency) return;
 
         let intervalDays: number;
-        if (schedule.frequency.toLowerCase().trim() === "daily") {
+        if (typeof schedule.frequency === "number") {
+            intervalDays = schedule.frequency;
+        } else if (schedule.frequency.toLowerCase().trim() === "daily") {
             intervalDays = 1;
         } else {
             const match = schedule.frequency.match(/\d+/);
