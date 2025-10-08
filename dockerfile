@@ -2,7 +2,6 @@
 FROM node:20-alpine AS builder
 
 WORKDIR /app
-
 # copy package files
 COPY package.json package-lock.json ./
 
