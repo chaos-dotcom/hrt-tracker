@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { page } from "$app/stores";
     import { hrtData } from "$lib/storage.svelte";
     import {
         type EstrogenType,
@@ -34,6 +35,17 @@
     let pUnit: HormoneUnits = $state(HormoneUnits.mg);
     let pRoute: ProgesteroneRoutes = $state(ProgesteroneRoutes.Oral);
     let progesterone: Progesterones | "" = $state(Progesterones.Micronized);
+
+    $effect(() => {
+        if ($page.url.searchParams.get("mode") === "schedule") {
+            mode = "schedule";
+            if (hrtData.data.injectableEstradiol) {
+                method = "injection";
+            } else if (hrtData.data.oralEstradiol) {
+                method = "oral";
+            }
+        }
+    });
 
     $effect(() => {
         if (method === "injection") {
