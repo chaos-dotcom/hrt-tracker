@@ -201,7 +201,7 @@
         <h1 class="text-4xl">set up / record dosage</h1>
         <a
             class="text-latte-rose-pine-iris dark:text-rose-pine-iris hover:text-rose-pine-love transition-colors"
-            href="/view">view dosage history (todo)</a
+            href="/view">view dosage history</a
         >
     </div>
     <form onsubmit={handleSubmit} class="shadow-md rounded pt-6 pb-8 mb-4">
