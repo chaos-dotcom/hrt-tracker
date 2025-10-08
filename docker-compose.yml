@@ -1,7 +1,7 @@
 version: '3.8'
 services:
   hrt-tracker:
-    build: .
+    image: ghcr.io/chaos-dotcom/hrt-tracker:latest
     ports:
       - "3000:3000"
     volumes:
