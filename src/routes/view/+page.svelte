@@ -14,21 +14,70 @@
     import EditModal from "$lib/components/EditModal.svelte";
 
     function generateEstrannaiseUrl(): string | null {
-        const injectableDoses = hrtData.data.dosageHistory
+        const regimen = hrtData.data.injectableEstradiol;
+        const historicalDoses = hrtData.data.dosageHistory
             .filter(
                 (d): d is Extract<DosageHistoryEntry, { medicationType: "injectableEstradiol" }> =>
                     d.medicationType === "injectableEstradiol",
             )
             .sort((a, b) => a.date - b.date);
 
-        if (injectableDoses.length === 0) {
+        if (historicalDoses.length === 0 && !regimen) {
+            return null;
+        }
+
+        const allDoses: { date: number; type: InjectableEstradiols; dose: number }[] =
+            historicalDoses.map((d) => ({
+                date: d.date,
+                type: d.type,
+                dose: d.dose,
+            }));
+
+        let lastDoseDate: number;
+        let totalDurationDays = 0;
+
+        if (historicalDoses.length > 0) {
+            const firstDoseDate = historicalDoses[0].date;
+            lastDoseDate = historicalDoses[historicalDoses.length - 1].date;
+            totalDurationDays = (lastDoseDate - firstDoseDate) / (1000 * 60 * 60 * 24);
+        } else if (regimen) {
+            // No history, but we have a regimen. Start from today.
+            lastDoseDate = Date.now();
+            // Add a dose for today to start the projection
+            allDoses.push({
+                date: lastDoseDate,
+                type: regimen.type,
+                dose: regimen.dose,
+            });
+        } else {
+            return null; // Should be unreachable
+        }
+
+        if (regimen && totalDurationDays < 80) {
+            const frequencyMs = regimen.frequency * 24 * 60 * 60 * 1000;
+            let nextDoseDate = lastDoseDate + frequencyMs;
+
+            while (totalDurationDays < 80) {
+                allDoses.push({
+                    date: nextDoseDate,
+                    type: regimen.type,
+                    dose: regimen.dose,
+                });
+
+                const firstDate = allDoses[0].date;
+                totalDurationDays = (nextDoseDate - firstDate) / (1000 * 60 * 60 * 24);
+                nextDoseDate += frequencyMs;
+            }
+        }
+
+        if (allDoses.length === 0) {
             return null;
         }
 
         const doseStrings: string[] = [];
-        let lastDate: number | null = null;
+        let lastDateForInterval: number | null = null;
 
-        for (const dose of injectableDoses) {
+        for (const dose of allDoses) {
             let modelId: number | undefined;
             switch (dose.type) {
                 case InjectableEstradiols.Valerate:
@@ -50,13 +99,13 @@
 
             if (modelId !== undefined) {
                 let time: number;
-                if (lastDate === null) {
+                if (lastDateForInterval === null) {
                     time = 0;
                 } else {
                     // time is interval in days
-                    time = (dose.date - lastDate) / (1000 * 60 * 60 * 24);
+                    time = (dose.date - lastDateForInterval) / (1000 * 60 * 60 * 24);
                 }
-                lastDate = dose.date;
+                lastDateForInterval = dose.date;
 
                 doseStrings.push(`${dose.dose},${parseFloat(time.toFixed(3))},${modelId}`);
             }
