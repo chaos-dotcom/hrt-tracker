@@ -1,6 +1,6 @@
 # HRT Tracker
 
-A self-hosted web application to track hormone replacement therapy (HRT) data, including dosages, blood test results, and body measurements. Built with SvelteKit.
+A self-hosted web application (that could have been a spreadsheet) to track hormone replacement therapy (HRT) data, including dosages, blood test results, and body measurements. Built with SvelteKit.
 
 ## Features
 
