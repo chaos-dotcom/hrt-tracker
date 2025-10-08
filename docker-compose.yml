@@ -1,0 +1,9 @@
+version: '3.8'
+services:
+  hrt-tracker:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./hrt-data.json:/app/hrt-data.json
+    restart: unless-stopped
