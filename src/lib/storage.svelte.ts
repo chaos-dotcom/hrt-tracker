@@ -99,7 +99,7 @@ class hrtStore {
     $effect.root(() => {
       // if (!browser) return;
       const raw = localStorage.getItem(HRT_STORAGE_KEY);
-      this.data = raw ? JSON.parse(raw) : defaultData;
+      this.data = raw ? { ...defaultData, ...JSON.parse(raw) } : defaultData;
       // ^^ hrtData is still undefined bc it's in the class, temporal dead zone. avoid referring to it
       // use this.data instead
       if (browser) {
