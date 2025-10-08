@@ -404,7 +404,14 @@
     <div
         class="mb-4 border rounded-lg p-4 bg-white dark:bg-rose-pine-surface shadow-md"
     >
-        <h2 class="text-xl font-medium mb-2">Current Regimen</h2>
+        <div class="flex justify-between items-center mb-2">
+            <h2 class="text-xl font-medium">Current Regimen</h2>
+            <a
+                href="/create/dosage?mode=schedule"
+                class="px-3 py-1 text-sm rounded bg-latte-rose-pine-foam text-white hover:bg-rose-pine-pine transition-colors"
+                >Edit Schedule</a
+            >
+        </div>
         <div class="space-y-1 text-sm">
             {#if hrtData.data.injectableEstradiol}
                 <p>
