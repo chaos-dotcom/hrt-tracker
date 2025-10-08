@@ -1,25 +1,42 @@
-# hrt tracker
-# (planned) features
-* localstorage, or some simple shared one you can copy / save across browsers. no login that's not the point
-* set reminders for taking hrt? but not really ideal as it's a website
-* simplest part:
-	* enter → get asked to put in current dosage, past blood results (or import)
-	* ask if you wanna set up a tracker → track various configurable things
-	* if not, simple mode -
-		* you just input whether injected / oral
-			* → time of ingestion / injection and type of hormone. ev oral? injected? hemihydrate?
-* change in graphs overtime for trackable stuff
+# HRT Tracker
 
-## routes
-index - onboarding if not setup, if setup then dashboard view, buttons to add blood test or check off dosage
+A simple, self-hosted application to track Hormone Replacement Therapy (HRT) progress.
 
-create/blood-test → create a new blood test entry. feature → read from pdf / image of an actual medical result using ocr. free vision model? or local? or tesseract?
-create/dosage → create a new daily hrt dosage
+## Planned Features
 
-tracker/ → view blood tests, view dosages
+- **Data Storage**:
+  - Uses local storage for simplicity. No login or accounts required.
+  - Option to import/export data as a JSON file for backup or transfer.
+  - (Optional) Support for remote storage via a self-hosted server.
+- **Onboarding**:
+  - Simple setup to input current dosage and past blood results.
+- **Tracking**:
+  - Track dosages (injections, oral, etc.).
+  - Log blood test results.
+  - Track various configurable measurements over time.
+- **Visualization**:
+  - View changes in graphs over time for trackable data.
+- **Future Ideas**:
+  - Set reminders for taking HRT.
+  - Read blood test results from a PDF or image using OCR.
+  - Theme options (e.g., Rosé Pine).
 
-/settings → idk theme option maybe? defaulting to rose pine for myself
+## Routes
 
-optional:
-* /backup → import, export localstorage to a json
-* use remotestorage with a small self hosted server
+-   `/`: Dashboard view after setup, with buttons to add blood tests or log dosages. Onboarding for new users.
+-   `/create/blood-test`: Create a new blood test entry.
+-   `/create/dosage`: Log a new HRT dosage.
+-   `/tracker`: View historical blood tests and dosages.
+-   `/settings`: Configuration options, like theme selection.
+-   `/backup`: Import or export data to a JSON file.
+
+## Getting Started
+
+This project is designed to be run with Docker.
+
+1.  Clone the repository.
+2.  Run the application using Docker Compose:
+    ```sh
+    docker-compose up -d
+    ```
+3.  The application will be available at `http://localhost:3000`.
