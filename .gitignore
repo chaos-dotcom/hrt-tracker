@@ -21,3 +21,10 @@ Thumbs.db
 # Vite
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+.aider.chat.history.md
+.aider.input.history
+.aider.tags.cache.v4/cache.db
+.aider.tags.cache.v4/cache.db-shm
+.aider.tags.cache.v4/cache.db-wal
+.aider.tags.cache.v4/d8/36/dfcc4bbb66d02e2664f3d00807fa.val
+.aider.tags.cache.v4/de/2a/65e0ceb5e69b2a7cbcb7c6b03e76.val
