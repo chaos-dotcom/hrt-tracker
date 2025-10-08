@@ -11,6 +11,7 @@
         ProgesteroneRoutes,
     } from "$lib/types";
 
+    let mode: "record" | "schedule" = $state("record");
     let method: "injection" | "oral" = $state("injection");
     let injectionDateTime = $state("");
     let oralDateTime = $state("");
@@ -24,6 +25,11 @@
         type: InjectableEstradiols.Benzoate,
     });
 
+    let injectionFrequency = $state("");
+    let oralEFrequency = $state("");
+    let aaFrequency = $state("");
+    let pFrequency = $state("");
+
     let pDose = $state(0);
     let pUnit: HormoneUnits = $state(HormoneUnits.mg);
     let pRoute: ProgesteroneRoutes = $state(ProgesteroneRoutes.Oral);
@@ -31,16 +37,39 @@
 
     $effect(() => {
         if (method === "injection") {
+            const sched = hrtData.data.injectableEstradiol;
             estrogen = {
                 route: "injection",
-                type: InjectableEstradiols.Benzoate,
+                type: sched?.type || InjectableEstradiols.Benzoate,
             };
+            eDose = sched?.dose || 0;
+            eUnit = sched?.unit || HormoneUnits.mg;
+            injectionFrequency = sched?.frequency || "";
             showAaDosage = false;
         } else {
+            // oral
+            const oralSched = hrtData.data.oralEstradiol;
             estrogen = {
                 route: "oral",
-                type: OralEstradiols.Valerate,
+                type: oralSched?.type || OralEstradiols.Valerate,
             };
+            eDose = oralSched?.dose || 0;
+            eUnit = oralSched?.unit || HormoneUnits.mg;
+            oralEFrequency = oralSched?.frequency || "";
+
+            const aaSched = hrtData.data.antiandrogen;
+            aa = aaSched?.type || "";
+            aaDose = aaSched?.dose || 0;
+            aaUnit = aaSched?.unit || HormoneUnits.mg;
+            aaFrequency = aaSched?.frequency || "";
+
+            const pSched = hrtData.data.progesterone;
+            progesterone = pSched?.type || "";
+            pDose = pSched?.dose || 0;
+            pUnit = pSched?.unit || HormoneUnits.mg;
+            pRoute = pSched?.route || ProgesteroneRoutes.Oral;
+            pFrequency = pSched?.frequency || "";
+
             showAaDosage = true;
         }
     });
@@ -63,7 +92,56 @@
 
     function handleSubmit(event: Event) {
         event.preventDefault();
-        submitDosageForm();
+        if (mode === "record") {
+            submitDosageForm();
+        } else {
+            saveSchedule();
+        }
+    }
+
+    function saveSchedule() {
+        if (method === "injection") {
+            hrtData.data.injectableEstradiol = {
+                type: estrogen.type as InjectableEstradiols,
+                dose: eDose,
+                unit: eUnit,
+                frequency: injectionFrequency,
+            };
+            hrtData.data.oralEstradiol = undefined;
+            hrtData.data.antiandrogen = undefined;
+            hrtData.data.progesterone = undefined;
+        } else {
+            // oral
+            hrtData.data.oralEstradiol = {
+                type: estrogen.type as OralEstradiols,
+                dose: eDose,
+                unit: eUnit,
+                frequency: oralEFrequency,
+            };
+            if (aa !== "") {
+                hrtData.data.antiandrogen = {
+                    type: aa,
+                    dose: aaDose,
+                    unit: aaUnit,
+                    frequency: aaFrequency,
+                };
+            } else {
+                hrtData.data.antiandrogen = undefined;
+            }
+            if (progesterone !== "") {
+                hrtData.data.progesterone = {
+                    type: progesterone,
+                    route: pRoute,
+                    dose: pDose,
+                    unit: pUnit,
+                    frequency: pFrequency,
+                };
+            } else {
+                hrtData.data.progesterone = undefined;
+            }
+            hrtData.data.injectableEstradiol = undefined;
+        }
+        alert("Schedule saved!");
     }
 
     function submitDosageForm() {
@@ -131,6 +209,31 @@
             <span
                 class="block text-latte-rose-pine-text dark:text-rose-pine-text text-sm font-medium mb-2"
             >
+                mode
+            </span>
+            <label class="inline-flex items-center mr-4">
+                <input
+                    type="radio"
+                    class="form-radio w-4 h-4 text-latte-rose-pine-foam"
+                    bind:group={mode}
+                    value="record"
+                />
+                <span class="ml-2">Record Dose</span>
+            </label>
+            <label class="inline-flex items-center">
+                <input
+                    type="radio"
+                    class="form-radio w-4 h-4 text-latte-rose-pine-foam"
+                    bind:group={mode}
+                    value="schedule"
+                />
+                <span class="ml-2">Set Schedule</span>
+            </label>
+        </div>
+        <div class="mb-4">
+            <span
+                class="block text-latte-rose-pine-text dark:text-rose-pine-text text-sm font-medium mb-2"
+            >
                 administration method
             </span>
             <label class="inline-flex items-center mr-4">
@@ -158,19 +261,36 @@
         {#if method === "injection"}
             <div class="mb-4 space-y-4">
                 <div>
-                    <label
-                        class="block text-latte-rose-pine-text dark:text-rose-pine-text text-sm font-medium mb-2"
-                        for="injectionDateTime"
-                    >
-                        injection date / time
-                    </label>
-                    <input
-                        id="injectionDateTime"
-                        type="datetime-local"
-                        class="shadow appearance-none border rounded w-full py-2 px-3 text-latte-rose-pine-text dark:text-rose-pine-text leading-tight focus:outline-none focus:shadow-outline"
-                        bind:value={injectionDateTime}
-                        required
-                    />
+                    {#if mode === "record"}
+                        <label
+                            class="block text-latte-rose-pine-text dark:text-rose-pine-text text-sm font-medium mb-2"
+                            for="injectionDateTime"
+                        >
+                            injection date / time
+                        </label>
+                        <input
+                            id="injectionDateTime"
+                            type="datetime-local"
+                            class="shadow appearance-none border rounded w-full py-2 px-3 text-latte-rose-pine-text dark:text-rose-pine-text leading-tight focus:outline-none focus:shadow-outline"
+                            bind:value={injectionDateTime}
+                            required
+                        />
+                    {:else}
+                        <label
+                            class="block text-latte-rose-pine-text dark:text-rose-pine-text text-sm font-medium mb-2"
+                            for="injectionFrequency"
+                        >
+                            injection frequency
+                        </label>
+                        <input
+                            id="injectionFrequency"
+                            type="text"
+                            placeholder="e.g. every 7 days"
+                            class="shadow appearance-none border rounded w-full py-2 px-3 text-latte-rose-pine-text dark:text-rose-pine-text leading-tight focus:outline-none focus:shadow-outline"
+                            bind:value={injectionFrequency}
+                            required
+                        />
+                    {/if}
                 </div>
                 <div>
                     <label
@@ -193,19 +313,21 @@
         {:else}
             <div class="mb-4 space-y-4">
                 <div>
-                    <label
-                        class="block text-latte-rose-pine-text dark:text-rose-pine-text text-sm font-medium mb-2"
-                        for="oralDateTime"
-                    >
-                        oral intake date / time
-                    </label>
-                    <input
-                        id="oralDateTime"
-                        type="datetime-local"
-                        class="shadow appearance-none border rounded w-full py-2 px-3 text-latte-rose-pine-text dark:text-rose-pine-text leading-tight focus:outline-none focus:shadow-outline"
-                        bind:value={oralDateTime}
-                        required
-                    />
+                    {#if mode === "record"}
+                        <label
+                            class="block text-latte-rose-pine-text dark:text-rose-pine-text text-sm font-medium mb-2"
+                            for="oralDateTime"
+                        >
+                            oral intake date / time
+                        </label>
+                        <input
+                            id="oralDateTime"
+                            type="datetime-local"
+                            class="shadow appearance-none border rounded w-full py-2 px-3 text-latte-rose-pine-text dark:text-rose-pine-text leading-tight focus:outline-none focus:shadow-outline"
+                            bind:value={oralDateTime}
+                            required
+                        />
+                    {/if}
                 </div>
 
                 <div class="flex flex-col sm:flex-row md:space-x-4">
@@ -231,6 +353,24 @@
                                 {/each}
                             </select>
                         </div>
+                        {#if mode === "schedule"}
+                            <div class="mb-4">
+                                <label
+                                    class="block text-latte-rose-pine-text dark:text-rose-pine-text text-sm font-medium mb-2"
+                                    for="oralEFrequency"
+                                >
+                                    frequency
+                                </label>
+                                <input
+                                    id="oralEFrequency"
+                                    type="text"
+                                    placeholder="e.g. daily"
+                                    class="shadow appearance-none border rounded w-full py-2 px-3 text-latte-rose-pine-text dark:text-rose-pine-text leading-tight focus:outline-none focus:shadow-outline"
+                                    bind:value={oralEFrequency}
+                                    required
+                                />
+                            </div>
+                        {/if}
                         <div class="mb-4">
                             <label
                                 class="block text-latte-rose-pine-text dark:text-rose-pine-text text-sm font-medium mb-2"
@@ -293,6 +433,23 @@
                             </select>
                         </div>
                         {#if showAaDosage && aa !== ""}
+                            {#if mode === "schedule"}
+                                <div class="mb-4">
+                                    <label
+                                        class="block text-latte-rose-pine-text dark:text-rose-pine-text text-sm font-medium mb-2"
+                                        for="aaFrequency"
+                                    >
+                                        frequency
+                                    </label>
+                                    <input
+                                        id="aaFrequency"
+                                        type="text"
+                                        placeholder="e.g. daily"
+                                        class="shadow appearance-none border rounded w-full py-2 px-3 text-latte-rose-pine-text dark:text-rose-pine-text leading-tight focus:outline-none focus:shadow-outline"
+                                        bind:value={aaFrequency}
+                                    />
+                                </div>
+                            {/if}
                             <div class="mb-4">
                                 <label
                                     class="block text-latte-rose-pine-text dark:text-rose-pine-text text-sm font-medium mb-2"
@@ -334,6 +491,23 @@
                 <!-- Progesterone section -->
                 <div class="w-full mt-4 md:mt-4">
                     <h3 class="text-lg font-medium mb-2">Progesterone</h3>
+                    {#if progesterone !== "" && mode === "schedule"}
+                        <div class="mb-4">
+                            <label
+                                class="block text-latte-rose-pine-text dark:text-rose-pine-text text-sm font-medium mb-2"
+                                for="pFrequency"
+                            >
+                                frequency
+                            </label>
+                            <input
+                                id="pFrequency"
+                                type="text"
+                                placeholder="e.g. daily"
+                                class="shadow appearance-none border rounded w-full py-2 px-3 text-latte-rose-pine-text dark:text-rose-pine-text leading-tight focus:outline-none focus:shadow-outline"
+                                bind:value={pFrequency}
+                            />
+                        </div>
+                    {/if}
                     <div class="flex flex-col sm:flex-row md:space-x-4">
                         <div class="w-full sm:w-1/4">
                             <label
@@ -457,7 +631,7 @@
                 class="cursor-pointer bg-latte-rose-pine-foam hover:bg-rose-pine-pine text-white font-medium py-2 px-4 rounded transition-colors focus:outline-none focus:shadow-outline"
                 type="submit"
             >
-                record dosage
+                {mode === "record" ? "record dosage" : "save schedule"}
             </button>
         </div>
     </form>
