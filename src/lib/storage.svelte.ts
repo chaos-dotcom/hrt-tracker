@@ -56,25 +56,12 @@ class hrtStore {
     };
 
     const processSchedule = (
-        schedule: { frequency: string | number; nextDoseDate?: UnixTime; [key: string]: any } | undefined,
+        schedule: { frequency: number; nextDoseDate?: UnixTime; [key: string]: any } | undefined,
         medicationType: DosageHistoryEntry['medicationType']
     ) => {
         if (!schedule || !schedule.frequency || !schedule.nextDoseDate) return;
 
-        let intervalDays: number;
-        if (typeof schedule.frequency === "number") {
-            intervalDays = schedule.frequency;
-        } else if (schedule.frequency.toLowerCase().trim() === "daily") {
-            intervalDays = 1;
-        } else {
-            const match = schedule.frequency.match(/\d+/);
-            if (match) {
-                intervalDays = parseInt(match[0], 10);
-            } else {
-                console.warn(`Could not parse frequency: "${schedule.frequency}"`);
-                return;
-            }
-        }
+        const intervalDays = schedule.frequency;
 
         const intervalMillis = intervalDays * 24 * 60 * 60 * 1000;
         if (intervalMillis <= 0) return;

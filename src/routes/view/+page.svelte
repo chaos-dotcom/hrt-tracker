@@ -424,21 +424,21 @@
                 <p>
                     <strong>Oral Estradiol:</strong>
                     {hrtData.data.oralEstradiol.type}, {hrtData.data.oralEstradiol.dose}
-                    {hrtData.data.oralEstradiol.unit} {hrtData.data.oralEstradiol.frequency}
+                    {hrtData.data.oralEstradiol.unit} every {hrtData.data.oralEstradiol.frequency} {hrtData.data.oralEstradiol.frequency === 1 ? 'day' : 'days'}
                 </p>
             {/if}
             {#if hrtData.data.antiandrogen}
                 <p>
                     <strong>Antiandrogen:</strong>
                     {hrtData.data.antiandrogen.type}, {hrtData.data.antiandrogen.dose}
-                    {hrtData.data.antiandrogen.unit} {hrtData.data.antiandrogen.frequency}
+                    {hrtData.data.antiandrogen.unit} every {hrtData.data.antiandrogen.frequency} {hrtData.data.antiandrogen.frequency === 1 ? 'day' : 'days'}
                 </p>
             {/if}
             {#if hrtData.data.progesterone}
                 <p>
                     <strong>Progesterone:</strong>
                     {hrtData.data.progesterone.type} ({hrtData.data.progesterone.route}), {hrtData.data.progesterone.dose}
-                    {hrtData.data.progesterone.unit} {hrtData.data.progesterone.frequency}
+                    {hrtData.data.progesterone.unit} every {hrtData.data.progesterone.frequency} {hrtData.data.progesterone.frequency === 1 ? 'day' : 'days'}
                 </p>
             {/if}
             {#if !hrtData.data.injectableEstradiol && !hrtData.data.oralEstradiol && !hrtData.data.antiandrogen && !hrtData.data.progesterone}
