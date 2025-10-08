@@ -14,38 +14,66 @@
     import EditModal from "$lib/components/EditModal.svelte";
 
     function generateEstrannaiseUrl(): string | null {
-        const regimen = hrtData.data;
-        if (!regimen.injectableEstradiol) {
+        const injectableDoses = hrtData.data.dosageHistory
+            .filter(
+                (d): d is Extract<DosageHistoryEntry, { medicationType: "injectableEstradiol" }> =>
+                    d.medicationType === "injectableEstradiol",
+            )
+            .sort((a, b) => a.date - b.date);
+
+        if (injectableDoses.length === 0) {
             return null;
         }
 
-        const inj = regimen.injectableEstradiol;
-        let modelId: number | undefined;
+        const doseStrings: string[] = [];
+        let lastDate: number | null = null;
 
-        switch (inj.type) {
-            case InjectableEstradiols.Valerate:
-                modelId = 1;
-                break;
-            case InjectableEstradiols.Enanthate:
-                modelId = 2;
-                break;
-            case InjectableEstradiols.Cypionate:
-                modelId = 3;
-                break;
-            case InjectableEstradiols.Benzoate:
-                modelId = 0;
-                break;
-            case InjectableEstradiols.Undecylate:
-                modelId = 4;
-                break;
+        for (const dose of injectableDoses) {
+            let modelId: number | undefined;
+            switch (dose.type) {
+                case InjectableEstradiols.Valerate:
+                    modelId = 1;
+                    break;
+                case InjectableEstradiols.Enanthate:
+                    modelId = 2;
+                    break;
+                case InjectableEstradiols.Cypionate:
+                    modelId = 3;
+                    break;
+                case InjectableEstradiols.Benzoate:
+                    modelId = 0;
+                    break;
+                case InjectableEstradiols.Undecylate:
+                    modelId = 4;
+                    break;
+            }
+
+            if (modelId !== undefined) {
+                let time: number;
+                if (lastDate === null) {
+                    time = 0;
+                } else {
+                    // time is interval in days
+                    time = (dose.date - lastDate) / (1000 * 60 * 60 * 24);
+                }
+                lastDate = dose.date;
+
+                doseStrings.push(`${dose.dose},${parseFloat(time.toFixed(3))},${modelId}`);
+            }
         }
 
-        if (modelId !== undefined) {
-            const doseString = `${inj.dose},${inj.frequency},${modelId}`;
-            return `https://estrannai.se/#i_${doseString}`;
+        if (doseStrings.length === 0) {
+            return null;
         }
 
-        return null;
+        const customDoseString = doseStrings
+            .map((ds, i) => (i === 0 ? "cu," + ds : ds))
+            .join("-");
+
+        // stateString: i for interval days.
+        const stateString = "i";
+
+        return `https://estrannai.se/#${stateString}_${customDoseString}_`;
     }
 
     let estrannaiseUrl = $derived(generateEstrannaiseUrl());
