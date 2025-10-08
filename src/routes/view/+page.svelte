@@ -405,37 +405,36 @@
         class="mb-4 border rounded-lg p-4 bg-white dark:bg-rose-pine-surface shadow-md"
     >
         <h2 class="text-xl font-medium mb-2">Current Regimen</h2>
-        {@const regimen = hrtData.data}
         <div class="space-y-1 text-sm">
-            {#if regimen.injectableEstradiol}
+            {#if hrtData.data.injectableEstradiol}
                 <p>
                     <strong>Injectable Estradiol:</strong>
-                    {regimen.injectableEstradiol.type}, {regimen.injectableEstradiol.dose}
-                    {regimen.injectableEstradiol.unit} {regimen.injectableEstradiol.frequency}
+                    {hrtData.data.injectableEstradiol.type}, {hrtData.data.injectableEstradiol.dose}
+                    {hrtData.data.injectableEstradiol.unit} {hrtData.data.injectableEstradiol.frequency}
                 </p>
             {/if}
-            {#if regimen.oralEstradiol}
+            {#if hrtData.data.oralEstradiol}
                 <p>
                     <strong>Oral Estradiol:</strong>
-                    {regimen.oralEstradiol.type}, {regimen.oralEstradiol.dose}
-                    {regimen.oralEstradiol.unit} {regimen.oralEstradiol.frequency}
+                    {hrtData.data.oralEstradiol.type}, {hrtData.data.oralEstradiol.dose}
+                    {hrtData.data.oralEstradiol.unit} {hrtData.data.oralEstradiol.frequency}
                 </p>
             {/if}
-            {#if regimen.antiandrogen}
+            {#if hrtData.data.antiandrogen}
                 <p>
                     <strong>Antiandrogen:</strong>
-                    {regimen.antiandrogen.type}, {regimen.antiandrogen.dose}
-                    {regimen.antiandrogen.unit} {regimen.antiandrogen.frequency}
+                    {hrtData.data.antiandrogen.type}, {hrtData.data.antiandrogen.dose}
+                    {hrtData.data.antiandrogen.unit} {hrtData.data.antiandrogen.frequency}
                 </p>
             {/if}
-            {#if regimen.progesterone}
+            {#if hrtData.data.progesterone}
                 <p>
                     <strong>Progesterone:</strong>
-                    {regimen.progesterone.type} ({regimen.progesterone.route}), {regimen.progesterone.dose}
-                    {regimen.progesterone.unit} {regimen.progesterone.frequency}
+                    {hrtData.data.progesterone.type} ({hrtData.data.progesterone.route}), {hrtData.data.progesterone.dose}
+                    {hrtData.data.progesterone.unit} {hrtData.data.progesterone.frequency}
                 </p>
             {/if}
-            {@const noRegimen = !regimen.injectableEstradiol && !regimen.oralEstradiol && !regimen.antiandrogen && !regimen.progesterone}
+            {@const noRegimen = !hrtData.data.injectableEstradiol && !hrtData.data.oralEstradiol && !hrtData.data.antiandrogen && !hrtData.data.progesterone}
             {#if noRegimen}
                 <p class="italic text-gray-500 dark:text-gray-400">
                     No regimen set up. You can set one on the dosage page.
