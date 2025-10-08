@@ -434,8 +434,7 @@
                     {hrtData.data.progesterone.unit} {hrtData.data.progesterone.frequency}
                 </p>
             {/if}
-            {@const noRegimen = !hrtData.data.injectableEstradiol && !hrtData.data.oralEstradiol && !hrtData.data.antiandrogen && !hrtData.data.progesterone}
-            {#if noRegimen}
+            {#if !hrtData.data.injectableEstradiol && !hrtData.data.oralEstradiol && !hrtData.data.antiandrogen && !hrtData.data.progesterone}
                 <p class="italic text-gray-500 dark:text-gray-400">
                     No regimen set up. You can set one on the dosage page.
                 </p>
