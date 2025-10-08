@@ -1,5 +1,5 @@
 import { browser } from "$app/environment";
-import type { HRTData, DosageHistoryEntry, BloodTest } from "./types";
+import type { HRTData, DosageHistoryEntry, BloodTest, Measurement } from "./types";
 import { HRT_STORAGE_KEY } from "./types";
 
 const defaultData: HRTData = {
@@ -8,6 +8,7 @@ const defaultData: HRTData = {
   // antiandrogen: undefined,
   bloodTests: [],
   dosageHistory: [],
+  measurements: [],
 };
 
 class hrtStore {
@@ -27,6 +28,14 @@ class hrtStore {
 
   deleteDosageRecord(rec: DosageHistoryEntry) {
     this.data.dosageHistory = this.data.dosageHistory.filter((r) => r !== rec);
+  }
+
+  addMeasurement(measurement: Measurement) {
+    this.data.measurements.push(measurement);
+  }
+
+  deleteMeasurement(measurement: Measurement) {
+    this.data.measurements = this.data.measurements.filter((m) => m !== measurement);
   }
 
   backfillScheduledDoses() {

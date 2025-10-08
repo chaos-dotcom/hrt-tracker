@@ -4,12 +4,16 @@
 		HormoneUnits,
 		type BloodTest,
 		type DosageHistoryEntry,
-		ProgesteroneRoutes
+		ProgesteroneRoutes,
+		type Measurement,
+		WeightUnit,
+		LengthUnit
 	} from '$lib/types';
 
-	let { item, close }: { item: BloodTest | DosageHistoryEntry; close: () => void } = $props();
+	let { item, close }: { item: BloodTest | DosageHistoryEntry | Measurement; close: () => void } = $props();
 
 	const isDosage = 'medicationType' in item;
+	const isMeasurement = 'weight' in item || 'braSize' in item;
 
 	// Common fields
 	let date = $state(new Date(item.date).toISOString().slice(0, 16));
@@ -51,6 +55,19 @@
 			: undefined
 	);
 
+	// Measurement fields
+	let weight = $state(isMeasurement ? (item as Measurement).weight : undefined);
+	let weightUnit = $state(isMeasurement ? (item as Measurement).weightUnit || WeightUnit.KG : undefined);
+	let height = $state(isMeasurement ? (item as Measurement).height : undefined);
+	let heightUnit = $state(isMeasurement ? (item as Measurement).heightUnit || LengthUnit.CM : undefined);
+	let underbust = $state(isMeasurement ? (item as Measurement).underbust : undefined);
+	let bust = $state(isMeasurement ? (item as Measurement).bust : undefined);
+	let bideltoid = $state(isMeasurement ? (item as Measurement).bideltoid : undefined);
+	let waist = $state(isMeasurement ? (item as Measurement).waist : undefined);
+	let hip = $state(isMeasurement ? (item as Measurement).hip : undefined);
+	let bodyMeasurementUnit = $state(isMeasurement ? (item as Measurement).bodyMeasurementUnit || LengthUnit.CM : undefined);
+	let braSize = $state(isMeasurement ? (item as Measurement).braSize : undefined);
+
 	function enumToDropdownOptions(e: any) {
 		return Object.entries(e).map(([, val]) => ({
 			value: val as string,
@@ -59,6 +76,8 @@
 	}
 	const unitOptions = enumToDropdownOptions(HormoneUnits);
 	const progesteroneRouteOptions = enumToDropdownOptions(ProgesteroneRoutes);
+	const weightUnitOptions = enumToDropdownOptions(WeightUnit);
+	const lengthUnitOptions = enumToDropdownOptions(LengthUnit);
 
 	function save() {
 		item.date = new Date(date).getTime();
@@ -70,6 +89,19 @@
 			if (dosageItem.medicationType === 'progesterone') {
 				(dosageItem as any).route = pRoute;
 			}
+		} else if (isMeasurement) {
+			const measurementItem = item as Measurement;
+			measurementItem.weight = weight;
+			measurementItem.weightUnit = weightUnit;
+			measurementItem.height = height;
+			measurementItem.heightUnit = heightUnit;
+			measurementItem.underbust = underbust;
+			measurementItem.bust = bust;
+			measurementItem.bideltoid = bideltoid;
+			measurementItem.waist = waist;
+			measurementItem.hip = hip;
+			measurementItem.bodyMeasurementUnit = bodyMeasurementUnit;
+			measurementItem.braSize = braSize;
 		} else {
 			const bloodTestItem = item as BloodTest;
 			bloodTestItem.estradiolLevel = estradiolLevel;
@@ -97,6 +129,8 @@
 		if (confirm('Are you sure you want to delete this entry?')) {
 			if (isDosage) {
 				hrtData.deleteDosageRecord(item as DosageHistoryEntry);
+			} else if (isMeasurement) {
+				hrtData.deleteMeasurement(item as Measurement);
 			} else {
 				hrtData.deleteBloodTest(item as BloodTest);
 			}
@@ -193,6 +227,52 @@
 					</div>
 				</div>
 			{/if}
+		{:else if isMeasurement}
+			<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+				<div>
+					<label class="block text-sm font-medium mb-2" for="weight">Weight</label>
+					<div class="flex gap-2">
+						<input id="weight" type="number" step="any" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={weight} />
+						<select class="border py-2 px-3 rounded leading-tight" bind:value={weightUnit}>
+							{#each weightUnitOptions as option}
+								<option value={option.value}>{option.label}</option>
+							{/each}
+						</select>
+					</div>
+				</div>
+				<div>
+					<label class="block text-sm font-medium mb-2" for="height">Height</label>
+					<div class="flex gap-2">
+						<input id="height" type="number" step="any" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={height} />
+						<select class="border py-2 px-3 rounded leading-tight" bind:value={heightUnit}>
+							{#each lengthUnitOptions as option}
+								<option value={option.value}>{option.label}</option>
+							{/each}
+						</select>
+					</div>
+				</div>
+			</div>
+			<div class="mb-4">
+				<label class="block text-sm font-medium mb-2">Body Measurements</label>
+				<div class="flex justify-end mb-2">
+					<select class="border py-1 px-2 rounded text-sm" bind:value={bodyMeasurementUnit}>
+						{#each lengthUnitOptions as option}
+							<option value={option.value}>{option.label}</option>
+						{/each}
+					</select>
+				</div>
+				<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+					<input type="number" step="any" placeholder="Underbust" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={underbust} />
+					<input type="number" step="any" placeholder="Bust" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={bust} />
+					<input type="number" step="any" placeholder="Bideltoid (shoulder)" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={bideltoid} />
+					<input type="number" step="any" placeholder="Waist" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={waist} />
+					<input type="number" step="any" placeholder="Hip" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={hip} />
+				</div>
+			</div>
+			<div class="mb-4">
+				<label class="block text-sm font-medium mb-2" for="braSize">Bra Size</label>
+				<input id="braSize" type="text" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={braSize} />
+			</div>
 		{:else}
 			<div class="flex gap-5">
 				<div class="w-full">

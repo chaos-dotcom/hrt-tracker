@@ -31,6 +31,16 @@ export enum ProgesteroneRoutes {
   Rectal = "Rectal",
 }
 
+export enum WeightUnit {
+  KG = "kg",
+  LBS = "lbs",
+}
+
+export enum LengthUnit {
+  CM = "cm",
+  IN = "in",
+}
+
 export enum HormoneUnits {
   E2_pg_mL = "pg/mL",
   E2_pmol_L = "pmol/L",
@@ -78,6 +88,21 @@ export type DosageHistoryEntry =
 export type EstrogenType =
   | { route: "injection"; type: InjectableEstradiols }
   | { route: "oral"; type: OralEstradiols };
+
+export interface Measurement {
+  date: UnixTime;
+  weight?: number;
+  weightUnit?: WeightUnit;
+  height?: number;
+  heightUnit?: LengthUnit;
+  underbust?: number;
+  bust?: number;
+  bideltoid?: number;
+  waist?: number;
+  hip?: number;
+  bodyMeasurementUnit?: LengthUnit;
+  braSize?: string;
+}
 
 export interface BloodTest {
   date: UnixTime;
@@ -135,4 +160,5 @@ export interface HRTData {
   };
   bloodTests: BloodTest[];
   dosageHistory: DosageHistoryEntry[];
+  measurements: Measurement[];
 }

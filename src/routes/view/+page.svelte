@@ -8,13 +8,14 @@
         type EstrogenType,
         InjectableEstradiols,
         OralEstradiols,
+        type Measurement,
     } from "$lib/types";
     import * as Plot from "@observablehq/plot";
     import EditModal from "$lib/components/EditModal.svelte";
 
-    let itemToEdit: BloodTest | DosageHistoryEntry | null = $state(null);
+    let itemToEdit: BloodTest | DosageHistoryEntry | Measurement | null = $state(null);
 
-    function onEdit(item: BloodTest | DosageHistoryEntry) {
+    function onEdit(item: BloodTest | DosageHistoryEntry | Measurement) {
         itemToEdit = item;
     }
 
@@ -395,7 +396,10 @@
     <EditModal item={itemToEdit} close={onCloseModal} />
 {/if}
 
-<h1 class="text-3xl font-bold mb-2 px-4 pt-4">HRT Tracking Data</h1>
+<div class="flex justify-between items-center px-4 pt-4">
+    <h1 class="text-3xl font-bold mb-2">HRT Tracking Data</h1>
+    <a href="/create/measurement" class="px-3 py-1 text-sm rounded bg-latte-rose-pine-foam text-white hover:bg-rose-pine-pine transition-colors">Add Measurement</a>
+</div>
 <p class="mb-4 px-4 text-sm opacity-75">
     This chart shows your hormone levels from blood tests along with your dosage
     history over time.
@@ -602,7 +606,7 @@
         </div>
     </div>
 
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div
             class="border rounded-lg p-4 bg-white dark:bg-rose-pine-surface shadow-md"
         >
@@ -685,6 +689,41 @@
             </div>
         </div>
 
+        <div
+            class="border rounded-lg p-4 bg-white dark:bg-rose-pine-surface shadow-md"
+        >
+            <h2 class="text-xl font-medium mb-2">Measurement History</h2>
+            <div class="max-h-60 overflow-y-auto">
+                {#if hrtData.data.measurements.length === 0}
+                    <p class="text-gray-500 dark:text-gray-400 italic">
+                        No measurement data available.
+                    </p>
+                {:else}
+                    <ul class="space-y-2">
+                        {#each [...hrtData.data.measurements].sort((a, b) => b.date - a.date) as m}
+                            <li class="p-2 border rounded flex justify-between items-center">
+                                <div>
+                                    <div class="font-medium">
+                                        {new Date(m.date).toLocaleDateString()}
+                                    </div>
+                                    <div class="text-sm flex flex-wrap gap-x-2 gap-y-1">
+                                        {#if m.weight}<span>Weight: {m.weight}{m.weightUnit}</span>{/if}
+                                        {#if m.height}<span>Height: {m.height}{m.heightUnit}</span>{/if}
+                                        {#if m.braSize}<span>Bra: {m.braSize}</span>{/if}
+                                        {#if m.underbust}<span>Underbust: {m.underbust}{m.bodyMeasurementUnit}</span>{/if}
+                                        {#if m.bust}<span>Bust: {m.bust}{m.bodyMeasurementUnit}</span>{/if}
+                                        {#if m.waist}<span>Waist: {m.waist}{m.bodyMeasurementUnit}</span>{/if}
+                                        {#if m.hip}<span>Hip: {m.hip}{m.bodyMeasurementUnit}</span>{/if}
+                                        {#if m.bideltoid}<span>Shoulder: {m.bideltoid}{m.bodyMeasurementUnit}</span>{/if}
+                                    </div>
+                                </div>
+                                <button class="px-3 py-1 text-sm rounded bg-latte-rose-pine-foam text-white hover:bg-rose-pine-pine transition-colors" onclick={() => onEdit(m)}>Edit</button>
+                            </li>
+                        {/each}
+                    </ul>
+                {/if}
+            </div>
+        </div>
         <div
             class="border rounded-lg p-4 bg-white dark:bg-rose-pine-surface shadow-md"
         >
