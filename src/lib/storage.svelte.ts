@@ -1,6 +1,5 @@
 import { browser } from "$app/environment";
-import type { HRTData, DosageHistoryEntry, BloodTest, Measurement } from "./types";
-import { HRT_STORAGE_KEY } from "./types";
+import type { HRTData, DosageHistoryEntry, BloodTest, Measurement, UnixTime } from "./types";
 
 const defaultData: HRTData = {
   // injectableEstradiol: undefined,
@@ -13,6 +12,15 @@ const defaultData: HRTData = {
 
 class hrtStore {
   data = $state({ ...defaultData });
+  #initialized = false;
+  #debounceTimeout: ReturnType<typeof setTimeout> | undefined;
+
+  init(initialData: HRTData) {
+    if (this.#initialized || !browser) return;
+    this.data = initialData ? { ...defaultData, ...initialData } : { ...defaultData };
+    this.backfillScheduledDoses();
+    this.#initialized = true;
+  }
 
   addBloodTest(test: BloodTest) {
     this.data.bloodTests.push(test);
@@ -95,23 +103,31 @@ class hrtStore {
     processSchedule(this.data.progesterone, "progesterone");
   }
   constructor() {
-    // 3) on first load in the browser, hydrate from localStorage
-    $effect.root(() => {
-      // if (!browser) return;
-      const raw = localStorage.getItem(HRT_STORAGE_KEY);
-      this.data = raw ? { ...defaultData, ...JSON.parse(raw) } : defaultData;
-      // ^^ hrtData is still undefined bc it's in the class, temporal dead zone. avoid referring to it
-      // use this.data instead
-      if (browser) {
-        this.backfillScheduledDoses();
+    $effect(() => {
+      if (!browser || !this.#initialized) {
+        return;
       }
-    });
 
-    $effect.root(() => {
-      $effect(() => {
-        // if (!browser) return;
-        localStorage.setItem(HRT_STORAGE_KEY, JSON.stringify(this.data));
-      });
+      // This is a dependency on data.
+      const dataToSave = JSON.stringify(this.data);
+
+      if (this.#debounceTimeout) {
+        clearTimeout(this.#debounceTimeout);
+      }
+
+      this.#debounceTimeout = setTimeout(async () => {
+        try {
+          await fetch('/api/data', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: dataToSave,
+          });
+        } catch (error) {
+          console.error('Failed to save data:', error);
+        }
+      }, 500);
     });
   }
 }

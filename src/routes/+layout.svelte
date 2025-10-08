@@ -1,8 +1,13 @@
-<script>
+<script lang="ts">
 	import { browser } from '$app/environment';
+	import { hrtData } from '$lib/storage.svelte';
 
-	let { children } = $props();
+	let { children, data } = $props();
 	import '../app.css';
+
+	if (browser) {
+		hrtData.init(data.initialHrtData);
+	}
 </script>
 
 <header>
