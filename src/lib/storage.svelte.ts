@@ -56,10 +56,10 @@ class hrtStore {
     };
 
     const processSchedule = (
-        schedule: { frequency: string | number; [key: string]: any } | undefined,
+        schedule: { frequency: string | number; nextDoseDate?: UnixTime; [key: string]: any } | undefined,
         medicationType: DosageHistoryEntry['medicationType']
     ) => {
-        if (!schedule || !schedule.frequency) return;
+        if (!schedule || !schedule.frequency || !schedule.nextDoseDate) return;
 
         let intervalDays: number;
         if (typeof schedule.frequency === "number") {
@@ -79,18 +79,18 @@ class hrtStore {
         const intervalMillis = intervalDays * 24 * 60 * 60 * 1000;
         if (intervalMillis <= 0) return;
 
-        const relevantDoses = this.data.dosageHistory.filter(d => d.medicationType === medicationType);
-        if (relevantDoses.length === 0) return;
+        let nextDoseTime = schedule.nextDoseDate;
 
-        const lastDose = relevantDoses.sort((a, b) => b.date - a.date)[0];
-
-        let nextDoseTime = lastDose.date;
-
-        while (nextDoseTime + intervalMillis <= now) {
+        while (nextDoseTime <= now) {
+            const doseExists = this.data.dosageHistory.some(d => d.medicationType === medicationType && d.date === nextDoseTime);
+            if (!doseExists) {
+                const newDose = createDoseEntry(medicationType, schedule, nextDoseTime);
+                this.data.dosageHistory.push(newDose);
+            }
             nextDoseTime += intervalMillis;
-            const newDose = createDoseEntry(medicationType, schedule, nextDoseTime);
-            this.data.dosageHistory.push(newDose);
         }
+        
+        schedule.nextDoseDate = nextDoseTime;
     };
 
     processSchedule(this.data.injectableEstradiol, "injectableEstradiol");
