@@ -20,6 +20,14 @@ class hrtStore {
   addDosageRecord(rec: DosageHistoryEntry) {
     this.data.dosageHistory.push(rec);
   }
+
+  deleteBloodTest(test: BloodTest) {
+    this.data.bloodTests = this.data.bloodTests.filter((t) => t !== test);
+  }
+
+  deleteDosageRecord(rec: DosageHistoryEntry) {
+    this.data.dosageHistory = this.data.dosageHistory.filter((r) => r !== rec);
+  }
   constructor() {
     // 3) on first load in the browser, hydrate from localStorage
     $effect.root(() => {
