@@ -1,0 +1,26 @@
+# Git
+.git
+.gitignore
+
+# Docker
+Dockerfile
+docker-compose.yml
+
+# Node
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+# SvelteKit build artifacts
+.svelte-kit
+build/
+
+# Data file (mounted as volume)
+hrt-data.json
+
+# Environment variables
+.env
+.env.*
+!.env.example
