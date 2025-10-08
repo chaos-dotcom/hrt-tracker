@@ -10,17 +10,6 @@
 			* → time of ingestion / injection and type of hormone. ev oral? injected? hemihydrate?
 * change in graphs overtime for trackable stuff
 
-## trackable stuff
-1. weight
-2. height
-4. underbust
-5. bust
-6. → bra size
-7. bideltoid
-8. waist
-9. hip
-
-
 ## routes
 index - onboarding if not setup, if setup then dashboard view, buttons to add blood test or check off dosage
 
