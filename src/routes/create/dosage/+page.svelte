@@ -26,7 +26,7 @@
         type: InjectableEstradiols.Benzoate,
     });
 
-    let injectionFrequency = $state("");
+    let injectionFrequency = $state(7);
     let oralEFrequency = $state("");
     let aaFrequency = $state("");
     let pFrequency = $state("");
@@ -56,7 +56,7 @@
             };
             eDose = sched?.dose || 0;
             eUnit = sched?.unit || HormoneUnits.mg;
-            injectionFrequency = sched?.frequency || "";
+            injectionFrequency = sched?.frequency || 7;
             showAaDosage = false;
         } else {
             // oral
@@ -292,12 +292,12 @@
                             class="block text-latte-rose-pine-text dark:text-rose-pine-text text-sm font-medium mb-2"
                             for="injectionFrequency"
                         >
-                            injection frequency
+                            injection frequency (in days)
                         </label>
                         <input
                             id="injectionFrequency"
-                            type="text"
-                            placeholder="e.g. every 7 days"
+                            type="number"
+                            placeholder="e.g. 7"
                             class="shadow appearance-none border rounded w-full py-2 px-3 text-latte-rose-pine-text dark:text-rose-pine-text leading-tight focus:outline-none focus:shadow-outline"
                             bind:value={injectionFrequency}
                             required

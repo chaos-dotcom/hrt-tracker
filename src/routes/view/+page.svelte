@@ -417,7 +417,7 @@
                 <p>
                     <strong>Injectable Estradiol:</strong>
                     {hrtData.data.injectableEstradiol.type}, {hrtData.data.injectableEstradiol.dose}
-                    {hrtData.data.injectableEstradiol.unit} {hrtData.data.injectableEstradiol.frequency}
+                    {hrtData.data.injectableEstradiol.unit} every {hrtData.data.injectableEstradiol.frequency} days
                 </p>
             {/if}
             {#if hrtData.data.oralEstradiol}

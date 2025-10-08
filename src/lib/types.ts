@@ -108,7 +108,7 @@ export interface HRTData {
     type: InjectableEstradiols;
     dose: number;
     unit: HormoneUnits;
-    frequency: string;
+    frequency: number; // in days
   };
   oralEstradiol?: {
     type: OralEstradiols;
