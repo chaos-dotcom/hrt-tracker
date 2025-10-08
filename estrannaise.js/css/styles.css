@@ -1,0 +1,477 @@
+@font-face {
+	font-family: 'IBM Plex Mono';
+	font-style: normal;
+	font-weight: 400;
+	src: local("IBM Plex Mono"), local("IBMPlexMono"), url("../fonts/IBMPlexMono-Regular-Latin1.woff2") format("woff2");
+	unicode-range: U+0020-007E, U+00A0-00FF, U+0131, U+0152-0153, U+02C6, U+02DA, U+02DC, U+2013-2014, U+2018-201A, U+201C-201E, U+2020-2022, U+2026, U+2030, U+2039-203A, U+2044, U+20AC, U+2122, U+2212, U+FB01-FB02
+}
+
+@font-face {
+	font-family: 'IBM Plex Mono';
+	font-style: normal;
+	font-weight: 700;
+	src: local("IBM Plex Mono Bold"), local("IBMPlexMono-Bold"), url("../fonts/IBMPlexMono-Bold-Latin1.woff2") format("woff2");
+	unicode-range: U+0020-007E, U+00A0-00FF, U+0131, U+0152-0153, U+02C6, U+02DA, U+02DC, U+2013-2014, U+2018-201A, U+201C-201E, U+2020-2022, U+2026, U+2030, U+2039-203A, U+2044, U+20AC, U+2122, U+2212, U+FB01-FB02
+}
+
+:root {
+    --element-height: 1.85rem;
+    --font-size-for-dummies-like-safari: 0.92em;
+}
+
+* {
+    font-family: 'IBM Plex Mono', monospace, sans-serif;
+}
+
+body, html {
+    background-color: var(--background-color);
+    color: var(--soft-foreground);
+    font-size: var(--font-size-for-dummies-like-safari);
+}
+
+a {
+    text-decoration: none;
+    font-weight: bold;
+    background-color: var(--standout-background-color);
+}
+
+#titleh1 {
+    font-weight: bold;
+    font-size: 1.3rem;
+    margin-bottom: 0;
+}
+
+p.indent {
+    text-indent: 2rem;
+}
+
+a:link, a:visited {
+    color: var(--strong-foreground);
+}
+
+th {
+    height: 2rem;
+}
+
+.container {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    grid-template-rows: auto auto 0.2fr auto auto;
+    gap: 2rem 0rem;
+    grid-auto-flow: row;
+    grid-template-areas:
+      ". header-container ."
+      ". ui-container ."
+      ". . ."
+      ". bottom-text ."
+      ". tipjars tipjars";
+}
+
+.header {
+    display: grid;
+    margin-top: 1rem;
+    grid-area: header-container;
+    grid-template-columns: auto 1fr 0.1fr;
+    grid-template-rows: 1fr auto;
+    gap: 0rem 0.5rem;
+    grid-auto-flow: row;
+    grid-template-areas:
+        "logo title the-big-light"
+        "banner-container banner-container banner-container";
+}
+
+#logo {
+    display: flex;
+    grid-area: logo;
+
+    /* do not the margin! otherwise the
+    white of the bottom of the logo doesn't
+    align with the title and it looks off */
+    margin-bottom: 0;
+    justify-content: end;
+    align-items: flex-end;
+}
+
+#logo img {
+    width: 48px;
+    height: 48px;
+}
+
+#title {
+    grid-area: title;
+    position: relative;
+    display: flex;
+    margin-bottom: 0;
+    align-items: flex-end;
+}
+
+#the-big-light {
+    grid-area: the-big-light;
+    position: relative;
+    display: flex;
+    align-items: end;
+    justify-content: center;
+}
+
+.hidden {
+    height: 0;
+    overflow: hidden;
+    padding: 0;
+    margin: 0;
+}
+
+#banner-container {
+    grid-area: banner-container;
+    display: flex;
+    /* position: relative; */
+    justify-content: center;
+    width: 100%;
+}
+
+#banner {
+    display: none;
+    position: relative;
+    width: auto;
+    text-align: left;
+    background-color: var(--soft-foreground);
+    color: var(--standout-background-color);
+    padding: 1rem;
+    margin-top: 1rem;
+    z-index: 1000;
+    border-radius: 0.35rem;
+    cursor: pointer;
+}
+
+#dismiss-banner {
+    /* background: none;
+    border: none; */
+    font-weight: bold;
+    cursor: pointer;
+}
+
+#ui-container {
+    position: relative;
+    display: grid;
+    grid-area: ui-container;
+    grid-template-columns: auto auto auto;
+    grid-template-rows: auto auto auto;
+    gap: 1rem 0rem;
+    grid-auto-flow: row;
+    grid-template-areas:
+        "plot-region plot-region plot-region"
+        "options-container options-container options-container"
+        "steadystate-container . customdose-container";
+}
+
+#plot-region {
+    grid-area: plot-region;
+    width: 100%;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+#options-container {
+    grid-area: options-container;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+#customdose-container {
+    grid-area: customdose-container;
+    position: relative;
+    align-items: start;
+    display: grid;
+    grid-template-columns: auto;
+    grid-template-rows: 1.5rem 2rem auto;
+    margin-top: 1rem;
+    gap: 0.8rem 0rem;
+    grid-auto-flow: row;
+    grid-template-areas:
+        "customdose-title"
+        "customdose-buttons"
+        "customdose-table";
+}
+
+#customdose-title {
+    grid-area: customdose-title;
+    font-size: 1rem;
+    font-weight: bold;
+}
+
+#customdose-buttons {
+    grid-area: customdose-buttons;
+}
+
+#customdose-table-container {
+    grid-area: customdose-table;
+}
+
+#csv-file {
+    display: none;
+}
+
+#steadystate-container {
+    grid-area: steadystate-container;
+    position: relative;
+    display: grid;
+    align-items: start;
+    grid-template-columns: auto;
+    grid-template-rows: 1.5rem 2rem auto;
+    margin-top: 1rem;
+    gap: 0.8rem 0rem;
+    grid-auto-flow: row;
+    grid-template-areas:
+        "steadystate-title"
+        "steadystate-buttons"
+        "steadystate-table";
+}
+
+
+#steadystate-title {
+    grid-area: steadystate-title;
+    font-size: 1rem;
+    font-weight: bold;
+}
+
+#steadystate-buttons {
+    grid-area: steadystate-buttons;
+}
+
+#steadystate-table-container {
+    grid-area: steadystate-table;
+}
+
+#bottom-text {
+    grid-area: bottom-text;
+}
+
+#tipjars {
+    grid-area: tipjars;
+}
+
+.overlay {
+    position: relative;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--strong-foreground);
+    margin: 0;
+    padding: 0;
+    border: none;
+    box-sizing: border-box;
+}
+
+.small-text {
+    font-weight: normal;
+    font-size: 0.8rem;
+    display: block;
+    text-align: center;
+}
+
+.standout-text {
+    color: var(--strong-foreground);
+    font-weight: bold;
+}
+
+select {
+    appearance: none;
+    box-sizing: border-box;
+    border: 0;
+    outline: 0;
+    background-color: var(--standout-background-color);
+    color: var(--strong-foreground);
+    padding-left: 1rem;
+    padding-right: 1rem;
+    height: var(--element-height);
+    text-align: center;
+    font-size: var(--font-size-for-dummies-like-safari);
+    border-radius: 0.35rem;
+}
+
+#fudge-factor {
+    width: 3rem;
+}
+
+#dropdown-daysinput {
+    width: 100%;
+    max-width: 9.61rem;
+    text-align: center;
+    padding: 0;
+}
+
+.dropdown-model {
+    text-align: right;
+}
+
+#dropdown-presets {
+    width: 20rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+input.flat-input {
+    appearance: textfield;
+    box-sizing: border-box;
+    border: 0;
+    outline: 0;
+    background-color: var(--standout-background-color);
+    color: var(--strong-foreground);
+    text-align: center;
+    max-width: 9.61rem;
+    width: 100%;
+    height: var(--element-height);
+    font-size: var(--font-size-for-dummies-like-safari);
+    border-radius: 0.35rem;
+}
+
+button.flat-button {
+    appearance: none;
+    box-sizing: border-box;
+    border: 0;
+    outline: 0;
+    padding-left: 0.8rem;
+    padding-right: 0.8rem;
+    height: var(--element-height);
+    text-align: center;
+    border-radius: 0.35rem;
+    background-color: var(--standout-background-color);
+    font-size: var(--font-size-for-dummies-like-safari);
+    color: var(--strong-foreground);
+}
+
+button.button-on {
+    font-weight: bold;
+    background-color: var(--soft-foreground);
+    color: var(--standout-background-color);
+}
+
+button.delete-button {
+    appearance: none;
+    padding-left: 0.8rem;
+    padding-right: 0.8rem;
+    height: var(--element-height);
+}
+
+.hidden-checkbox-state {
+    display: none;
+}
+
+.custom-checkbox {
+    width: calc(0.8 * var(--element-height));
+    height: calc(0.8 * var(--element-height));
+    background-color: var(--standout-background-color);
+    cursor: pointer;
+    border-radius: 0.35rem;
+}
+
+.visibility-cell .uncertainty-cell {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.copy-crypto {
+    display: inline;
+    cursor: copy;
+    transition: background-color 0.15s;
+    overflow-wrap: anywhere;
+    font-size: 0.75rem;
+    margin-left: 1rem;
+    margin-right: auto;
+}
+
+@media (max-width: 768px) {
+    #ui-container {
+        grid-template-areas:
+            "plot-region"
+            "options-container"
+            "steadystate-container"
+            "customdose-container";
+    }
+
+    #the-big-light {
+        align-items: bottom;
+    }
+
+    .centered-reflow {
+        display: flex;
+        justify-content: center;
+    }
+
+    #bottom-text {
+        margin-left: 0.43rem;
+        margin-right: 0.43rem;
+    }
+
+    #dropdown-presets {
+        width: 10rem;
+    }
+
+    #title {
+        /* margin-bottom: 0.5rem; */
+        align-items: center;
+    }
+
+    #titleh1 {
+        font-size: 0.8rem;
+    }
+
+    #logo {
+        align-items: center;
+    }
+
+    #logo img {
+        width: 32px;
+        height: 32px;
+    }
+}
+
+@media (min-width: 769px) {
+    #customdose-title {
+        margin-left: 4.0rem;
+    }
+
+    #customdose-buttons {
+        margin-left: 3.7rem;
+    }
+
+    #steadystate-title {
+        margin-left: 3.9rem;
+    }
+
+    #steadystate-buttons {
+        margin-left: 3.7rem;
+    }
+
+    #options-container {
+        justify-content: center;
+        margin-left: 1.5rem;
+    }
+
+    #bottom-text {
+        margin-left: 3.7rem;
+        max-width: 44rem;
+    }
+}
+
+
+@media (pointer:none), (pointer:coarse) {
+
+    #dragndrop-text {
+        display: none;
+    }
+
+    .centered-reflow {
+        display: flex;
+        justify-content: center;
+    }
+}
