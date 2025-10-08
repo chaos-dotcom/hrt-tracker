@@ -13,6 +13,120 @@
     import * as Plot from "@observablehq/plot";
     import EditModal from "$lib/components/EditModal.svelte";
 
+    function generateEstrannaiseUrl(): string | null {
+        const regimen = hrtData.data.injectableEstradiol;
+        const historicalDoses = hrtData.data.dosageHistory
+            .filter(
+                (d): d is Extract<DosageHistoryEntry, { medicationType: "injectableEstradiol" }> =>
+                    d.medicationType === "injectableEstradiol",
+            )
+            .sort((a, b) => a.date - b.date);
+
+        if (historicalDoses.length === 0 && !regimen) {
+            return null;
+        }
+
+        const allDoses: { date: number; type: InjectableEstradiols; dose: number }[] =
+            historicalDoses.map((d) => ({
+                date: d.date,
+                type: d.type,
+                dose: d.dose,
+            }));
+
+        let lastDoseDate: number;
+        let totalDurationDays = 0;
+
+        if (historicalDoses.length > 0) {
+            const firstDoseDate = historicalDoses[0].date;
+            lastDoseDate = historicalDoses[historicalDoses.length - 1].date;
+            totalDurationDays = (lastDoseDate - firstDoseDate) / (1000 * 60 * 60 * 24);
+        } else if (regimen) {
+            // No history, but we have a regimen. Start from today.
+            lastDoseDate = Date.now();
+            // Add a dose for today to start the projection
+            allDoses.push({
+                date: lastDoseDate,
+                type: regimen.type,
+                dose: regimen.dose,
+            });
+        } else {
+            return null; // Should be unreachable
+        }
+
+        if (regimen && totalDurationDays < 80) {
+            const frequencyMs = regimen.frequency * 24 * 60 * 60 * 1000;
+            let nextDoseDate = lastDoseDate + frequencyMs;
+
+            while (totalDurationDays < 80) {
+                allDoses.push({
+                    date: nextDoseDate,
+                    type: regimen.type,
+                    dose: regimen.dose,
+                });
+
+                const firstDate = allDoses[0].date;
+                totalDurationDays = (nextDoseDate - firstDate) / (1000 * 60 * 60 * 24);
+                nextDoseDate += frequencyMs;
+            }
+        }
+
+        if (allDoses.length === 0) {
+            return null;
+        }
+
+        const doseStrings: string[] = [];
+        let lastDateForInterval: number | null = null;
+
+        for (const dose of allDoses) {
+            let modelId: number | undefined;
+            switch (dose.type) {
+                case InjectableEstradiols.Valerate:
+                    modelId = 1;
+                    break;
+                case InjectableEstradiols.Enanthate:
+                    modelId = 2;
+                    break;
+                case InjectableEstradiols.Cypionate:
+                    modelId = 3;
+                    break;
+                case InjectableEstradiols.Benzoate:
+                    modelId = 0;
+                    break;
+                case InjectableEstradiols.Undecylate:
+                    modelId = 4;
+                    break;
+            }
+
+            if (modelId !== undefined) {
+                let time: number;
+                if (lastDateForInterval === null) {
+                    time = 0;
+                } else {
+                    // time is interval in days
+                    time = (dose.date - lastDateForInterval) / (1000 * 60 * 60 * 24);
+                }
+                lastDateForInterval = dose.date;
+
+                doseStrings.push(`${dose.dose},${parseFloat(time.toFixed(3))},${modelId}`);
+            }
+        }
+
+        if (doseStrings.length === 0) {
+            return null;
+        }
+
+        const customDoseString = doseStrings
+            .map((ds, i) => (i === 0 ? "cu," + ds : ds))
+            .join("-");
+
+        // stateString: i for interval days.
+        const stateString = "i";
+
+        return `https://estrannai.se/#${stateString}_${customDoseString}_`;
+    }
+
+    let estrannaiseUrl = $derived(generateEstrannaiseUrl());
+
     let itemToEdit: BloodTest | DosageHistoryEntry | Measurement | null = $state(null);
 
     function onEdit(item: BloodTest | DosageHistoryEntry | Measurement) {
@@ -410,11 +524,22 @@
     >
         <div class="flex justify-between items-center mb-2">
             <h2 class="text-xl font-medium">Current Regimen</h2>
-            <a
-                href="/create/dosage?mode=schedule"
-                class="px-3 py-1 text-sm rounded bg-latte-rose-pine-foam text-white hover:bg-rose-pine-pine transition-colors"
-                >Edit Schedule</a
-            >
+            <div class="flex gap-2 items-center">
+                {#if estrannaiseUrl}
+                    <a
+                        href={estrannaiseUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="px-3 py-1 text-sm rounded bg-latte-rose-pine-iris text-white hover:bg-rose-pine-pine transition-colors"
+                        >View on Estrannaise</a
+                    >
+                {/if}
+                <a
+                    href="/create/dosage?mode=schedule"
+                    class="px-3 py-1 text-sm rounded bg-latte-rose-pine-foam text-white hover:bg-rose-pine-pine transition-colors"
+                    >Edit Schedule</a
+                >
+            </div>
         </div>
         <div class="space-y-1 text-sm">
             {#if hrtData.data.injectableEstradiol}

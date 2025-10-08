@@ -1,6 +1,0 @@
-node_modules
-dist
-src/old_code_stash.js
-.DS_Store
-.vscode
-docs/*.svg
