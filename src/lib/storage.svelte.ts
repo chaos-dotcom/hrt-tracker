@@ -20,6 +20,29 @@ class hrtStore {
     this.data = initialData ? { ...defaultData, ...initialData } : { ...defaultData };
     this.backfillScheduledDoses();
     this.#initialized = true;
+
+    $effect(() => {
+      // This is a dependency on data.
+      const dataToSave = JSON.stringify(this.data);
+
+      if (this.#debounceTimeout) {
+        clearTimeout(this.#debounceTimeout);
+      }
+
+      this.#debounceTimeout = setTimeout(async () => {
+        try {
+          await fetch('/api/data', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: dataToSave,
+          });
+        } catch (error) {
+          console.error('Failed to save data:', error);
+        }
+      }, 500);
+    });
   }
 
   addBloodTest(test: BloodTest) {
@@ -103,32 +126,7 @@ class hrtStore {
     processSchedule(this.data.progesterone, "progesterone");
   }
   constructor() {
-    $effect(() => {
-      if (!browser || !this.#initialized) {
-        return;
-      }
-
-      // This is a dependency on data.
-      const dataToSave = JSON.stringify(this.data);
-
-      if (this.#debounceTimeout) {
-        clearTimeout(this.#debounceTimeout);
-      }
-
-      this.#debounceTimeout = setTimeout(async () => {
-        try {
-          await fetch('/api/data', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: dataToSave,
-          });
-        } catch (error) {
-          console.error('Failed to save data:', error);
-        }
-      }, 500);
-    });
+    // $effect has been moved to init() to avoid effect_orphan error.
   }
 }
 export const hrtData = new hrtStore();
