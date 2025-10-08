@@ -1,6 +1,5 @@
 services:
   hrt-tracker:
-    name: hrt-tracker
     image: ghcr.io/chaos-dotcom/hrt-tracker:latest
     ports:
       - "3000:3000"
