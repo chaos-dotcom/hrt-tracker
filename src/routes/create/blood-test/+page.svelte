@@ -7,6 +7,17 @@
     let eLevel = $state(0);
     let testUnit: HormoneUnits = $state(HormoneUnits.T_ng_dL);
     let eUnit: HormoneUnits = $state(HormoneUnits.E2_pg_mL);
+    let progesteroneLevel = $state(0);
+    let progesteroneUnit: HormoneUnits = $state(HormoneUnits.ng_mL);
+    let fshLevel = $state(0);
+    let fshUnit: HormoneUnits = $state(HormoneUnits.mIU_mL);
+    let lhLevel = $state(0);
+    let lhUnit: HormoneUnits = $state(HormoneUnits.mIU_mL);
+    let prolactinLevel = $state(0);
+    let prolactinUnit: HormoneUnits = $state(HormoneUnits.ng_mL);
+    let shbgLevel = $state(0);
+    let shbgUnit: HormoneUnits = $state(HormoneUnits.T_nmol_L);
+    let freeAndrogenIndex = $state(0);
     let notes = $state("");
     let showFeedback = $state(false);
 
@@ -28,6 +39,17 @@
             testLevel: testLevel,
             testUnit: testUnit,
             estradiolUnit: eUnit,
+            progesteroneLevel: progesteroneLevel,
+            progesteroneUnit: progesteroneUnit,
+            fshLevel: fshLevel,
+            fshUnit: fshUnit,
+            lhLevel: lhLevel,
+            lhUnit: lhUnit,
+            prolactinLevel: prolactinLevel,
+            prolactinUnit: prolactinUnit,
+            shbgLevel: shbgLevel,
+            shbgUnit: shbgUnit,
+            freeAndrogenIndex: freeAndrogenIndex,
             notes: notes,
         };
         hrtData.addBloodTest(newBloodTest);
@@ -79,6 +101,7 @@
                     <input
                         id="eLevel"
                         type="number"
+                        step="any"
                         class="shadow appearance-none border rounded w-full py-2 px-3 text-latte-rose-pine-text dark:text-rose-pine-text leading-tight focus:outline-none focus:shadow-outline"
                         bind:value={eLevel}
                     />
@@ -113,6 +136,7 @@
                     <input
                         id="testLevel"
                         type="number"
+                        step="any"
                         class="shadow appearance-none border rounded w-full py-2 px-3 text-latte-rose-pine-text dark:text-rose-pine-text leading-tight focus:outline-none focus:shadow-outline"
                         bind:value={testLevel}
                     />
@@ -133,6 +157,202 @@
                             <option value={option.value}>{option.label}</option>
                         {/each}
                     </select>
+                </div>
+            </div>
+
+            <div class="flex gap-5 mt-4">
+                <div class="w-full">
+                    <label
+                        class="block text-latte-rose-pine-text dark:text-rose-pine-text text-sm mb-1"
+                        for="progesteroneLevel"
+                    >
+                        progesterone level
+                    </label>
+                    <input
+                        id="progesteroneLevel"
+                        type="number"
+                        step="any"
+                        class="shadow appearance-none border rounded w-full py-2 px-3 text-latte-rose-pine-text dark:text-rose-pine-text leading-tight focus:outline-none focus:shadow-outline"
+                        bind:value={progesteroneLevel}
+                    />
+                </div>
+                <div class="w-full">
+                    <label
+                        class="block text-latte-rose-pine-text dark:text-rose-pine-text text-sm mb-1"
+                        for="progesteroneUnit"
+                    >
+                        progesterone unit
+                    </label>
+                    <select
+                        class="border py-2 px-3 rounded w-full leading-tight"
+                        id="progesteroneUnit"
+                        bind:value={progesteroneUnit}
+                    >
+                        {#each unitOptions as option}
+                            <option value={option.value}>{option.label}</option>
+                        {/each}
+                    </select>
+                </div>
+            </div>
+
+            <div class="flex gap-5 mt-4">
+                <div class="w-full">
+                    <label
+                        class="block text-latte-rose-pine-text dark:text-rose-pine-text text-sm mb-1"
+                        for="fshLevel"
+                    >
+                        FSH level
+                    </label>
+                    <input
+                        id="fshLevel"
+                        type="number"
+                        step="any"
+                        class="shadow appearance-none border rounded w-full py-2 px-3 text-latte-rose-pine-text dark:text-rose-pine-text leading-tight focus:outline-none focus:shadow-outline"
+                        bind:value={fshLevel}
+                    />
+                </div>
+                <div class="w-full">
+                    <label
+                        class="block text-latte-rose-pine-text dark:text-rose-pine-text text-sm mb-1"
+                        for="fshUnit"
+                    >
+                        FSH unit
+                    </label>
+                    <select
+                        class="border py-2 px-3 rounded w-full leading-tight"
+                        id="fshUnit"
+                        bind:value={fshUnit}
+                    >
+                        {#each unitOptions as option}
+                            <option value={option.value}>{option.label}</option>
+                        {/each}
+                    </select>
+                </div>
+            </div>
+
+            <div class="flex gap-5 mt-4">
+                <div class="w-full">
+                    <label
+                        class="block text-latte-rose-pine-text dark:text-rose-pine-text text-sm mb-1"
+                        for="lhLevel"
+                    >
+                        LH level
+                    </label>
+                    <input
+                        id="lhLevel"
+                        type="number"
+                        step="any"
+                        class="shadow appearance-none border rounded w-full py-2 px-3 text-latte-rose-pine-text dark:text-rose-pine-text leading-tight focus:outline-none focus:shadow-outline"
+                        bind:value={lhLevel}
+                    />
+                </div>
+                <div class="w-full">
+                    <label
+                        class="block text-latte-rose-pine-text dark:text-rose-pine-text text-sm mb-1"
+                        for="lhUnit"
+                    >
+                        LH unit
+                    </label>
+                    <select
+                        class="border py-2 px-3 rounded w-full leading-tight"
+                        id="lhUnit"
+                        bind:value={lhUnit}
+                    >
+                        {#each unitOptions as option}
+                            <option value={option.value}>{option.label}</option>
+                        {/each}
+                    </select>
+                </div>
+            </div>
+
+            <div class="flex gap-5 mt-4">
+                <div class="w-full">
+                    <label
+                        class="block text-latte-rose-pine-text dark:text-rose-pine-text text-sm mb-1"
+                        for="prolactinLevel"
+                    >
+                        prolactin level
+                    </label>
+                    <input
+                        id="prolactinLevel"
+                        type="number"
+                        step="any"
+                        class="shadow appearance-none border rounded w-full py-2 px-3 text-latte-rose-pine-text dark:text-rose-pine-text leading-tight focus:outline-none focus:shadow-outline"
+                        bind:value={prolactinLevel}
+                    />
+                </div>
+                <div class="w-full">
+                    <label
+                        class="block text-latte-rose-pine-text dark:text-rose-pine-text text-sm mb-1"
+                        for="prolactinUnit"
+                    >
+                        prolactin unit
+                    </label>
+                    <select
+                        class="border py-2 px-3 rounded w-full leading-tight"
+                        id="prolactinUnit"
+                        bind:value={prolactinUnit}
+                    >
+                        {#each unitOptions as option}
+                            <option value={option.value}>{option.label}</option>
+                        {/each}
+                    </select>
+                </div>
+            </div>
+
+            <div class="flex gap-5 mt-4">
+                <div class="w-full">
+                    <label
+                        class="block text-latte-rose-pine-text dark:text-rose-pine-text text-sm mb-1"
+                        for="shbgLevel"
+                    >
+                        SHBG level
+                    </label>
+                    <input
+                        id="shbgLevel"
+                        type="number"
+                        step="any"
+                        class="shadow appearance-none border rounded w-full py-2 px-3 text-latte-rose-pine-text dark:text-rose-pine-text leading-tight focus:outline-none focus:shadow-outline"
+                        bind:value={shbgLevel}
+                    />
+                </div>
+                <div class="w-full">
+                    <label
+                        class="block text-latte-rose-pine-text dark:text-rose-pine-text text-sm mb-1"
+                        for="shbgUnit"
+                    >
+                        SHBG unit
+                    </label>
+                    <select
+                        class="border py-2 px-3 rounded w-full leading-tight"
+                        id="shbgUnit"
+                        bind:value={shbgUnit}
+                    >
+                        {#each unitOptions as option}
+                            <option value={option.value}>{option.label}</option>
+                        {/each}
+                    </select>
+                </div>
+            </div>
+
+            <div class="flex gap-5 mt-4">
+                <div class="w-full">
+                    <label
+                        class="block text-latte-rose-pine-text dark:text-rose-pine-text text-sm mb-1"
+                        for="freeAndrogenIndex"
+                    >
+                        Free Androgen Index
+                    </label>
+                    <input
+                        id="freeAndrogenIndex"
+                        type="number"
+                        step="any"
+                        class="shadow appearance-none border rounded w-full py-2 px-3 text-latte-rose-pine-text dark:text-rose-pine-text leading-tight focus:outline-none focus:shadow-outline"
+                        bind:value={freeAndrogenIndex}
+                    />
+                </div>
+                <div class="w-full">
+                    <!-- empty div for alignment -->
                 </div>
             </div>
         </div>

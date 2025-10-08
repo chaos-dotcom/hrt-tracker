@@ -515,7 +515,9 @@
                                     <div class="font-medium">
                                         {new Date(t.date).toLocaleDateString()}
                                     </div>
-                                    <div class="text-sm">
+                                    <div
+                                        class="text-sm flex flex-wrap gap-x-2 gap-y-1"
+                                    >
                                         {#if t.estradiolLevel !== undefined}
                                             <span
                                                 >E2: {t.estradiolLevel}
@@ -523,9 +525,44 @@
                                             >
                                         {/if}
                                         {#if t.testLevel !== undefined}
-                                            <span class="ml-2"
+                                            <span
                                                 >T: {t.testLevel}
                                                 {t.testUnit || "ng/dL"}</span
+                                            >
+                                        {/if}
+                                        {#if t.progesteroneLevel !== undefined}
+                                            <span
+                                                >Prog: {t.progesteroneLevel}
+                                                {t.progesteroneUnit || "ng/mL"}</span
+                                            >
+                                        {/if}
+                                        {#if t.fshLevel !== undefined}
+                                            <span
+                                                >FSH: {t.fshLevel}
+                                                {t.fshUnit || "mIU/mL"}</span
+                                            >
+                                        {/if}
+                                        {#if t.lhLevel !== undefined}
+                                            <span
+                                                >LH: {t.lhLevel}
+                                                {t.lhUnit || "mIU/mL"}</span
+                                            >
+                                        {/if}
+                                        {#if t.prolactinLevel !== undefined}
+                                            <span
+                                                >PRL: {t.prolactinLevel}
+                                                {t.prolactinUnit || "ng/mL"}</span
+                                            >
+                                        {/if}
+                                        {#if t.shbgLevel !== undefined}
+                                            <span
+                                                >SHBG: {t.shbgLevel}
+                                                {t.shbgUnit || "nmol/L"}</span
+                                            >
+                                        {/if}
+                                        {#if t.freeAndrogenIndex !== undefined}
+                                            <span
+                                                >FAI: {t.freeAndrogenIndex}</span
                                             >
                                         {/if}
                                     </div>
