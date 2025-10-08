@@ -13,6 +13,43 @@
     import * as Plot from "@observablehq/plot";
     import EditModal from "$lib/components/EditModal.svelte";
 
+    function generateEstrannaiseUrl(): string | null {
+        const regimen = hrtData.data;
+        if (!regimen.injectableEstradiol) {
+            return null;
+        }
+
+        const inj = regimen.injectableEstradiol;
+        let modelId: number | undefined;
+
+        switch (inj.type) {
+            case InjectableEstradiols.Valerate:
+                modelId = 1;
+                break;
+            case InjectableEstradiols.Enanthate:
+                modelId = 2;
+                break;
+            case InjectableEstradiols.Cypionate:
+                modelId = 3;
+                break;
+            case InjectableEstradiols.Benzoate:
+                modelId = 0;
+                break;
+            case InjectableEstradiols.Undecylate:
+                modelId = 4;
+                break;
+        }
+
+        if (modelId !== undefined) {
+            const doseString = `${inj.dose},${inj.frequency},${modelId}`;
+            return `https://estrannai.se/#i_${doseString}`;
+        }
+
+        return null;
+    }
+
+    let estrannaiseUrl = $derived(generateEstrannaiseUrl());
+
     let itemToEdit: BloodTest | DosageHistoryEntry | Measurement | null = $state(null);
 
     function onEdit(item: BloodTest | DosageHistoryEntry | Measurement) {
@@ -410,11 +447,22 @@
     >
         <div class="flex justify-between items-center mb-2">
             <h2 class="text-xl font-medium">Current Regimen</h2>
-            <a
-                href="/create/dosage?mode=schedule"
-                class="px-3 py-1 text-sm rounded bg-latte-rose-pine-foam text-white hover:bg-rose-pine-pine transition-colors"
-                >Edit Schedule</a
-            >
+            <div class="flex gap-2 items-center">
+                {#if estrannaiseUrl}
+                    <a
+                        href={estrannaiseUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="px-3 py-1 text-sm rounded bg-latte-rose-pine-iris text-white hover:bg-rose-pine-pine transition-colors"
+                        >View on Estrannaise</a
+                    >
+                {/if}
+                <a
+                    href="/create/dosage?mode=schedule"
+                    class="px-3 py-1 text-sm rounded bg-latte-rose-pine-foam text-white hover:bg-rose-pine-pine transition-colors"
+                    >Edit Schedule</a
+                >
+            </div>
         </div>
         <div class="space-y-1 text-sm">
             {#if hrtData.data.injectableEstradiol}
