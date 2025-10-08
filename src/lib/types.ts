@@ -115,14 +115,14 @@ export interface HRTData {
     type: OralEstradiols;
     dose: number;
     unit: HormoneUnits;
-    frequency: string;
+    frequency: number; // in days
     nextDoseDate?: UnixTime;
   };
   antiandrogen?: {
     type: Antiandrogens;
     dose: number;
     unit: HormoneUnits;
-    frequency: string;
+    frequency: number; // in days
     nextDoseDate?: UnixTime;
   };
   progesterone?: {
@@ -130,7 +130,7 @@ export interface HRTData {
     route: ProgesteroneRoutes;
     dose: number;
     unit: HormoneUnits;
-    frequency: string;
+    frequency: number; // in days
     nextDoseDate?: UnixTime;
   };
   bloodTests: BloodTest[];

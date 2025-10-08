@@ -23,7 +23,7 @@
     let eDose = $state(0);
     let eUnit: HormoneUnits = $state(HormoneUnits.mg);
     let injectionFrequency = $state(7);
-    let oralEFrequency = $state("");
+    let oralEFrequency = $state(1);
     let eDateTime = $state("");
     let eNextDoseDate = $state("");
 
@@ -31,7 +31,7 @@
     let aaType: Antiandrogens | "" = $state("");
     let aaDose = $state(0);
     let aaUnit: HormoneUnits = $state(HormoneUnits.mg);
-    let aaFrequency = $state("");
+    let aaFrequency = $state(1);
     let aaDateTime = $state("");
     let aaNextDoseDate = $state("");
 
@@ -40,7 +40,7 @@
     let pDose = $state(0);
     let pUnit: HormoneUnits = $state(HormoneUnits.mg);
     let pRoute: ProgesteroneRoutes = $state(ProgesteroneRoutes.Oral);
-    let pFrequency = $state("");
+    let pFrequency = $state(1);
     let pDateTime = $state("");
     let pNextDoseDate = $state("");
 
@@ -69,7 +69,7 @@
             oralEType = oralSched.type;
             eDose = oralSched.dose;
             eUnit = oralSched.unit;
-            oralEFrequency = oralSched.frequency;
+            oralEFrequency = oralSched.frequency || 1;
             eNextDoseDate = oralSched.nextDoseDate ? new Date(oralSched.nextDoseDate).toISOString().slice(0, 16) : "";
         }
 
@@ -78,7 +78,7 @@
         aaType = aaSched?.type || "";
         aaDose = aaSched?.dose || 0;
         aaUnit = aaSched?.unit || HormoneUnits.mg;
-        aaFrequency = aaSched?.frequency || "";
+        aaFrequency = aaSched?.frequency || 1;
         aaNextDoseDate = aaSched?.nextDoseDate ? new Date(aaSched.nextDoseDate).toISOString().slice(0, 16) : "";
 
         // Progesterone
@@ -87,7 +87,7 @@
         pDose = pSched?.dose || 0;
         pUnit = pSched?.unit || HormoneUnits.mg;
         pRoute = pSched?.route || ProgesteroneRoutes.Oral;
-        pFrequency = pSched?.frequency || "";
+        pFrequency = pSched?.frequency || 1;
         pNextDoseDate = pSched?.nextDoseDate ? new Date(pSched.nextDoseDate).toISOString().slice(0, 16) : "";
     });
 
@@ -321,12 +321,11 @@
                     </div>
                     {#if mode === 'schedule'}
                         <div>
-                            <label class="block text-sm font-medium mb-2" for="eFrequency">frequency</label>
+                            <label class="block text-sm font-medium mb-2" for="eFrequency">frequency (in days)</label>
                             {#if estrogenMethod === 'injection'}
                                 <input id="eFrequency" type="number" placeholder="e.g. 7" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={injectionFrequency} required />
-                                <span class="text-xs italic">in days</span>
                             {:else}
-                                <input id="eFrequency" type="text" placeholder="e.g. daily" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={oralEFrequency} required />
+                                <input id="eFrequency" type="number" placeholder="e.g. 1" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={oralEFrequency} required />
                             {/if}
                         </div>
                     {/if}
@@ -381,8 +380,8 @@
                     {#if aaType !== ''}
                         {#if mode === 'schedule'}
                             <div>
-                                <label class="block text-sm font-medium mb-2" for="aaFrequency">frequency</label>
-                                <input id="aaFrequency" type="text" placeholder="e.g. daily" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={aaFrequency} />
+                                <label class="block text-sm font-medium mb-2" for="aaFrequency">frequency (in days)</label>
+                                <input id="aaFrequency" type="number" placeholder="e.g. 1" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={aaFrequency} />
                             </div>
                         {/if}
                         <div>
@@ -437,8 +436,8 @@
                     {#if pType !== ''}
                         {#if mode === 'schedule'}
                             <div>
-                                <label class="block text-sm font-medium mb-2" for="pFrequency">frequency</label>
-                                <input id="pFrequency" type="text" placeholder="e.g. daily" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={pFrequency} />
+                                <label class="block text-sm font-medium mb-2" for="pFrequency">frequency (in days)</label>
+                                <input id="pFrequency" type="number" placeholder="e.g. 1" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={pFrequency} />
                             </div>
                         {/if}
                         <div>
