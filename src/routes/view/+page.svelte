@@ -127,6 +127,19 @@
 
     let estrannaiseUrl = $derived(generateEstrannaiseUrl());
 
+    let daysSinceFirstDose = $derived(() => {
+        if (hrtData.data.dosageHistory.length === 0) {
+            return null;
+        }
+
+        const firstDoseDate = Math.min(...hrtData.data.dosageHistory.map((d) => d.date));
+        const now = Date.now();
+        const diffTime = Math.abs(now - firstDoseDate);
+        const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+        return diffDays;
+    });
+
     let itemToEdit: BloodTest | DosageHistoryEntry | Measurement | null = $state(null);
 
     function onEdit(item: BloodTest | DosageHistoryEntry | Measurement) {
@@ -542,6 +555,11 @@
             </div>
         </div>
         <div class="space-y-1 text-sm">
+            {#if daysSinceFirstDose !== null}
+                <p>
+                    <strong>Days since first dose:</strong> {daysSinceFirstDose}
+                </p>
+            {/if}
             {#if hrtData.data.injectableEstradiol}
                 <p>
                     <strong>Injectable Estradiol:</strong>
