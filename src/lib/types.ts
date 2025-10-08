@@ -28,6 +28,9 @@ export enum HormoneUnits {
   T_ng_dL = "ng/dL",
   T_nmol_L = "nmol/L",
   mg = "mg",
+  ng_mL = "ng/mL",
+  mIU_mL = "mIU/mL",
+  mIU_L = "mIU/L",
 }
 
 export type UnixTime = number;
@@ -65,6 +68,17 @@ export interface BloodTest {
   testLevel?: number;
   estradiolUnit?: HormoneUnits;
   testUnit?: HormoneUnits;
+  progesteroneLevel?: number;
+  progesteroneUnit?: HormoneUnits;
+  fshLevel?: number;
+  fshUnit?: HormoneUnits;
+  lhLevel?: number;
+  lhUnit?: HormoneUnits;
+  prolactinLevel?: number;
+  prolactinUnit?: HormoneUnits;
+  shbgLevel?: number;
+  shbgUnit?: HormoneUnits;
+  freeAndrogenIndex?: number;
   notes?: string;
   // i have to keep track of oral or injection so we gotta add those as types
   estrogenType?: EstrogenType;

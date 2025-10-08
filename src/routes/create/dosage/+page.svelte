@@ -220,6 +220,7 @@
                             <input
                                 id="dose"
                                 type="number"
+                                step="any"
                                 class="shadow appearance-none border rounded w-full py-2 px-3 text-latte-rose-pine-text dark:text-rose-pine-text leading-tight focus:outline-none focus:shadow-outline"
                                 bind:value={eDose}
                                 required
@@ -281,6 +282,7 @@
                                 <input
                                     id="aaDose"
                                     type="number"
+                                    step="any"
                                     class="shadow appearance-none border rounded w-full py-2 px-3 text-latte-rose-pine-text dark:text-rose-pine-text leading-tight focus:outline-none focus:shadow-outline"
                                     bind:value={aaDose}
                                 />
@@ -322,6 +324,7 @@
                 <input
                     id="dose"
                     type="number"
+                    step="any"
                     class="shadow appearance-none border rounded w-full py-2 px-3 text-latte-rose-pine-text dark:text-rose-pine-text leading-tight focus:outline-none focus:shadow-outline"
                     bind:value={eDose}
                     required
