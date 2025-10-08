@@ -129,17 +129,21 @@
 
     let estrannaiseUrl = $derived(generateEstrannaiseUrl());
 
-    let daysSinceFirstDose = $derived(() => {
-        if ((hrtData.data.dosageHistory?.length ?? 0) === 0) {
-            return null;
+    let daysSinceFirstDose: number | null = $state(null);
+
+    $effect(() => {
+        const dosageHistory = hrtData.data.dosageHistory;
+        if (!dosageHistory || dosageHistory.length === 0) {
+            daysSinceFirstDose = null;
+            return;
         }
 
-        const firstDoseDate = Math.min(...hrtData.data.dosageHistory.map((d) => d.date));
+        const firstDoseDate = Math.min(...dosageHistory.map((d) => d.date));
         const now = Date.now();
         const diffTime = Math.abs(now - firstDoseDate);
         const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
 
-        return diffDays;
+        daysSinceFirstDose = diffDays;
     });
 
     let itemToEdit: BloodTest | DosageHistoryEntry | Measurement | null = $state(null);
