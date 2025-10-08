@@ -4,5 +4,5 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - ./hrt-data.json:/app/hrt-data.json
+      - ./data:/app/data
     restart: unless-stopped

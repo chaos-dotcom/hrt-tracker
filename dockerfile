@@ -29,4 +29,4 @@ RUN npm install --omit=dev
 ENV PORT=3000
 EXPOSE 3000
 
-CMD ["node", "build"]
+CMD ["/bin/sh", "-c", "mkdir -p /app/data && touch /app/data/hrt-data.json && ln -sf /app/data/hrt-data.json /app/hrt-data.json && node build"]
