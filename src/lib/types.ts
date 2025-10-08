@@ -22,6 +22,15 @@ export enum Antiandrogens {
   Finasteride = "Finasteride",
 }
 
+export enum Progesterones {
+  Micronized = "Micronized Progesterone",
+}
+
+export enum ProgesteroneRoutes {
+  Oral = "Oral",
+  Rectal = "Rectal",
+}
+
 export enum HormoneUnits {
   E2_pg_mL = "pg/mL",
   E2_pmol_L = "pmol/L",
@@ -54,6 +63,14 @@ export type DosageHistoryEntry =
       date: UnixTime;
       medicationType: "antiandrogen";
       type: Antiandrogens;
+      dose: number;
+      unit: HormoneUnits;
+    }
+  | {
+      date: UnixTime;
+      medicationType: "progesterone";
+      type: Progesterones;
+      route: ProgesteroneRoutes;
       dose: number;
       unit: HormoneUnits;
     };
@@ -101,6 +118,13 @@ export interface HRTData {
   };
   antiandrogen?: {
     type: Antiandrogens;
+    dose: number;
+    unit: HormoneUnits;
+    frequency: string;
+  };
+  progesterone?: {
+    type: Progesterones;
+    route: ProgesteroneRoutes;
     dose: number;
     unit: HormoneUnits;
     frequency: string;

@@ -7,6 +7,8 @@
         Antiandrogens,
         HormoneUnits,
         type DosageHistoryEntry,
+        Progesterones,
+        ProgesteroneRoutes,
     } from "$lib/types";
 
     let method: "injection" | "oral" = $state("injection");
@@ -21,6 +23,11 @@
         route: "injection",
         type: InjectableEstradiols.Benzoate,
     });
+
+    let pDose = $state(0);
+    let pUnit: HormoneUnits = $state(HormoneUnits.mg);
+    let pRoute: ProgesteroneRoutes = $state(ProgesteroneRoutes.Oral);
+    let progesterone: Progesterones | "" = $state(Progesterones.Micronized);
 
     $effect(() => {
         if (method === "injection") {
@@ -51,6 +58,8 @@
     const aaOptions = enumToDropdownOptions(Antiandrogens);
     const injectOptions = enumToDropdownOptions(InjectableEstradiols);
     const unitOptions = enumToDropdownOptions(HormoneUnits);
+    const progesteroneOptions = enumToDropdownOptions(Progesterones);
+    const progesteroneRouteOptions = enumToDropdownOptions(ProgesteroneRoutes);
 
     function handleSubmit(event: Event) {
         event.preventDefault();
@@ -89,6 +98,18 @@
                     unit: aaUnit,
                 };
                 hrtData.addDosageRecord(aaRecord);
+            }
+
+            if (progesterone !== "") {
+                const pRecord: DosageHistoryEntry = {
+                    date: new Date(currentDateTime).getTime(),
+                    medicationType: "progesterone",
+                    type: progesterone,
+                    route: pRoute,
+                    dose: pDose,
+                    unit: pUnit,
+                };
+                hrtData.addDosageRecord(pRecord);
             }
         }
         hrtData.addDosageRecord(newDosageRecord);
@@ -301,6 +322,87 @@
                                     bind:value={aaUnit}
                                 >
                                     {#each unitOptions as option}
+                                        <option value={option.value}
+                                            >{option.label}</option
+                                        >
+                                    {/each}
+                                </select>
+                            </div>
+                        {/if}
+                    </div>
+                </div>
+                <!-- Progesterone section -->
+                <div class="w-full mt-4 md:mt-4">
+                    <h3 class="text-lg font-medium mb-2">Progesterone</h3>
+                    <div class="flex flex-col sm:flex-row md:space-x-4">
+                        <div class="w-full sm:w-1/4">
+                            <label
+                                class="block text-latte-rose-pine-text dark:text-rose-pine-text text-sm font-medium mb-2"
+                                for="progesteroneType"
+                            >
+                                progesterone type
+                            </label>
+                            <select
+                                class="border py-2 px-3 rounded w-full leading-tight bg-white dark:bg-rose-pine-surface text-latte-rose-pine-text dark:text-rose-pine-text"
+                                id="progesteroneType"
+                                bind:value={progesterone}
+                            >
+                                <option value="">None</option>
+                                {#each progesteroneOptions as option}
+                                    <option value={option.value}
+                                        >{option.label}</option
+                                    >
+                                {/each}
+                            </select>
+                        </div>
+                        {#if progesterone !== ""}
+                            <div class="w-full sm:w-1/4">
+                                <label
+                                    class="block text-latte-rose-pine-text dark:text-rose-pine-text text-sm font-medium mb-2"
+                                    for="pDose"
+                                >
+                                    dose
+                                </label>
+                                <input
+                                    id="pDose"
+                                    type="number"
+                                    step="any"
+                                    class="shadow appearance-none border rounded w-full py-2 px-3 text-latte-rose-pine-text dark:text-rose-pine-text leading-tight focus:outline-none focus:shadow-outline"
+                                    bind:value={pDose}
+                                />
+                            </div>
+                            <div class="w-full sm:w-1/4">
+                                <label
+                                    class="block text-latte-rose-pine-text dark:text-rose-pine-text text-sm font-medium mb-2"
+                                    for="pUnit"
+                                >
+                                    unit
+                                </label>
+                                <select
+                                    class="border py-2 px-3 rounded w-full leading-tight bg-white dark:bg-rose-pine-surface text-latte-rose-pine-text dark:text-rose-pine-text"
+                                    id="pUnit"
+                                    bind:value={pUnit}
+                                >
+                                    {#each unitOptions as option}
+                                        <option value={option.value}
+                                            >{option.label}</option
+                                        >
+                                    {/each}
+                                </select>
+                            </div>
+                            <div class="w-full sm:w-1/4">
+                                <label
+                                    class="block text-latte-rose-pine-text dark:text-rose-pine-text text-sm font-medium mb-2"
+                                    for="pRoute"
+                                >
+                                    route
+                                </label>
+                                <select
+                                    class="border py-2 px-3 rounded w-full leading-tight bg-white dark:bg-rose-pine-surface text-latte-rose-pine-text dark:text-rose-pine-text"
+                                    id="pRoute"
+                                    bind:value={pRoute}
+                                >
+                                    {#each progesteroneRouteOptions as option}
                                         <option value={option.value}
                                             >{option.label}</option
                                         >
