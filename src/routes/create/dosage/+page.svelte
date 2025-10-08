@@ -25,6 +25,7 @@
     let injectionFrequency = $state(7);
     let oralEFrequency = $state("");
     let eDateTime = $state("");
+    let eNextDoseDate = $state("");
 
     // Antiandrogen state
     let aaType: Antiandrogens | "" = $state("");
@@ -32,6 +33,7 @@
     let aaUnit: HormoneUnits = $state(HormoneUnits.mg);
     let aaFrequency = $state("");
     let aaDateTime = $state("");
+    let aaNextDoseDate = $state("");
 
     // Progesterone state
     let pType: Progesterones | "" = $state("");
@@ -40,6 +42,7 @@
     let pRoute: ProgesteroneRoutes = $state(ProgesteroneRoutes.Oral);
     let pFrequency = $state("");
     let pDateTime = $state("");
+    let pNextDoseDate = $state("");
 
     // State for "Record Dose" mode
     let recordEstrogen = $state(true);
@@ -60,12 +63,14 @@
             eDose = injSched.dose;
             eUnit = injSched.unit;
             injectionFrequency = injSched.frequency;
+            eNextDoseDate = injSched.nextDoseDate ? new Date(injSched.nextDoseDate).toISOString().slice(0, 16) : "";
         } else if (oralSched) {
             estrogenMethod = "oral";
             oralEType = oralSched.type;
             eDose = oralSched.dose;
             eUnit = oralSched.unit;
             oralEFrequency = oralSched.frequency;
+            eNextDoseDate = oralSched.nextDoseDate ? new Date(oralSched.nextDoseDate).toISOString().slice(0, 16) : "";
         }
 
         // AA
@@ -74,6 +79,7 @@
         aaDose = aaSched?.dose || 0;
         aaUnit = aaSched?.unit || HormoneUnits.mg;
         aaFrequency = aaSched?.frequency || "";
+        aaNextDoseDate = aaSched?.nextDoseDate ? new Date(aaSched.nextDoseDate).toISOString().slice(0, 16) : "";
 
         // Progesterone
         const pSched = hrtData.data.progesterone;
@@ -82,6 +88,7 @@
         pUnit = pSched?.unit || HormoneUnits.mg;
         pRoute = pSched?.route || ProgesteroneRoutes.Oral;
         pFrequency = pSched?.frequency || "";
+        pNextDoseDate = pSched?.nextDoseDate ? new Date(pSched.nextDoseDate).toISOString().slice(0, 16) : "";
     });
 
     function enumToDropdownOptions(e: any) {
@@ -115,6 +122,7 @@
                 dose: eDose,
                 unit: eUnit,
                 frequency: injectionFrequency,
+                nextDoseDate: eNextDoseDate ? new Date(eNextDoseDate).getTime() : undefined,
             };
             hrtData.data.oralEstradiol = undefined;
         } else {
@@ -123,6 +131,7 @@
                 dose: eDose,
                 unit: eUnit,
                 frequency: oralEFrequency,
+                nextDoseDate: eNextDoseDate ? new Date(eNextDoseDate).getTime() : undefined,
             };
             hrtData.data.injectableEstradiol = undefined;
         }
@@ -134,6 +143,7 @@
                 dose: aaDose,
                 unit: aaUnit,
                 frequency: aaFrequency,
+                nextDoseDate: aaNextDoseDate ? new Date(aaNextDoseDate).getTime() : undefined,
             };
         } else {
             hrtData.data.antiandrogen = undefined;
@@ -147,6 +157,7 @@
                 dose: pDose,
                 unit: pUnit,
                 frequency: pFrequency,
+                nextDoseDate: pNextDoseDate ? new Date(pNextDoseDate).getTime() : undefined,
             };
         } else {
             hrtData.data.progesterone = undefined;
@@ -284,6 +295,13 @@
                     {/if}
                 {/if}
 
+                {#if mode === 'schedule'}
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-2" for="eNextDoseDate">Next Dose Date</label>
+                        <input id="eNextDoseDate" type="datetime-local" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={eNextDoseDate} />
+                    </div>
+                {/if}
+
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                         <label class="block text-sm font-medium mb-2" for="eType">type</label>
@@ -344,6 +362,12 @@
                         </div>
                     {/if}
                 {/if}
+                {#if mode === 'schedule' && aaType !== ''}
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-2" for="aaNextDoseDate">Next Dose Date</label>
+                        <input id="aaNextDoseDate" type="datetime-local" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={aaNextDoseDate} />
+                    </div>
+                {/if}
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                         <label class="block text-sm font-medium mb-2" for="aaType">type</label>
@@ -393,6 +417,12 @@
                             <input id="pDateTime" type="datetime-local" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={pDateTime} required />
                         </div>
                     {/if}
+                {/if}
+                {#if mode === 'schedule' && pType !== ''}
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-2" for="pNextDoseDate">Next Dose Date</label>
+                        <input id="pNextDoseDate" type="datetime-local" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={pNextDoseDate} />
+                    </div>
                 {/if}
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                      <div>
