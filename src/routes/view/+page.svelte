@@ -401,6 +401,48 @@
     history over time.
 </p>
 <div class="flex flex-col p-4 w-full max-w-[100vw]">
+    <div
+        class="mb-4 border rounded-lg p-4 bg-white dark:bg-rose-pine-surface shadow-md"
+    >
+        <h2 class="text-xl font-medium mb-2">Current Regimen</h2>
+        {@const regimen = hrtData.data}
+        <div class="space-y-1 text-sm">
+            {#if regimen.injectableEstradiol}
+                <p>
+                    <strong>Injectable Estradiol:</strong>
+                    {regimen.injectableEstradiol.type}, {regimen.injectableEstradiol.dose}
+                    {regimen.injectableEstradiol.unit} {regimen.injectableEstradiol.frequency}
+                </p>
+            {/if}
+            {#if regimen.oralEstradiol}
+                <p>
+                    <strong>Oral Estradiol:</strong>
+                    {regimen.oralEstradiol.type}, {regimen.oralEstradiol.dose}
+                    {regimen.oralEstradiol.unit} {regimen.oralEstradiol.frequency}
+                </p>
+            {/if}
+            {#if regimen.antiandrogen}
+                <p>
+                    <strong>Antiandrogen:</strong>
+                    {regimen.antiandrogen.type}, {regimen.antiandrogen.dose}
+                    {regimen.antiandrogen.unit} {regimen.antiandrogen.frequency}
+                </p>
+            {/if}
+            {#if regimen.progesterone}
+                <p>
+                    <strong>Progesterone:</strong>
+                    {regimen.progesterone.type} ({regimen.progesterone.route}), {regimen.progesterone.dose}
+                    {regimen.progesterone.unit} {regimen.progesterone.frequency}
+                </p>
+            {/if}
+            {@const noRegimen = !regimen.injectableEstradiol && !regimen.oralEstradiol && !regimen.antiandrogen && !regimen.progesterone}
+            {#if noRegimen}
+                <p class="italic text-gray-500 dark:text-gray-400">
+                    No regimen set up. You can set one on the dosage page.
+                </p>
+            {/if}
+        </div>
+    </div>
     <div class="mb-4 flex flex-wrap gap-2">
         <div class="ml-auto flex gap-2">
             <span class="self-center text-sm">Time Range:</span>
