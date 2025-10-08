@@ -3,7 +3,8 @@
 	import {
 		HormoneUnits,
 		type BloodTest,
-		type DosageHistoryEntry
+		type DosageHistoryEntry,
+		ProgesteroneRoutes
 	} from '$lib/types';
 
 	let { item, close }: { item: BloodTest | DosageHistoryEntry; close: () => void } = $props();
@@ -44,6 +45,11 @@
 	// DosageHistoryEntry fields
 	let dose = $state(isDosage ? (item as DosageHistoryEntry).dose : undefined);
 	let unit = $state(isDosage ? (item as DosageHistoryEntry).unit : undefined);
+	let pRoute = $state(
+		isDosage && (item as DosageHistoryEntry).medicationType === 'progesterone'
+			? (item as any).route
+			: undefined
+	);
 
 	function enumToDropdownOptions(e: any) {
 		return Object.entries(e).map(([, val]) => ({
@@ -52,6 +58,7 @@
 		}));
 	}
 	const unitOptions = enumToDropdownOptions(HormoneUnits);
+	const progesteroneRouteOptions = enumToDropdownOptions(ProgesteroneRoutes);
 
 	function save() {
 		item.date = new Date(date).getTime();
@@ -60,6 +67,9 @@
 			const dosageItem = item as DosageHistoryEntry;
 			dosageItem.dose = dose!;
 			dosageItem.unit = unit!;
+			if (dosageItem.medicationType === 'progesterone') {
+				(dosageItem as any).route = pRoute;
+			}
 		} else {
 			const bloodTestItem = item as BloodTest;
 			bloodTestItem.estradiolLevel = estradiolLevel;
@@ -120,30 +130,69 @@
 			<div class="mb-4">
 				<p><strong>Medication:</strong> {dosageItem.type}</p>
 			</div>
-			<div class="flex gap-5">
-				<div class="w-full">
-					<label for="dose" class="block text-sm mb-1">Dose</label>
-					<input
-						id="dose"
-						type="number"
-						step="any"
-						bind:value={dose}
-						class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline"
-					/>
+			{#if dosageItem.medicationType === 'progesterone'}
+				<div class="flex gap-5">
+					<div class="w-1/3">
+						<label for="dose" class="block text-sm mb-1">Dose</label>
+						<input
+							id="dose"
+							type="number"
+							step="any"
+							bind:value={dose}
+							class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline"
+						/>
+					</div>
+					<div class="w-1/3">
+						<label for="unit" class="block text-sm mb-1">Unit</label>
+						<select
+							id="unit"
+							bind:value={unit}
+							class="border py-2 px-3 rounded w-full leading-tight"
+						>
+							{#each unitOptions as option}
+								<option value={option.value}>{option.label}</option>
+							{/each}
+						</select>
+					</div>
+					<div class="w-1/3">
+						<label for="pRoute" class="block text-sm mb-1">Route</label>
+						<select
+							id="pRoute"
+							bind:value={pRoute}
+							class="border py-2 px-3 rounded w-full leading-tight"
+						>
+							{#each progesteroneRouteOptions as option}
+								<option value={option.value}>{option.label}</option>
+							{/each}
+						</select>
+					</div>
 				</div>
-				<div class="w-full">
-					<label for="unit" class="block text-sm mb-1">Unit</label>
-					<select
-						id="unit"
-						bind:value={unit}
-						class="border py-2 px-3 rounded w-full leading-tight"
-					>
-						{#each unitOptions as option}
-							<option value={option.value}>{option.label}</option>
-						{/each}
-					</select>
+			{:else}
+				<div class="flex gap-5">
+					<div class="w-full">
+						<label for="dose" class="block text-sm mb-1">Dose</label>
+						<input
+							id="dose"
+							type="number"
+							step="any"
+							bind:value={dose}
+							class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline"
+						/>
+					</div>
+					<div class="w-full">
+						<label for="unit" class="block text-sm mb-1">Unit</label>
+						<select
+							id="unit"
+							bind:value={unit}
+							class="border py-2 px-3 rounded w-full leading-tight"
+						>
+							{#each unitOptions as option}
+								<option value={option.value}>{option.label}</option>
+							{/each}
+						</select>
+					</div>
 				</div>
-			</div>
+			{/if}
 		{:else}
 			<div class="flex gap-5">
 				<div class="w-full">

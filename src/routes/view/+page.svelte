@@ -353,6 +353,25 @@
                           ),
                       ]
                     : []),
+                ...(showMedications &&
+                dosages.some((d) => d.type === "progesterone")
+                    ? [
+                          Plot.dot(
+                              dosages.filter(
+                                  (d) => d.type === "progesterone",
+                              ),
+                              {
+                                  x: "date",
+                                  y: (d) => Math.min(d.dose, 400), // Prog doses are high
+                                  fill: "gold",
+                                  symbol: "hexagon",
+                                  r: 7,
+                                  title: (d) =>
+                                      `Progesterone: ${d.name}, ${d.dose} ${d.unit || "mg"} (${d.date.toLocaleDateString()})`,
+                              },
+                          ),
+                      ]
+                    : []),
             ],
         });
 
@@ -646,7 +665,10 @@
                                                 : t.medicationType ===
                                                     "oralEstradiol"
                                                   ? "Oral E"
-                                                  : "AA"}</span
+                                                  : t.medicationType ===
+                                                      "progesterone"
+                                                    ? `Progesterone (${(t as any).route})`
+                                                    : "AA"}</span
                                         >
                                         <span>{t.type}</span>
                                         <span>{t.dose} {t.unit || "mg"}</span>
