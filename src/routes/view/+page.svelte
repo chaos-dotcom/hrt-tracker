@@ -888,7 +888,7 @@
                             <li
                                 class="p-2 border rounded flex justify-between items-center"
                             >
-                                <div>
+                                <div class="flex-1">
                                     <div class="font-medium">
                                         {new Date(t.date).toLocaleDateString()}
                                     </div>
@@ -908,6 +908,11 @@
                                         <span>{t.type}</span>
                                         <span>{t.dose} {t.unit || "mg"}</span>
                                     </div>
+                                    {#if t.note}
+                                        <div class="text-sm mt-1 text-gray-600 dark:text-gray-400">
+                                            Note: {t.note}
+                                        </div>
+                                    {/if}
                                 </div>
                                 <button
                                     class="px-3 py-1 text-sm rounded bg-latte-rose-pine-foam text-white hover:bg-rose-pine-pine transition-colors"
