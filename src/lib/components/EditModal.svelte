@@ -55,6 +55,11 @@
 			: undefined
 	);
 	let note = $state(isDosage ? (item as DosageHistoryEntry).note : undefined);
+	let injectionSite = $state(
+		isDosage && (item as DosageHistoryEntry).medicationType === 'injectableEstradiol'
+			? (item as any).injectionSite
+			: undefined
+	);
 
 	// Measurement fields
 	let weight = $state(isMeasurement ? (item as Measurement).weight : undefined);
@@ -79,6 +84,7 @@
 	const progesteroneRouteOptions = enumToDropdownOptions(ProgesteroneRoutes);
 	const weightUnitOptions = enumToDropdownOptions(WeightUnit);
 	const lengthUnitOptions = enumToDropdownOptions(LengthUnit);
+	const injectionSiteOptions = enumToDropdownOptions(InjectionSites);
 
 	function save() {
 		item.date = new Date(date).getTime();
@@ -90,6 +96,9 @@
 			dosageItem.note = note?.trim() || undefined;
 			if (dosageItem.medicationType === 'progesterone') {
 				(dosageItem as any).route = pRoute;
+			}
+			if (dosageItem.medicationType === 'injectableEstradiol') {
+				(dosageItem as any).injectionSite = injectionSite || undefined;
 			}
 		} else if (isMeasurement) {
 			const measurementItem = item as Measurement;
@@ -240,6 +249,21 @@
 						placeholder="Add any notes about this dose"
 					></textarea>
 				</div>
+				{#if (item as DosageHistoryEntry).medicationType === 'injectableEstradiol'}
+				<div class="mb-4">
+					<label for="injectionSite" class="block text-sm mb-1">Injection Site (optional)</label>
+					<select
+						id="injectionSite"
+						bind:value={injectionSite}
+						class="border py-2 px-3 rounded w-full leading-tight"
+					>
+						<option value="">Select injection site</option>
+						{#each injectionSiteOptions as option}
+							<option value={option.value}>{option.label}</option>
+						{/each}
+					</select>
+				</div>
+				{/if}
 			{/if}
 		{:else if isMeasurement}
 			<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
