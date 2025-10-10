@@ -2,7 +2,7 @@ services:
   hrt-tracker:
     image: ghcr.io/chaos-dotcom/hrt-tracker:latest
     ports:
-      - "3000:3000"
+      - "1109:3000"
     volumes:
       - ./data:/app/data
     restart: unless-stopped
