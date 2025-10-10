@@ -61,6 +61,7 @@ export type DosageHistoryEntry =
       type: InjectableEstradiols;
       dose: number;
       unit: HormoneUnits;
+      note?: string;
     }
   | {
       date: UnixTime;
@@ -68,6 +69,7 @@ export type DosageHistoryEntry =
       type: OralEstradiols;
       dose: number;
       unit: HormoneUnits;
+      note?: string;
     }
   | {
       date: UnixTime;
@@ -75,6 +77,7 @@ export type DosageHistoryEntry =
       type: Antiandrogens;
       dose: number;
       unit: HormoneUnits;
+      note?: string;
     }
   | {
       date: UnixTime;
@@ -83,6 +86,7 @@ export type DosageHistoryEntry =
       route: ProgesteroneRoutes;
       dose: number;
       unit: HormoneUnits;
+      note?: string;
     };
 
 export type EstrogenType =
