@@ -48,6 +48,11 @@
     let recordEstrogen = $state(true);
     let recordAA = $state(false);
     let recordProg = $state(false);
+    
+    // Note state for each medication type
+    let eNote = $state("");
+    let aaNote = $state("");
+    let pNote = $state("");
 
     $effect(() => {
         if ($page.url.searchParams.get("mode") === "schedule") {
@@ -175,6 +180,7 @@
                     type: injectableEType,
                     dose: eDose,
                     unit: eUnit,
+                    note: eNote.trim() || undefined,
                 };
             } else {
                 estrogenRecord = {
@@ -183,6 +189,7 @@
                     type: oralEType,
                     dose: eDose,
                     unit: eUnit,
+                    note: eNote.trim() || undefined,
                 };
             }
             hrtData.addDosageRecord(estrogenRecord);
@@ -195,6 +202,7 @@
                 type: aaType,
                 dose: aaDose,
                 unit: aaUnit,
+                note: aaNote.trim() || undefined,
             };
             hrtData.addDosageRecord(aaRecord);
         }
@@ -207,6 +215,7 @@
                 route: pRoute,
                 dose: pDose,
                 unit: pUnit,
+                note: pNote.trim() || undefined,
             };
             hrtData.addDosageRecord(pRecord);
         }
@@ -292,6 +301,10 @@
                             <label class="block text-sm font-medium mb-2" for="eDateTime">date / time</label>
                             <input id="eDateTime" type="datetime-local" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={eDateTime} required />
                         </div>
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium mb-2" for="eNote">note (optional)</label>
+                            <textarea id="eNote" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={eNote} rows="2" placeholder="Add any notes about this dose"></textarea>
+                        </div>
                     {/if}
                 {/if}
 
@@ -359,6 +372,10 @@
                             <label class="block text-sm font-medium mb-2" for="aaDateTime">date / time</label>
                             <input id="aaDateTime" type="datetime-local" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={aaDateTime} required />
                         </div>
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium mb-2" for="aaNote">note (optional)</label>
+                            <textarea id="aaNote" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={aaNote} rows="2" placeholder="Add any notes about this dose"></textarea>
+                        </div>
                     {/if}
                 {/if}
                 {#if mode === 'schedule' && aaType !== ''}
@@ -414,6 +431,10 @@
                         <div class="mb-4">
                             <label class="block text-sm font-medium mb-2" for="pDateTime">date / time</label>
                             <input id="pDateTime" type="datetime-local" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={pDateTime} required />
+                        </div>
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium mb-2" for="pNote">note (optional)</label>
+                            <textarea id="pNote" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={pNote} rows="2" placeholder="Add any notes about this dose"></textarea>
                         </div>
                     {/if}
                 {/if}
