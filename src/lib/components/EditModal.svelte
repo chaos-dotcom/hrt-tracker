@@ -54,6 +54,7 @@
 			? (item as any).route
 			: undefined
 	);
+	let note = $state(isDosage ? (item as DosageHistoryEntry).note : undefined);
 
 	// Measurement fields
 	let weight = $state(isMeasurement ? (item as Measurement).weight : undefined);
@@ -86,6 +87,7 @@
 			const dosageItem = item as DosageHistoryEntry;
 			dosageItem.dose = dose!;
 			dosageItem.unit = unit!;
+			dosageItem.note = note?.trim() || undefined;
 			if (dosageItem.medicationType === 'progesterone') {
 				(dosageItem as any).route = pRoute;
 			}
@@ -225,6 +227,18 @@
 							{/each}
 						</select>
 					</div>
+				</div>
+			{/if}
+			{#if isDosage}
+				<div class="mb-4">
+					<label for="note" class="block text-sm mb-1">Note (optional)</label>
+					<textarea
+						id="note"
+						bind:value={note}
+						class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline"
+						rows="3"
+						placeholder="Add any notes about this dose"
+					></textarea>
 				</div>
 			{/if}
 		{:else if isMeasurement}
