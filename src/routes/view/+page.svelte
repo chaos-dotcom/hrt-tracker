@@ -908,6 +908,11 @@
                                         <span>{t.type}</span>
                                         <span>{t.dose} {t.unit || "mg"}</span>
                                     </div>
+                                    {#if t.medicationType === "injectableEstradiol" && t.injectionSite}
+                                        <div class="text-sm mt-1 text-gray-600 dark:text-gray-400">
+                                            Site: {t.injectionSite}
+                                        </div>
+                                    {/if}
                                     {#if t.note}
                                         <div class="text-sm mt-1 text-gray-600 dark:text-gray-400">
                                             Note: {t.note}

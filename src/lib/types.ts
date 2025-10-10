@@ -54,6 +54,15 @@ export enum HormoneUnits {
 
 export type UnixTime = number;
 
+export enum InjectionSites {
+  StomachRight = "Stomach right",
+  StomachLeft = "Stomach left",
+  ThighRight = "Thigh right",
+  ThighLeft = "Thigh left",
+  ButtockRight = "Buttock right",
+  ButtockLeft = "Buttock left",
+}
+
 export type DosageHistoryEntry =
   | {
       date: UnixTime;
@@ -62,6 +71,7 @@ export type DosageHistoryEntry =
       dose: number;
       unit: HormoneUnits;
       note?: string;
+      injectionSite?: InjectionSites;
     }
   | {
       date: UnixTime;
