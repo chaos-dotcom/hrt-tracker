@@ -7,7 +7,8 @@
 		ProgesteroneRoutes,
 		type Measurement,
 		WeightUnit,
-		LengthUnit
+		LengthUnit,
+		InjectionSites
 	} from '$lib/types';
 
 	let { item, close }: { item: BloodTest | DosageHistoryEntry | Measurement; close: () => void } = $props();
