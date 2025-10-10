@@ -53,6 +53,9 @@
     let eNote = $state("");
     let aaNote = $state("");
     let pNote = $state("");
+    
+    // Injection site for injectable estrogen
+    let eInjectionSite: InjectionSites | "" = $state("");
 
     $effect(() => {
         if ($page.url.searchParams.get("mode") === "schedule") {
@@ -181,6 +184,7 @@
                     dose: eDose,
                     unit: eUnit,
                     note: eNote.trim() || undefined,
+                    injectionSite: eInjectionSite || undefined,
                 };
             } else {
                 estrogenRecord = {
@@ -305,6 +309,20 @@
                             <label class="block text-sm font-medium mb-2" for="eNote">note (optional)</label>
                             <textarea id="eNote" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={eNote} rows="2" placeholder="Add any notes about this dose"></textarea>
                         </div>
+                        {#if estrogenMethod === 'injection'}
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium mb-2" for="eInjectionSite">injection site (optional)</label>
+                            <select id="eInjectionSite" class="border py-2 px-3 rounded w-full leading-tight" bind:value={eInjectionSite}>
+                                <option value="">Select injection site</option>
+                                <option value={InjectionSites.StomachRight}>Stomach right</option>
+                                <option value={InjectionSites.StomachLeft}>Stomach left</option>
+                                <option value={InjectionSites.ThighRight}>Thigh right</option>
+                                <option value={InjectionSites.ThighLeft}>Thigh left</option>
+                                <option value={InjectionSites.ButtockRight}>Buttock right</option>
+                                <option value={InjectionSites.ButtockLeft}>Buttock left</option>
+                            </select>
+                        </div>
+                        {/if}
                     {/if}
                 {/if}
 
