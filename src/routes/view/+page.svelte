@@ -149,7 +149,6 @@
     let itemToEdit: BloodTest | DosageHistoryEntry | Measurement | null = $state(null);
 
     function onEdit(item: BloodTest | DosageHistoryEntry | Measurement) {
-        console.log('onEdit called with item:', item);
         itemToEdit = item;
     }
 
