@@ -10,6 +10,7 @@
         type DosageHistoryEntry,
         Progesterones,
         ProgesteroneRoutes,
+        InjectionSites,
     } from "$lib/types";
 
     let mode: "record" | "schedule" = $state("record");
