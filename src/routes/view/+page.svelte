@@ -180,25 +180,85 @@
         // Filter blood tests based on time range and filter setting
         const filteredBloodTests = hrtData.data.bloodTests
             .filter((test) => test.date >= startTime)
-            .map((test) => ({
-                date: new Date(test.date),
-                type: "Blood Test",
-                estradiolLevel: test.estradiolLevel,
-                testLevel: test.testLevel,
-                progesteroneLevel: test.progesteroneLevel,
-                fshLevel: test.fshLevel,
-                lhLevel: test.lhLevel,
-                prolactinLevel: test.prolactinLevel,
-                shbgLevel: test.shbgLevel,
-                freeAndrogenIndex: test.freeAndrogenIndex,
-                estradiolUnit: test.estradiolUnit || HormoneUnits.E2_pg_mL,
-                testUnit: test.testUnit || HormoneUnits.T_ng_dL,
-                progesteroneUnit: test.progesteroneUnit || HormoneUnits.ng_mL,
-                fshUnit: test.fshUnit || HormoneUnits.mIU_mL,
-                lhUnit: test.lhUnit || HormoneUnits.mIU_mL,
-                prolactinUnit: test.prolactinUnit || HormoneUnits.ng_mL,
-                shbgUnit: test.shbgUnit || HormoneUnits.T_nmol_L,
-            }));
+            .map((test) => {
+                // Raw units with sensible defaults
+                const estradiolUnitRaw = test.estradiolUnit || HormoneUnits.E2_pg_mL;
+                const testUnitRaw = test.testUnit || HormoneUnits.T_ng_dL;
+                const progesteroneUnitRaw = test.progesteroneUnit || HormoneUnits.ng_mL;
+                const fshUnitRaw = test.fshUnit || HormoneUnits.mIU_mL;
+                const lhUnitRaw = test.lhUnit || HormoneUnits.mIU_mL;
+                const prolactinUnitRaw = test.prolactinUnit || HormoneUnits.ng_mL;
+                const shbgUnitRaw = test.shbgUnit || HormoneUnits.T_nmol_L;
+
+                // Normalized values for plotting
+                const estradiolLevelPlot =
+                    test.estradiolLevel !== undefined
+                        ? estradiolUnitRaw === HormoneUnits.E2_pmol_L
+                            ? Number((test.estradiolLevel / 3.671).toFixed(2)) // pmol/L -> pg/mL
+                            : test.estradiolLevel
+                        : undefined;
+
+                const testLevelPlot =
+                    test.testLevel !== undefined
+                        ? testUnitRaw === HormoneUnits.T_nmol_L
+                            ? Number((test.testLevel * 28.818).toFixed(2)) // nmol/L -> ng/dL
+                            : test.testLevel
+                        : undefined;
+
+                const fshLevelPlot =
+                    test.fshLevel !== undefined
+                        ? fshUnitRaw === HormoneUnits.mIU_L
+                            ? Number((test.fshLevel / 1000).toFixed(3)) // mIU/L -> mIU/mL
+                            : fshUnitRaw === HormoneUnits.U_L
+                            ? test.fshLevel // IU/L == mIU/mL numerically
+                            : test.fshLevel
+                        : undefined;
+
+                const lhLevelPlot =
+                    test.lhLevel !== undefined
+                        ? lhUnitRaw === HormoneUnits.mIU_L
+                            ? Number((test.lhLevel / 1000).toFixed(3)) // mIU/L -> mIU/mL
+                            : lhUnitRaw === HormoneUnits.U_L
+                            ? test.lhLevel // IU/L == mIU/mL numerically
+                            : test.lhLevel
+                        : undefined;
+
+                const progesteroneLevelPlot = test.progesteroneLevel;
+                const prolactinLevelPlot = test.prolactinLevel;
+                const shbgLevelPlot = test.shbgLevel;
+
+                return {
+                    date: new Date(test.date),
+                    type: "Blood Test",
+
+                    // Raw values and units (for tooltips)
+                    estradiolLevel: test.estradiolLevel,
+                    testLevel: test.testLevel,
+                    progesteroneLevel: test.progesteroneLevel,
+                    fshLevel: test.fshLevel,
+                    lhLevel: test.lhLevel,
+                    prolactinLevel: test.prolactinLevel,
+                    shbgLevel: test.shbgLevel,
+                    freeAndrogenIndex: test.freeAndrogenIndex,
+                    estradiolUnit: estradiolUnitRaw,
+                    testUnit: testUnitRaw,
+                    progesteroneUnit: progesteroneUnitRaw,
+                    fshUnit: fshUnitRaw,
+                    lhUnit: lhUnitRaw,
+                    prolactinUnit: prolactinUnitRaw,
+                    shbgUnit: shbgUnitRaw,
+
+                    // Normalized values for plotting (standard units)
+                    // E2: pg/mL, T: ng/dL, Prog: ng/mL, FSH/LH: mIU/mL, PRL: ng/mL, SHBG: nmol/L
+                    estradiolLevelPlot,
+                    testLevelPlot,
+                    progesteroneLevelPlot,
+                    fshLevelPlot,
+                    lhLevelPlot,
+                    prolactinLevelPlot,
+                    shbgLevelPlot,
+                };
+            });
 
         // Filter dosages based on time range and filter setting
         const filteredDosages = showMedications
@@ -270,33 +330,44 @@
         // Helper to create hormone plot marks
         const createHormoneMarks = (
             data: any[],
-            key: string,
-            unitKey: string,
-            defaultUnit: string,
+            valuePlotKey: string,
+            valueRawKey: string,
+            unitRawKey: string,
+            normalizedUnit: string,
             color: string,
             label: string,
         ) => {
-            if (!data.some((d) => d[key] !== undefined && d[key] > 0)) return [];
+            if (!data.some((d) => d[valuePlotKey] !== undefined && d[valuePlotKey] > 0)) return [];
             return [
                 Plot.line(
-                    data.filter((d) => d[key] !== undefined && d[key] > 0),
+                    data.filter((d) => d[valuePlotKey] !== undefined && d[valuePlotKey] > 0),
                     {
                         x: "date",
-                        y: key,
+                        y: valuePlotKey,
                         stroke: color,
                         strokeWidth: 2,
                         curve: "monotone-x",
                     },
                 ),
                 Plot.dot(
-                    data.filter((d) => d[key] !== undefined && d[key] > 0),
+                    data.filter((d) => d[valuePlotKey] !== undefined && d[valuePlotKey] > 0),
                     {
                         x: "date",
-                        y: key,
+                        y: valuePlotKey,
                         fill: color,
                         r: 5,
-                        title: (d: any) =>
-                            `${label}: ${d[key]} ${d[unitKey] || defaultUnit} (${d.date.toLocaleDateString()})`,
+                        title: (d: any) => {
+                            const rawVal = d[valueRawKey];
+                            const rawUnit = d[unitRawKey];
+                            const plotVal = d[valuePlotKey];
+                            const showRaw =
+                                rawVal !== undefined &&
+                                rawUnit !== undefined &&
+                                `${normalizedUnit}` !== `${rawUnit}`;
+                            return showRaw
+                                ? `${label}: ${rawVal} ${rawUnit} → ${plotVal} ${normalizedUnit} (${d.date.toLocaleDateString()})`
+                                : `${label}: ${plotVal} ${normalizedUnit} (${d.date.toLocaleDateString()})`;
+                        },
                     },
                 ),
             ];
@@ -364,6 +435,7 @@
                 ...(showE2
                     ? createHormoneMarks(
                           bloodTests,
+                          "estradiolLevelPlot",
                           "estradiolLevel",
                           "estradiolUnit",
                           "pg/mL",
@@ -374,6 +446,7 @@
                 ...(showT
                     ? createHormoneMarks(
                           bloodTests,
+                          "testLevelPlot",
                           "testLevel",
                           "testUnit",
                           "ng/dL",
@@ -384,6 +457,7 @@
                 ...(showProg
                     ? createHormoneMarks(
                           bloodTests,
+                          "progesteroneLevelPlot",
                           "progesteroneLevel",
                           "progesteroneUnit",
                           "ng/mL",
@@ -394,6 +468,7 @@
                 ...(showFSH
                     ? createHormoneMarks(
                           bloodTests,
+                          "fshLevelPlot",
                           "fshLevel",
                           "fshUnit",
                           "mIU/mL",
@@ -404,6 +479,7 @@
                 ...(showLH
                     ? createHormoneMarks(
                           bloodTests,
+                          "lhLevelPlot",
                           "lhLevel",
                           "lhUnit",
                           "mIU/mL",
@@ -414,6 +490,7 @@
                 ...(showProlactin
                     ? createHormoneMarks(
                           bloodTests,
+                          "prolactinLevelPlot",
                           "prolactinLevel",
                           "prolactinUnit",
                           "ng/mL",
@@ -424,6 +501,7 @@
                 ...(showSHBG
                     ? createHormoneMarks(
                           bloodTests,
+                          "shbgLevelPlot",
                           "shbgLevel",
                           "shbgUnit",
                           "nmol/L",
@@ -750,7 +828,7 @@
             <p>* Dosage values are scaled for visibility on the chart.</p>
             <p>* Hover over data points for details.</p>
             {#if hrtData.data.bloodTests.length > 0}
-                <p>* Hormone measurements shown in their recorded units.</p>
+                <p>* Hormone measurements are normalized to standard units for charting; hover shows recorded units.</p>
             {/if}
         </div>
     </div>
