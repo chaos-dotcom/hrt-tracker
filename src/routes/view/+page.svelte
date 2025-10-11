@@ -171,6 +171,7 @@
     let showProlactin = $state(false);
     let showSHBG = $state(false);
     let showFAI = $state(false);
+    let splitRightAxis = $state(true);
 
     // Process data for charting
     function processDataForChart() {
@@ -320,6 +321,84 @@
 
         const { bloodTests, dosages } = processDataForChart();
 
+        // Axis grouping and domains for dual-axis support
+        const leftKeys: string[] = [];
+        const rightKeys: string[] = [];
+        if (showE2) leftKeys.push("estradiolLevelPlot");
+        if (showProg) leftKeys.push("progesteroneLevelPlot");
+        if (showFSH) leftKeys.push("fshLevelPlot");
+        if (showLH) leftKeys.push("lhLevelPlot");
+        if (showProlactin) leftKeys.push("prolactinLevelPlot");
+        if (showFAI) leftKeys.push("freeAndrogenIndex"); // include for domain when visible
+
+        if (showT && splitRightAxis) rightKeys.push("testLevelPlot");
+        else if (showT) leftKeys.push("testLevelPlot");
+
+        if (showSHBG && splitRightAxis) rightKeys.push("shbgLevelPlot");
+        else if (showSHBG) leftKeys.push("shbgLevelPlot");
+
+        const extractValues = (keys: string[]) =>
+            keys.flatMap((k) =>
+                bloodTests
+                    .map((d: any) => d[k])
+                    .filter((v: any) => typeof v === "number" && isFinite(v) && v > 0),
+            ) as number[];
+
+        const leftVals = extractValues(leftKeys);
+        const rightVals = extractValues(rightKeys);
+
+        let yLeftMin = leftVals.length ? Math.min(...leftVals) : 0;
+        let yLeftMax = leftVals.length ? Math.max(...leftVals) : 1;
+        if (yLeftMin === yLeftMax) {
+            yLeftMin = Math.max(0, yLeftMin - 1);
+            yLeftMax = yLeftMax + 1;
+        } else {
+            const pad = 0.08 * (yLeftMax - yLeftMin);
+            yLeftMin = Math.max(0, yLeftMin - pad);
+            yLeftMax = yLeftMax + pad;
+        }
+
+        let yRightMin = rightVals.length ? Math.min(...rightVals) : 0;
+        let yRightMax = rightVals.length ? Math.max(...rightVals) : 1;
+        if (yRightMin === yRightMax) {
+            yRightMin = Math.max(0, yRightMin - 1);
+            yRightMax = yRightMax + 1;
+        }
+
+        // mapping functions right<->left
+        const mapRightToLeft = (v: number) => {
+            if (!splitRightAxis || rightVals.length === 0) return v;
+            if (yRightMax === yRightMin) return (yLeftMin + yLeftMax) / 2;
+            return ((v - yRightMin) / (yRightMax - yRightMin)) * (yLeftMax - yLeftMin) + yLeftMin;
+        };
+        const mapLeftToRight = (v: number) => {
+            if (!splitRightAxis || rightVals.length === 0) return v;
+            return ((v - yLeftMin) / (yLeftMax - yLeftMin)) * (yRightMax - yRightMin) + yRightMin;
+        };
+
+        const formatRightValue = (v: number) => {
+            if (!isFinite(v)) return "";
+            if (Math.abs(v) >= 100) return Math.round(v).toString();
+            if (Math.abs(v) >= 10) return v.toFixed(1);
+            return v.toFixed(2);
+        };
+
+        const rightAxisLabelParts: string[] = [];
+        if (splitRightAxis && rightVals.length) {
+            if (showT) rightAxisLabelParts.push("T (ng/dL)");
+            if (showSHBG) rightAxisLabelParts.push("SHBG (nmol/L)");
+        }
+        const rightAxisLabel =
+            rightAxisLabelParts.length ? `Right axis: ${rightAxisLabelParts.join(" + ")}` : "";
+        const rightUnitSuffix =
+            splitRightAxis && rightVals.length
+                ? showT && !showSHBG
+                    ? " ng/dL"
+                    : !showT && showSHBG
+                      ? " nmol/L"
+                      : ""
+                : "";
+
         // Only create chart if we have data
         if (bloodTests.length === 0 && dosages.length === 0) {
             chartDiv.textContent =
@@ -336,6 +415,7 @@
             normalizedUnit: string,
             color: string,
             label: string,
+            mapY?: (v: number) => number,
         ) => {
             if (!data.some((d) => d[valuePlotKey] !== undefined && d[valuePlotKey] > 0)) return [];
             return [
@@ -343,7 +423,7 @@
                     data.filter((d) => d[valuePlotKey] !== undefined && d[valuePlotKey] > 0),
                     {
                         x: "date",
-                        y: valuePlotKey,
+                        y: mapY ? ((d: any) => mapY(d[valuePlotKey])) : valuePlotKey,
                         stroke: color,
                         strokeWidth: 2,
                         curve: "monotone-x",
@@ -353,7 +433,7 @@
                     data.filter((d) => d[valuePlotKey] !== undefined && d[valuePlotKey] > 0),
                     {
                         x: "date",
-                        y: valuePlotKey,
+                        y: mapY ? ((d: any) => mapY(d[valuePlotKey])) : valuePlotKey,
                         fill: color,
                         r: 5,
                         title: (d: any) => {
@@ -426,12 +506,24 @@
             y: {
                 label: "Levels",
                 grid: true,
-                // domain: [0, 400], // Example static domain
+                domain: [yLeftMin, yLeftMax],
             },
             color: {
                 legend: true,
             },
             marks: [
+                ...(splitRightAxis && rightKeys.length
+                    ? [
+                          Plot.axisY({
+                              anchor: "right",
+                              label: rightAxisLabel,
+                              tickFormat: (y: any) => {
+                                  const val = mapLeftToRight(Number(y));
+                                  return `${formatRightValue(val)}${rightUnitSuffix}`;
+                              },
+                          }),
+                      ]
+                    : []),
                 ...(showE2
                     ? createHormoneMarks(
                           bloodTests,
@@ -452,6 +544,7 @@
                           "ng/dL",
                           "orangered",
                           "Testosterone",
+                          splitRightAxis ? mapRightToLeft : undefined,
                       )
                     : []),
                 ...(showProg
@@ -507,6 +600,7 @@
                           "nmol/L",
                           "deeppink",
                           "SHBG",
+                          splitRightAxis ? mapRightToLeft : undefined,
                       )
                     : []),
                 ...(showFAI ? createFAIMarks(bloodTests) : []),
@@ -591,6 +685,13 @@
     }
 
     $effect(() => {
+        // Rerender chart when inputs or data change
+        timeRangeInDays;
+        showMedications;
+        showE2; showT; showProg; showFSH; showLH; showProlactin; showSHBG; showFAI;
+        splitRightAxis;
+        hrtData.data.bloodTests;
+        hrtData.data.dosageHistory;
         renderChart();
     });
 
@@ -801,6 +902,14 @@
             class:dark:text-rose-pine-base={showFAI}
             onclick={() => (showFAI = !showFAI)}>FAI</button
         >
+        <button
+            class="px-3 py-1 text-sm transition-colors rounded"
+            class:bg-latte-rose-pine-iris={splitRightAxis}
+            class:dark:bg-rose-pine-iris={splitRightAxis}
+            class:text-latte-rose-pine-base={splitRightAxis}
+            class:dark:text-rose-pine-base={splitRightAxis}
+            onclick={() => (splitRightAxis = !splitRightAxis)}>Split T/SHBG axis</button
+        >
     </div>
     <div class="mb-4 flex flex-wrap gap-3">
         <span class="self-center text-sm">Show Dosages:</span>
@@ -827,6 +936,7 @@
         <div class="mt-4 text-sm text-gray-500 dark:text-gray-400 italic">
             <p>* Dosage values are scaled for visibility on the chart.</p>
             <p>* Hover over data points for details.</p>
+            <p>* When split axis is enabled, Testosterone and SHBG use the right Y-axis.</p>
             {#if hrtData.data.bloodTests.length > 0}
                 <p>* Hormone measurements are normalized to standard units for charting; hover shows recorded units.</p>
             {/if}
