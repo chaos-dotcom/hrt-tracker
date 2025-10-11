@@ -50,6 +50,7 @@ export enum HormoneUnits {
   ng_mL = "ng/mL",
   mIU_mL = "mIU/mL",
   mIU_L = "mIU/L",
+  U_L = "U/L",
 }
 
 export type UnixTime = number;
