@@ -523,7 +523,7 @@
                         title: (d: any) => {
                             const dayPrefix =
                                 xKey === "xDays" && typeof d.xDays === "number"
-                                    ? `Day ${d.xDays.toFixed(1)} – `;
+                                    ? `Day ${d.xDays.toFixed(1)} – `
                                     : "";
                             const dateLabel =
                                 d.date && typeof d.date.toLocaleDateString === "function"
