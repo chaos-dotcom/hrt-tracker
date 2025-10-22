@@ -37,7 +37,7 @@
 							});
 
 							if (response.ok) {
-								hrtData.data = jsonData;
+								hrtData.data = { ...hrtData.data, ...jsonData, notes: jsonData.notes ?? [] };
 								restoreMessage = 'Data restored successfully!';
 							} else {
 								restoreMessage = 'Failed to restore data on the server.';

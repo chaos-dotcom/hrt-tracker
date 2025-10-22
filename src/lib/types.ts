@@ -142,6 +142,13 @@ export interface BloodTest {
   // basically, i can do { route: "injectable", InjectableEstradiols.Cypionate }
 }
 
+export interface DiaryEntry {
+  id: string;
+  date: UnixTime;
+  title?: string;
+  content: string;
+}
+
 export const HRT_STORAGE_KEY = "hrt-meow-data";
 export interface HRTData {
   injectableEstradiol?: {
@@ -176,4 +183,5 @@ export interface HRTData {
   bloodTests: BloodTest[];
   dosageHistory: DosageHistoryEntry[];
   measurements: Measurement[];
+  notes: DiaryEntry[];
 }

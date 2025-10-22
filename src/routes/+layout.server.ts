@@ -8,6 +8,7 @@ const defaultData: HRTData = {
   bloodTests: [],
   dosageHistory: [],
   measurements: [],
+  notes: [],
 };
 
 export const load: LayoutServerLoad = async () => {
