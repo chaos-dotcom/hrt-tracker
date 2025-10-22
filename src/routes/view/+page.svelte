@@ -193,17 +193,21 @@
     let estrannaiseUrl = $derived(generateEstrannaiseUrl());
 
     let daysSinceFirstDose: number | null = $state(null);
+    let firstDoseDate: number | null = $state(null);
+    let xAxisMode = $state<"date" | "days">("date");
 
     $effect(() => {
         const dosageHistory = hrtData.data.dosageHistory;
         if (!dosageHistory || dosageHistory.length === 0) {
             daysSinceFirstDose = null;
+            firstDoseDate = null;
             return;
         }
 
-        const firstDoseDate = Math.min(...dosageHistory.map((d) => d.date));
+        const firstDate = Math.min(...dosageHistory.map((d) => d.date));
+        firstDoseDate = firstDate;
         const now = Date.now();
-        const diffTime = Math.abs(now - firstDoseDate);
+        const diffTime = Math.abs(now - firstDate);
         const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
 
         daysSinceFirstDose = diffDays;
@@ -297,6 +301,7 @@
 
                 return {
                     date: new Date(test.date),
+                    xDays: firstDoseDate !== null ? (test.date - firstDoseDate) / (1000 * 60 * 60 * 24) : undefined,
                     type: "Blood Test",
 
                     // Raw values and units (for tooltips)
@@ -334,6 +339,7 @@
                   .filter((dose) => dose.date >= startTime)
                   .map((dose) => ({
                       date: new Date(dose.date),
+                      xDays: firstDoseDate !== null ? (dose.date - firstDoseDate) / (1000 * 60 * 60 * 24) : undefined,
                       type: dose.medicationType,
                       name: dose.type,
                       dose: dose.dose,
@@ -388,6 +394,9 @@
 
         const { bloodTests, dosages } = processDataForChart();
 
+        const useDaysAxis = xAxisMode === "days" && firstDoseDate !== null;
+        const xKey: "date" | "xDays" = useDaysAxis ? "xDays" : "date";
+
         // Axis grouping and domains for dual-axis support
         const leftKeys: string[] = [];
         if (showE2) leftKeys.push("estradiolLevelPlot");
@@ -436,15 +445,15 @@
             normalizedUnit: string,
             color: string,
             label: string,
-            mapY?: (v: number) => number,
+            xKey: "date" | "xDays",
         ) => {
             if (!data.some((d) => d[valuePlotKey] !== undefined && d[valuePlotKey] > 0)) return [];
             return [
                 Plot.line(
                     data.filter((d) => d[valuePlotKey] !== undefined && d[valuePlotKey] > 0),
                     {
-                        x: "date",
-                        y: mapY ? ((d: any) => mapY(d[valuePlotKey])) : valuePlotKey,
+                        x: xKey,
+                        y: valuePlotKey,
                         stroke: color,
                         strokeWidth: 2,
                         curve: "monotone-x",
@@ -453,8 +462,8 @@
                 Plot.dot(
                     data.filter((d) => d[valuePlotKey] !== undefined && d[valuePlotKey] > 0),
                     {
-                        x: "date",
-                        y: mapY ? ((d: any) => mapY(d[valuePlotKey])) : valuePlotKey,
+                        x: xKey,
+                        y: valuePlotKey,
                         fill: color,
                         r: 5,
                         title: (d: any) => {
@@ -465,16 +474,24 @@
                                 rawVal !== undefined &&
                                 rawUnit !== undefined &&
                                 `${normalizedUnit}` !== `${rawUnit}`;
+                            const dayPrefix =
+                                xKey === "xDays" && typeof d.xDays === "number"
+                                    ? `Day ${d.xDays.toFixed(1)} – `
+                                    : "";
+                            const dateLabel =
+                                d.date && typeof d.date.toLocaleDateString === "function"
+                                    ? d.date.toLocaleDateString()
+                                    : "";
                             return showRaw
-                                ? `${label}: ${rawVal} ${rawUnit} → ${plotVal} ${normalizedUnit} (${d.date.toLocaleDateString()})`
-                                : `${label}: ${plotVal} ${normalizedUnit} (${d.date.toLocaleDateString()})`;
+                                ? `${label}: ${rawVal} ${rawUnit} → ${plotVal} ${normalizedUnit} (${dayPrefix}${dateLabel})`
+                                : `${label}: ${plotVal} ${normalizedUnit} (${dayPrefix}${dateLabel})`;
                         },
                     },
                 ),
             ];
         };
 
-        const createFAIMarks = (data: any[]) => {
+        const createFAIMarks = (data: any[], xKey: "date" | "xDays") => {
             if (
                 !data.some(
                     (d) => d.freeAndrogenIndex !== undefined && d.freeAndrogenIndex > 0,
@@ -487,7 +504,7 @@
                         (d) => d.freeAndrogenIndex !== undefined && d.freeAndrogenIndex > 0,
                     ),
                     {
-                        x: "date",
+                        x: xKey,
                         y: "freeAndrogenIndex",
                         stroke: "black",
                         strokeWidth: 2,
@@ -499,12 +516,21 @@
                         (d) => d.freeAndrogenIndex !== undefined && d.freeAndrogenIndex > 0,
                     ),
                     {
-                        x: "date",
+                        x: xKey,
                         y: "freeAndrogenIndex",
                         fill: "black",
                         r: 5,
-                        title: (d: any) =>
-                            `FAI: ${d.freeAndrogenIndex} (${d.date.toLocaleDateString()})`,
+                        title: (d: any) => {
+                            const dayPrefix =
+                                xKey === "xDays" && typeof d.xDays === "number"
+                                    ? `Day ${d.xDays.toFixed(1)} – `;
+                                    : "";
+                            const dateLabel =
+                                d.date && typeof d.date.toLocaleDateString === "function"
+                                    ? d.date.toLocaleDateString()
+                                    : "";
+                            return `FAI: ${d.freeAndrogenIndex} (${dayPrefix}${dateLabel})`;
+                        },
                     },
                 ),
             ];
@@ -520,10 +546,15 @@
             marginRight: 60,
             marginBottom: 60,
             grid: true,
-            x: {
-                label: "Date",
-                type: "utc",
-            },
+            x: useDaysAxis
+                ? {
+                      label: "Days since first dose",
+                      type: "linear",
+                  }
+                : {
+                      label: "Date",
+                      type: "utc",
+                  },
             y: {
                 label: "Levels",
                 grid: true,
@@ -543,6 +574,7 @@
                           "pg/mL",
                           "steelblue",
                           "Estradiol",
+                          xKey,
                       )
                     : []),
                 ...(showT
@@ -554,6 +586,7 @@
                           "ng/dL",
                           "orangered",
                           "Testosterone",
+                          xKey,
                       )
                     : []),
                 ...(showProg
@@ -565,6 +598,7 @@
                           "ng/mL",
                           "darkviolet",
                           "Progesterone",
+                          xKey,
                       )
                     : []),
                 ...(showFSH
@@ -576,6 +610,7 @@
                           "mIU/mL",
                           "forestgreen",
                           "FSH",
+                          xKey,
                       )
                     : []),
                 ...(showLH
@@ -587,6 +622,7 @@
                           "mIU/mL",
                           "darkcyan",
                           "LH",
+                          xKey,
                       )
                     : []),
                 ...(showProlactin
@@ -598,6 +634,7 @@
                           "ng/mL",
                           "saddlebrown",
                           "Prolactin",
+                          xKey,
                       )
                     : []),
                 ...(showSHBG
@@ -609,9 +646,10 @@
                           "nmol/L",
                           "deeppink",
                           "SHBG",
+                          xKey,
                       )
                     : []),
-                ...(showFAI ? createFAIMarks(bloodTests) : []),
+                ...(showFAI ? createFAIMarks(bloodTests, xKey) : []),
 
                 // Medication dosages
                 ...(showMedications &&
@@ -622,7 +660,7 @@
                                   (d) => d.type === "injectableEstradiol",
                               ),
                               {
-                                  x: "date",
+                                  x: xKey,
                                   y: (d) => Math.min(d.dose * 10, 200), // Scale for visibility
                                   fill: "limegreen",
                                   symbol: "triangle",
@@ -639,7 +677,7 @@
                           Plot.dot(
                               dosages.filter((d) => d.type === "oralEstradiol"),
                               {
-                                  x: "date",
+                                  x: xKey,
                                   y: (d) => Math.min(d.dose * 10, 200),
                                   fill: "blueviolet",
                                   symbol: "square",
@@ -656,7 +694,7 @@
                           Plot.dot(
                               dosages.filter((d) => d.type === "antiandrogen"),
                               {
-                                  x: "date",
+                                  x: xKey,
                                   y: (d) => Math.min(d.dose * 10, 200),
                                   fill: "darkorange",
                                   symbol: "diamond",
@@ -675,7 +713,7 @@
                                   (d) => d.type === "progesterone",
                               ),
                               {
-                                  x: "date",
+                                  x: xKey,
                                   y: (d) => Math.min(d.dose, 400), // Prog doses are high
                                   fill: "gold",
                                   symbol: "hexagon",
@@ -697,6 +735,7 @@
         timeRangeInDays;
         showMedications;
         showE2; showT; showProg; showFSH; showLH; showProlactin; showSHBG; showFAI;
+        xAxisMode; firstDoseDate;
         hrtData.data.bloodTests;
         hrtData.data.dosageHistory;
         renderChart();
@@ -788,6 +827,30 @@
         </div>
     </div>
     <div class="mb-4 flex flex-wrap gap-2">
+        <div class="flex gap-2">
+            <span class="self-center text-sm">X-Axis:</span>
+            <button
+                class="px-3 py-1 text-sm transition-colors bg-latte-rose-pine-surface dark:bg-rose-pine-surface text-latte-rose-pine-text dark:text-rose-pine-text rounded dark:hover:bg-rose-pine-overlay hover:bg-latte-rose-pine-overlay"
+                class:bg-latte-rose-pine-iris={xAxisMode === "date"}
+                class:dark:bg-rose-pine-iris={xAxisMode === "date"}
+                class:text-latte-rose-pine-base={xAxisMode === "date"}
+                class:dark:text-rose-pine-base={xAxisMode === "date"}
+                onclick={() => (xAxisMode = "date")}
+            >
+                Date
+            </button>
+            <button
+                class="px-3 py-1 text-sm transition-colors bg-latte-rose-pine-surface dark:bg-rose-pine-surface text-latte-rose-pine-text dark:text-rose-pine-text rounded dark:hover:bg-rose-pine-overlay hover:bg-latte-rose-pine-overlay disabled:opacity-50 disabled:cursor-not-allowed"
+                class:bg-latte-rose-pine-iris={xAxisMode === "days"}
+                class:dark:bg-rose-pine-iris={xAxisMode === "days"}
+                class:text-latte-rose-pine-base={xAxisMode === "days"}
+                class:dark:text-rose-pine-base={xAxisMode === "days"}
+                onclick={() => (xAxisMode = "days")}
+                disabled={firstDoseDate === null}
+            >
+                Days since first dose
+            </button>
+        </div>
         <div class="ml-auto flex gap-2">
             <span class="self-center text-sm">Time Range:</span>
             <button
