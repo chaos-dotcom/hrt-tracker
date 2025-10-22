@@ -15,6 +15,111 @@
     import * as Plot from "@observablehq/plot";
     import EditModal from "$lib/components/EditModal.svelte";
 
+    // Diary / Notes data and helpers
+    type DiaryEntry = {
+        id: string;
+        date: number; // Unix ms
+        title?: string;
+        content: string;
+    };
+
+    let notes = $state<DiaryEntry[]>([]);
+    let notesInitialized = false;
+
+    // Load notes once from localStorage
+    $effect(() => {
+        if (typeof window === "undefined" || notesInitialized) return;
+        try {
+            const raw = localStorage.getItem("hrt.notes");
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                if (Array.isArray(parsed)) {
+                    notes = parsed
+                        .filter((n) => n && typeof n === "object" && typeof (n as any).content === "string")
+                        .map((n: any) => ({
+                            id: n.id || (globalThis.crypto?.randomUUID?.() ?? String(n.date ?? Date.now())),
+                            date: typeof n.date === "number" ? n.date : new Date(n.date || Date.now()).getTime(),
+                            title: typeof n.title === "string" ? n.title : "",
+                            content: n.content,
+                        }));
+                }
+            }
+        } catch {
+            // ignore parse errors
+        }
+        notesInitialized = true;
+    });
+
+    // Persist to localStorage whenever notes change
+    $effect(() => {
+        if (!notesInitialized) return;
+        try {
+            localStorage.setItem("hrt.notes", JSON.stringify(notes));
+        } catch {
+            // storage may be unavailable
+        }
+    });
+
+    // New note form state
+    let noteTitle = $state("");
+    let noteContent = $state("");
+    let noteDate = $state(new Date().toISOString().slice(0, 10)); // yyyy-mm-dd
+
+    function addNote() {
+        const content = noteContent.trim();
+        const title = noteTitle.trim();
+        if (!content) return;
+        const id =
+            globalThis.crypto?.randomUUID?.() ??
+            `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        const dateMs = new Date(noteDate).getTime();
+        notes = [
+            { id, date: Number.isFinite(dateMs) ? dateMs : Date.now(), title, content },
+            ...notes,
+        ];
+        noteTitle = "";
+        noteContent = "";
+        noteDate = new Date().toISOString().slice(0, 10);
+    }
+
+    function deleteNote(id: string) {
+        notes = notes.filter((n) => n.id !== id);
+    }
+
+    // Editing
+    let editingId: string | null = $state(null);
+    let editingTitle = $state("");
+    let editingContent = $state("");
+    let editingDate = $state(new Date().toISOString().slice(0, 10));
+
+    function startEdit(note: DiaryEntry) {
+        editingId = note.id;
+        editingTitle = note.title ?? "";
+        editingContent = note.content;
+        editingDate = new Date(note.date).toISOString().slice(0, 10);
+    }
+    function cancelEdit() {
+        editingId = null;
+    }
+    function saveEdit() {
+        if (!editingId) return;
+        const id = editingId;
+        const dateMs = new Date(editingDate).getTime();
+        notes = notes.map((n) =>
+            n.id === id
+                ? {
+                      ...n,
+                      title: editingTitle.trim(),
+                      content: editingContent.trim(),
+                      date: Number.isFinite(dateMs) ? dateMs : n.date,
+                  }
+                : n,
+        );
+        editingId = null;
+    }
+
+    const sortedNotes = $derived([...notes].sort((a, b) => b.date - a.date));
+
     function generateEstrannaiseUrl(): string | null {
         const regimen = hrtData.data.injectableEstradiol;
         const historicalDoses = hrtData.data.dosageHistory
@@ -939,6 +1044,125 @@
             <p>* When split axis is enabled, Testosterone and SHBG use the right Y-axis.</p>
             {#if hrtData.data.bloodTests.length > 0}
                 <p>* Hormone measurements are normalized to standard units for charting; hover shows recorded units.</p>
+            {/if}
+        </div>
+    </div>
+
+    <div
+        class="border rounded-lg p-4 bg-white dark:bg-rose-pine-surface shadow-md w-full mb-4"
+    >
+        <h2 class="text-xl font-medium mb-2">Diary / Notes</h2>
+        <div class="space-y-2">
+            <div class="flex flex-wrap gap-2">
+                <input
+                    type="date"
+                    class="border rounded px-2 py-1 bg-white dark:bg-rose-pine-base text-latte-rose-pine-text dark:text-rose-pine-text"
+                    bind:value={noteDate}
+                    aria-label="Note date"
+                />
+                <input
+                    type="text"
+                    class="flex-1 min-w-0 border rounded px-2 py-1 bg-white dark:bg-rose-pine-base text-latte-rose-pine-text dark:text-rose-pine-text"
+                    placeholder="Title (optional)"
+                    bind:value={noteTitle}
+                    aria-label="Note title"
+                />
+            </div>
+            <textarea
+                class="w-full border rounded px-2 py-1 bg-white dark:bg-rose-pine-base text-latte-rose-pine-text dark:text-rose-pine-text"
+                rows="3"
+                placeholder="Write a note..."
+                bind:value={noteContent}
+                aria-label="Note content"
+            ></textarea>
+            <div class="flex justify-end">
+                <button
+                    class="px-3 py-1 text-sm rounded bg-latte-rose-pine-foam text-white hover:bg-rose-pine-pine transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    onclick={addNote}
+                    disabled={!noteContent.trim()}
+                >
+                    Add Note
+                </button>
+            </div>
+        </div>
+
+        <div class="mt-4">
+            {#if sortedNotes.length === 0}
+                <p class="text-gray-500 dark:text-gray-400 italic">
+                    No notes yet.
+                </p>
+            {:else}
+                <ul class="space-y-2 max-h-60 overflow-y-auto">
+                    {#each sortedNotes as n (n.id)}
+                        <li class="p-2 border rounded">
+                            {#if editingId === n.id}
+                                <div class="flex flex-wrap gap-2 mb-2">
+                                    <input
+                                        type="date"
+                                        class="border rounded px-2 py-1 bg-white dark:bg-rose-pine-base text-latte-rose-pine-text dark:text-rose-pine-text"
+                                        bind:value={editingDate}
+                                        aria-label="Edit note date"
+                                    />
+                                    <input
+                                        type="text"
+                                        class="flex-1 min-w-0 border rounded px-2 py-1 bg-white dark:bg-rose-pine-base text-latte-rose-pine-text dark:text-rose-pine-text"
+                                        placeholder="Title (optional)"
+                                        bind:value={editingTitle}
+                                        aria-label="Edit note title"
+                                    />
+                                </div>
+                                <textarea
+                                    class="w-full border rounded px-2 py-1 bg-white dark:bg-rose-pine-base text-latte-rose-pine-text dark:text-rose-pine-text"
+                                    rows="4"
+                                    bind:value={editingContent}
+                                    aria-label="Edit note content"
+                                ></textarea>
+                                <div class="flex gap-2 justify-end mt-2">
+                                    <button
+                                        class="px-3 py-1 text-sm rounded bg-latte-rose-pine-foam text-white hover:bg-rose-pine-pine transition-colors"
+                                        onclick={saveEdit}
+                                    >
+                                        Save
+                                    </button>
+                                    <button
+                                        class="px-3 py-1 text-sm transition-colors bg-latte-rose-pine-surface dark:bg-rose-pine-surface text-latte-rose-pine-text dark:text-rose-pine-text rounded dark:hover:bg-rose-pine-overlay hover:bg-latte-rose-pine-overlay"
+                                        onclick={cancelEdit}
+                                    >
+                                        Cancel
+                                    </button>
+                                </div>
+                            {:else}
+                                <div class="flex justify-between items-start gap-3">
+                                    <div class="min-w-0">
+                                        <div class="font-medium">
+                                            {new Date(n.date).toLocaleDateString()}
+                                        </div>
+                                        {#if n.title}
+                                            <div class="text-sm opacity-80 break-words">{n.title}</div>
+                                        {/if}
+                                        <div class="mt-1 whitespace-pre-wrap text-sm break-words">
+                                            {n.content}
+                                        </div>
+                                    </div>
+                                    <div class="flex gap-2 shrink-0">
+                                        <button
+                                            class="px-3 py-1 text-sm rounded bg-latte-rose-pine-foam text-white hover:bg-rose-pine-pine transition-colors"
+                                            onclick={() => startEdit(n)}
+                                        >
+                                            Edit
+                                        </button>
+                                        <button
+                                            class="px-3 py-1 text-sm transition-colors bg-latte-rose-pine-surface dark:bg-rose-pine-surface text-latte-rose-pine-text dark:text-rose-pine-text rounded dark:hover:bg-rose-pine-overlay hover:bg-latte-rose-pine-overlay"
+                                            onclick={() => deleteNote(n.id)}
+                                        >
+                                            Delete
+                                        </button>
+                                    </div>
+                                </div>
+                            {/if}
+                        </li>
+                    {/each}
+                </ul>
             {/if}
         </div>
     </div>
