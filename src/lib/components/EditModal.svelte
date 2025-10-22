@@ -45,6 +45,7 @@
 		isDosage ? undefined : (item as BloodTest).shbgUnit || HormoneUnits.T_nmol_L
 	);
 	let freeAndrogenIndex = $state(isDosage ? undefined : (item as BloodTest).freeAndrogenIndex);
+	let estrannaiseNumber = $state(isDosage ? undefined : (item as BloodTest).estrannaiseNumber);
 	let notes = $state(isDosage ? undefined : (item as BloodTest).notes);
 
 	// DosageHistoryEntry fields
@@ -131,6 +132,7 @@
 			bloodTestItem.shbgLevel = shbgLevel;
 			bloodTestItem.shbgUnit = shbgUnit;
 			bloodTestItem.freeAndrogenIndex = freeAndrogenIndex;
+			bloodTestItem.estrannaiseNumber = estrannaiseNumber;
 			bloodTestItem.notes = notes;
 		}
 
@@ -335,6 +337,21 @@
 							<option value={option.value}>{option.label}</option>
 						{/each}
 					</select>
+				</div>
+			</div>
+			<div class="flex gap-5 mt-4">
+				<div class="w-full">
+					<label for="estrannaiseNumber" class="block text-sm mb-1">Estrannaise predicted E2 (pg/mL)</label>
+					<input
+						id="estrannaiseNumber"
+						type="number"
+						step="any"
+						bind:value={estrannaiseNumber}
+						class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline"
+					/>
+				</div>
+				<div class="w-full">
+					<!-- empty div for alignment -->
 				</div>
 			</div>
 			<div class="flex gap-5 mt-4">
