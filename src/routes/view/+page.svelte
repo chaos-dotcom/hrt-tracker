@@ -212,8 +212,8 @@
         const stateString = "i";
 
         const ff = getLatestFudgeFactor();
-        const query = ff ? `?ff=${ff}` : "";
-        return `https://estrannai.se/${query}#${stateString}_${customDoseString}_`;
+        const suffix = ff ? `__${ff}` : "_";
+        return `https://estrannai.se/#${stateString}_${customDoseString}${suffix}`;
     }
 
     let fudgeFactor = $derived(getLatestFudgeFactor());
