@@ -17,7 +17,17 @@
 	const isMeasurement = 'weight' in item || 'braSize' in item;
 
 	// Common fields
-	let date = $state(new Date(item.date).toISOString().slice(0, 16));
+	function toLocalInputValue(ms: number) {
+		const d = new Date(ms);
+		const pad = (n: number) => String(n).padStart(2, "0");
+		const yyyy = d.getFullYear();
+		const mm = pad(d.getMonth() + 1);
+		const dd = pad(d.getDate());
+		const hh = pad(d.getHours());
+		const mi = pad(d.getMinutes());
+		return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+	}
+	let date = $state(toLocalInputValue(item.date));
 
 	// BloodTest fields
 	let estradiolLevel = $state(isDosage ? undefined : (item as BloodTest).estradiolLevel);

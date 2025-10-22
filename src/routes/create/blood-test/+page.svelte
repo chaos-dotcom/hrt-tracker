@@ -2,7 +2,17 @@
     import { hrtData } from "$lib/storage.svelte";
     import { type BloodTest, HormoneUnits } from "$lib/types";
 
-    let testDateTime = $state(Date.now());
+    function toLocalInputValue(ms: number) {
+        const d = new Date(ms);
+        const pad = (n: number) => String(n).padStart(2, "0");
+        const yyyy = d.getFullYear();
+        const mm = pad(d.getMonth() + 1);
+        const dd = pad(d.getDate());
+        const hh = pad(d.getHours());
+        const mi = pad(d.getMinutes());
+        return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+    }
+    let testDateTime = $state(toLocalInputValue(Date.now()));
     let testLevel = $state(0);
     let eLevel = $state(0);
     let testUnit: HormoneUnits = $state(HormoneUnits.T_ng_dL);
@@ -35,7 +45,7 @@
     }
     function submitForm() {
         const newBloodTest: BloodTest = {
-            date: testDateTime,
+            date: new Date(testDateTime).getTime(),
             estradiolLevel: eLevel,
             testLevel: testLevel,
             testUnit: testUnit,

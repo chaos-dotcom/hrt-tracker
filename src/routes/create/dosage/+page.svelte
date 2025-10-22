@@ -59,6 +59,17 @@
     // Injection site for injectable estrogen
     let eInjectionSite: InjectionSites | "" = $state("");
 
+    function toLocalInputValue(ms: number) {
+        const d = new Date(ms);
+        const pad = (n: number) => String(n).padStart(2, "0");
+        const yyyy = d.getFullYear();
+        const mm = pad(d.getMonth() + 1);
+        const dd = pad(d.getDate());
+        const hh = pad(d.getHours());
+        const mi = pad(d.getMinutes());
+        return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+    }
+
     $effect(() => {
         if ($page.url.searchParams.get("mode") === "schedule") {
             mode = "schedule";
@@ -73,14 +84,14 @@
             eDose = injSched.dose;
             eUnit = injSched.unit;
             injectionFrequency = injSched.frequency;
-            eNextDoseDate = injSched.nextDoseDate ? new Date(injSched.nextDoseDate).toISOString().slice(0, 16) : "";
+            eNextDoseDate = injSched.nextDoseDate ? toLocalInputValue(injSched.nextDoseDate) : "";
         } else if (oralSched) {
             estrogenMethod = "oral";
             oralEType = oralSched.type;
             eDose = oralSched.dose;
             eUnit = oralSched.unit;
             oralEFrequency = oralSched.frequency || 1;
-            eNextDoseDate = oralSched.nextDoseDate ? new Date(oralSched.nextDoseDate).toISOString().slice(0, 16) : "";
+            eNextDoseDate = oralSched.nextDoseDate ? toLocalInputValue(oralSched.nextDoseDate) : "";
         }
 
         // AA
@@ -89,7 +100,7 @@
         aaDose = aaSched?.dose || 0;
         aaUnit = aaSched?.unit || HormoneUnits.mg;
         aaFrequency = aaSched?.frequency || 1;
-        aaNextDoseDate = aaSched?.nextDoseDate ? new Date(aaSched.nextDoseDate).toISOString().slice(0, 16) : "";
+        aaNextDoseDate = aaSched?.nextDoseDate ? toLocalInputValue(aaSched.nextDoseDate) : "";
 
         // Progesterone
         const pSched = hrtData.data.progesterone;
@@ -98,7 +109,7 @@
         pUnit = pSched?.unit || HormoneUnits.mg;
         pRoute = pSched?.route || ProgesteroneRoutes.Oral;
         pFrequency = pSched?.frequency || 1;
-        pNextDoseDate = pSched?.nextDoseDate ? new Date(pSched.nextDoseDate).toISOString().slice(0, 16) : "";
+        pNextDoseDate = pSched?.nextDoseDate ? toLocalInputValue(pSched.nextDoseDate) : "";
     });
 
     function enumToDropdownOptions(e: any) {
