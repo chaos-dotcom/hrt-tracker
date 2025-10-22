@@ -18,6 +18,7 @@
     let shbgLevel = $state(0);
     let shbgUnit: HormoneUnits = $state(HormoneUnits.T_nmol_L);
     let freeAndrogenIndex = $state(0);
+    let estrannaiseNumber = $state(0);
     let notes = $state("");
     let showFeedback = $state(false);
 
@@ -50,6 +51,7 @@
             shbgLevel: shbgLevel,
             shbgUnit: shbgUnit,
             freeAndrogenIndex: freeAndrogenIndex,
+            estrannaiseNumber: estrannaiseNumber,
             notes: notes,
         };
         hrtData.addBloodTest(newBloodTest);
@@ -122,6 +124,27 @@
                             <option value={option.value}>{option.label}</option>
                         {/each}
                     </select>
+                </div>
+            </div>
+
+            <div class="flex gap-5 mt-4">
+                <div class="w-full">
+                    <label
+                        class="block text-latte-rose-pine-text dark:text-rose-pine-text text-sm mb-1"
+                        for="estrannaiseNumber"
+                    >
+                        estrannaise predicted E2 (pg/mL)
+                    </label>
+                    <input
+                        id="estrannaiseNumber"
+                        type="number"
+                        step="any"
+                        class="shadow appearance-none border rounded w-full py-2 px-3 text-latte-rose-pine-text dark:text-rose-pine-text leading-tight focus:outline-none focus:shadow-outline"
+                        bind:value={estrannaiseNumber}
+                    />
+                </div>
+                <div class="w-full">
+                    <!-- empty div for alignment -->
                 </div>
             </div>
 

@@ -78,6 +78,30 @@
 
     const sortedNotes = $derived([...(hrtData.data.notes ?? [])].sort((a, b) => b.date - a.date));
 
+    function getLatestFudgeFactor(): number | null {
+        const tests = hrtData.data.bloodTests;
+        if (!tests || tests.length === 0) return null;
+        const latest = [...tests]
+            .filter(
+                (t) =>
+                    typeof t.estradiolLevel === "number" &&
+                    typeof t.estrannaiseNumber === "number" &&
+                    (t.estrannaiseNumber as number) > 0,
+            )
+            .sort((a, b) => b.date - a.date)[0];
+        if (!latest) return null;
+        const unit = latest.estradiolUnit || HormoneUnits.E2_pg_mL;
+        const measured =
+            unit === HormoneUnits.E2_pmol_L
+                ? (latest.estradiolLevel as number) / 3.671
+                : (latest.estradiolLevel as number);
+        const predicted = latest.estrannaiseNumber as number;
+        if (!isFinite(measured) || !isFinite(predicted) || predicted <= 0) return null;
+        const ff = measured / predicted;
+        if (!isFinite(ff) || ff <= 0) return null;
+        return Number(ff.toFixed(3));
+    }
+
     function generateEstrannaiseUrl(): string | null {
         const regimen = hrtData.data.injectableEstradiol;
         const historicalDoses = hrtData.data.dosageHistory
@@ -187,9 +211,12 @@
         // stateString: i for interval days.
         const stateString = "i";
 
-        return `https://estrannai.se/#${stateString}_${customDoseString}_`;
+        const ff = getLatestFudgeFactor();
+        const query = ff ? `?ff=${ff}` : "";
+        return `https://estrannai.se/${query}#${stateString}_${customDoseString}_`;
     }
 
+    let fudgeFactor = $derived(getLatestFudgeFactor());
     let estrannaiseUrl = $derived(generateEstrannaiseUrl());
 
     let daysSinceFirstDose: number | null = $state(null);
@@ -789,6 +816,11 @@
             {#if daysSinceFirstDose !== null}
                 <p>
                     <strong>Days since first dose:</strong> {daysSinceFirstDose}
+                </p>
+            {/if}
+            {#if fudgeFactor !== null}
+                <p>
+                    <strong>Estrannaise fudge factor:</strong> {fudgeFactor}
                 </p>
             {/if}
             {#if hrtData.data.injectableEstradiol}
