@@ -1,5 +1,5 @@
 import { browser } from "$app/environment";
-import type { HRTData, DosageHistoryEntry, BloodTest, Measurement, UnixTime } from "./types";
+import type { HRTData, DosageHistoryEntry, BloodTest, Measurement, UnixTime, DiaryEntry } from "./types";
 
 const defaultData: HRTData = {
   // injectableEstradiol: undefined,
@@ -8,6 +8,7 @@ const defaultData: HRTData = {
   bloodTests: [],
   dosageHistory: [],
   measurements: [],
+  notes: [],
 };
 
 class hrtStore {
@@ -18,6 +19,39 @@ class hrtStore {
   init(initialData: HRTData) {
     if (this.#initialized || !browser) return;
     this.data = initialData ? { ...defaultData, ...initialData } : { ...defaultData };
+
+    // One-time migration of localStorage notes ("hrt.notes") to centralized store
+    try {
+      if (browser) {
+        const raw = localStorage.getItem("hrt.notes");
+        if (raw && (!this.data.notes || this.data.notes.length === 0)) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            const normalized: DiaryEntry[] = parsed
+              .filter((n: any) => n && typeof n.content === "string")
+              .map((n: any) => ({
+                id:
+                  typeof n.id === "string" && n.id
+                    ? n.id
+                    : (globalThis.crypto?.randomUUID?.() ?? String(n.date ?? Date.now())),
+                date:
+                  typeof n.date === "number"
+                    ? n.date
+                    : new Date(n.date || Date.now()).getTime(),
+                title: typeof n.title === "string" ? n.title : "",
+                content: n.content,
+              }));
+            if (normalized.length) {
+              this.data.notes = normalized;
+              localStorage.removeItem("hrt.notes");
+            }
+          }
+        }
+      }
+    } catch {
+      // ignore migration errors
+    }
+
     this.backfillScheduledDoses();
     this.#initialized = true;
 

@@ -11,54 +11,12 @@
         InjectableEstradiols,
         OralEstradiols,
         type Measurement,
+        type DiaryEntry,
     } from "$lib/types";
     import * as Plot from "@observablehq/plot";
     import EditModal from "$lib/components/EditModal.svelte";
 
-    // Diary / Notes data and helpers
-    type DiaryEntry = {
-        id: string;
-        date: number; // Unix ms
-        title?: string;
-        content: string;
-    };
-
-    let notes = $state<DiaryEntry[]>([]);
-    let notesInitialized = false;
-
-    // Load notes once from localStorage
-    $effect(() => {
-        if (typeof window === "undefined" || notesInitialized) return;
-        try {
-            const raw = localStorage.getItem("hrt.notes");
-            if (raw) {
-                const parsed = JSON.parse(raw);
-                if (Array.isArray(parsed)) {
-                    notes = parsed
-                        .filter((n) => n && typeof n === "object" && typeof (n as any).content === "string")
-                        .map((n: any) => ({
-                            id: n.id || (globalThis.crypto?.randomUUID?.() ?? String(n.date ?? Date.now())),
-                            date: typeof n.date === "number" ? n.date : new Date(n.date || Date.now()).getTime(),
-                            title: typeof n.title === "string" ? n.title : "",
-                            content: n.content,
-                        }));
-                }
-            }
-        } catch {
-            // ignore parse errors
-        }
-        notesInitialized = true;
-    });
-
-    // Persist to localStorage whenever notes change
-    $effect(() => {
-        if (!notesInitialized) return;
-        try {
-            localStorage.setItem("hrt.notes", JSON.stringify(notes));
-        } catch {
-            // storage may be unavailable
-        }
-    });
+    // Diary / Notes are stored in HRTData via hrtData.data.notes
 
     // New note form state
     let noteTitle = $state("");
@@ -73,9 +31,9 @@
             globalThis.crypto?.randomUUID?.() ??
             `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
         const dateMs = new Date(noteDate).getTime();
-        notes = [
+        hrtData.data.notes = [
             { id, date: Number.isFinite(dateMs) ? dateMs : Date.now(), title, content },
-            ...notes,
+            ...(hrtData.data.notes ?? []),
         ];
         noteTitle = "";
         noteContent = "";
@@ -83,7 +41,7 @@
     }
 
     function deleteNote(id: string) {
-        notes = notes.filter((n) => n.id !== id);
+        hrtData.data.notes = (hrtData.data.notes ?? []).filter((n) => n.id !== id);
     }
 
     // Editing
@@ -105,7 +63,7 @@
         if (!editingId) return;
         const id = editingId;
         const dateMs = new Date(editingDate).getTime();
-        notes = notes.map((n) =>
+        hrtData.data.notes = (hrtData.data.notes ?? []).map((n) =>
             n.id === id
                 ? {
                       ...n,
@@ -118,7 +76,7 @@
         editingId = null;
     }
 
-    const sortedNotes = $derived([...notes].sort((a, b) => b.date - a.date));
+    const sortedNotes = $derived([...(hrtData.data.notes ?? [])].sort((a, b) => b.date - a.date));
 
     function generateEstrannaiseUrl(): string | null {
         const regimen = hrtData.data.injectableEstradiol;
