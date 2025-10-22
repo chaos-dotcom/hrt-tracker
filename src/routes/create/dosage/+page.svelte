@@ -1,6 +1,7 @@
 <script lang="ts">
     import { page } from "$app/stores";
     import { hrtData } from "$lib/storage.svelte";
+    import { goto } from "$app/navigation";
     import {
         type EstrogenType,
         InjectableEstradiols,
@@ -118,6 +119,7 @@
         event.preventDefault();
         if (mode === "record") {
             submitDosageForm();
+            goto("/view");
         } else {
             saveSchedule();
         }
