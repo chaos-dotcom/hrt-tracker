@@ -286,7 +286,12 @@
                             : test.lhLevel
                         : undefined;
 
-                const progesteroneLevelPlot = test.progesteroneLevel;
+                const progesteroneLevelPlot =
+                    test.progesteroneLevel !== undefined
+                        ? progesteroneUnitRaw === HormoneUnits.T_nmol_L
+                            ? Number((test.progesteroneLevel * 0.31).toFixed(2)) // nmol/L -> ng/mL (0.31 ng/mL per 1 nmol/L)
+                            : test.progesteroneLevel
+                        : undefined;
                 const prolactinLevelPlot = test.prolactinLevel;
                 const shbgLevelPlot = test.shbgLevel;
 
