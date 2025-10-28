@@ -9,6 +9,13 @@ const defaultData: HRTData = {
   dosageHistory: [],
   measurements: [],
   notes: [],
+  settings: {
+    enableAutoBackfill: true,
+    defaultInjectionFrequencyDays: 7,
+    defaultOralFrequencyDays: 1,
+    defaultAntiandrogenFrequencyDays: 1,
+    defaultProgesteroneFrequencyDays: 1,
+  },
 };
 
 class hrtStore {
@@ -105,6 +112,8 @@ class hrtStore {
 
   backfillScheduledDoses() {
     const now = Date.now();
+    const s = this.data.settings;
+    if (s && s.enableAutoBackfill === false) return;
 
     const createDoseEntry = (
         medicationType: DosageHistoryEntry['medicationType'],
@@ -133,9 +142,18 @@ class hrtStore {
         schedule: { frequency: number; nextDoseDate?: UnixTime; [key: string]: any } | undefined,
         medicationType: DosageHistoryEntry['medicationType']
     ) => {
-        if (!schedule || !schedule.frequency || !schedule.nextDoseDate) return;
+        if (!schedule || !schedule.nextDoseDate) return;
 
-        const intervalDays = schedule.frequency;
+        const intervalDays =
+          Number(schedule.frequency) > 0
+            ? schedule.frequency
+            : (medicationType === 'injectableEstradiol'
+                ? (this.data.settings?.defaultInjectionFrequencyDays ?? 7)
+                : medicationType === 'oralEstradiol'
+                ? (this.data.settings?.defaultOralFrequencyDays ?? 1)
+                : medicationType === 'antiandrogen'
+                ? (this.data.settings?.defaultAntiandrogenFrequencyDays ?? 1)
+                : (this.data.settings?.defaultProgesteroneFrequencyDays ?? 1));
 
         const intervalMillis = intervalDays * 24 * 60 * 60 * 1000;
         if (intervalMillis <= 0) return;
