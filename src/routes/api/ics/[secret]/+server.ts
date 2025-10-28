@@ -45,17 +45,23 @@ function makeEvent(uid: string, startMs: number, summary: string, description?: 
 	return lines.join('\r\n');
 }
 
-export const GET: RequestHandler = async ({ url }) => {
-	// If a secret is configured, this public path is disabled; use /api/ics/[secret]
+export const GET: RequestHandler = async ({ params, url }) => {
+	// Verify secret from settings
+	let configuredSecret = '';
 	try {
 		const yamlText = await fs.readFile(settingsFilePath, 'utf-8');
 		const conf = parse(yamlText) ?? {};
-		if (conf && typeof (conf as any).icsSecret === 'string' && (conf as any).icsSecret.trim().length > 0) {
-			return new Response('Not found', { status: 404 });
+		if (conf && typeof (conf as any).icsSecret === 'string') {
+			configuredSecret = ((conf as any).icsSecret as string).trim();
 		}
-	} catch (e) {
-		// ignore missing settings
+	} catch {
+		// missing settings OK
 	}
+	const provided = (params as { secret?: string }).secret?.trim() ?? '';
+	if (!configuredSecret || provided !== configuredSecret) {
+		return new Response('Not found', { status: 404 });
+	}
+
 	// Options via query params
 	const horizonDaysParam = url.searchParams.get('horizonDays');
 	const includePastParam = url.searchParams.get('includePast');
