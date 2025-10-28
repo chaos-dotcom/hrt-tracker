@@ -32,7 +32,16 @@
 	}
 
 	let restoreMessage = $state('');
-
+ 
+	// ICS calendar subscription URL (defaults to 1-year horizon, includes past entries)
+	let icsUrl = $state('');
+	if (typeof window !== 'undefined') {
+		icsUrl = `${location.origin}/api/ics?horizonDays=365&includePast=1`;
+	}
+	function copyIcsUrl() {
+		navigator.clipboard?.writeText(icsUrl);
+	}
+ 
 	async function handleFileSelect(event: Event) {
 		const input = event.target as HTMLInputElement;
 		if (input.files && input.files.length > 0) {
@@ -96,6 +105,19 @@
 			{/if}
 		</div>
 		<p class="text-sm text-gray-500">Click Save to persist settings and data to the server.</p>
+	</div>
+
+	<!-- ICS Calendar Section -->
+	<div class="p-4 border rounded space-y-3 bg-white dark:bg-rose-pine-surface">
+		<h2 class="text-2xl mb-2">ICS Calendar</h2>
+		<p class="text-sm opacity-75 mb-2">
+			Subscribe in your calendar app using this URL. It includes your recorded doses and future scheduled doses.
+		</p>
+		<div class="flex items-center gap-2">
+			<input class="flex-1 border rounded px-2 py-1 bg-white dark:bg-rose-pine-base text-latte-rose-pine-text dark:text-rose-pine-text" type="text" readonly value={icsUrl} />
+			<a class="px-3 py-1 text-sm rounded bg-latte-rose-pine-foam text-white hover:bg-rose-pine-pine transition-colors" href={icsUrl} target="_blank" rel="noopener noreferrer">Open</a>
+			<button class="px-3 py-1 text-sm transition-colors bg-latte-rose-pine-surface dark:bg-rose-pine-surface text-latte-rose-pine-text dark:text-rose-pine-text rounded dark:hover:bg-rose-pine-overlay hover:bg-latte-rose-pine-overlay" onclick={copyIcsUrl}>Copy</button>
+		</div>
 	</div>
 
 	<div class="flex flex-col space-y-4">
