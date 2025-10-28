@@ -186,14 +186,9 @@ class hrtStore {
         let nextDoseTime = schedule.nextDoseDate;
 
         while (nextDoseTime <= now) {
-            const doseExists = this.data.dosageHistory.some(d => d.medicationType === medicationType && d.date === nextDoseTime);
-            if (!doseExists) {
-                const newDose = createDoseEntry(medicationType, schedule, nextDoseTime);
-                this.data.dosageHistory.push(newDose);
-            }
             nextDoseTime += intervalMillis;
         }
-        
+
         schedule.nextDoseDate = nextDoseTime;
     };
 
