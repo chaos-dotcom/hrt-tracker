@@ -84,7 +84,7 @@
 		<h2 class="text-2xl mb-2">Settings</h2>
 		<label class="flex items-center gap-2">
 			<input type="checkbox" bind:checked={s.enableAutoBackfill} />
-			<span>Enable automatic backfill (auto-schedule)</span>
+			<span>Enable automatic schedule advance (no backfill)</span>
 		</label>
 		<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
 			<label class="block">
