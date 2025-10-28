@@ -1,0 +1,5 @@
+enableAutoBackfill: true
+defaultInjectionFrequencyDays: 7
+defaultOralFrequencyDays: 1
+defaultAntiandrogenFrequencyDays: 1
+defaultProgesteroneFrequencyDays: 1
