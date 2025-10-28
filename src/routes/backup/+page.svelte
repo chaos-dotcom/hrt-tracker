@@ -13,6 +13,13 @@
 	}
 	const s = hrtData.data.settings;
 
+	$effect(() => {
+		s.enableAutoBackfill;
+		if (s.enableAutoBackfill) {
+			hrtData.backfillScheduledDoses();
+		}
+	});
+
 	function exportToJson() {
 		const dataStr = JSON.stringify(hrtData.data, null, 2);
 		const blob = new Blob([dataStr], { type: 'application/json' });
