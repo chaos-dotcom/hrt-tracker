@@ -24,8 +24,8 @@
     let oralEType: OralEstradiols = $state(OralEstradiols.Valerate);
     let eDose = $state(0);
     let eUnit: HormoneUnits = $state(HormoneUnits.mg);
-    let injectionFrequency = $state(hrtData.data.settings?.defaultInjectionFrequencyDays ?? 7);
-    let oralEFrequency = $state(hrtData.data.settings?.defaultOralFrequencyDays ?? 1);
+    let injectionFrequency = $state(hrtData.data.injectableEstradiol?.frequency ?? 7);
+    let oralEFrequency = $state(hrtData.data.oralEstradiol?.frequency ?? 1);
     let eDateTime = $state("");
     let eNextDoseDate = $state("");
 
@@ -33,7 +33,7 @@
     let aaType: Antiandrogens | "" = $state("");
     let aaDose = $state(0);
     let aaUnit: HormoneUnits = $state(HormoneUnits.mg);
-    let aaFrequency = $state(hrtData.data.settings?.defaultAntiandrogenFrequencyDays ?? 1);
+    let aaFrequency = $state(hrtData.data.antiandrogen?.frequency ?? 1);
     let aaDateTime = $state("");
     let aaNextDoseDate = $state("");
 
@@ -42,7 +42,7 @@
     let pDose = $state(0);
     let pUnit: HormoneUnits = $state(HormoneUnits.mg);
     let pRoute: ProgesteroneRoutes = $state(ProgesteroneRoutes.Oral);
-    let pFrequency = $state(hrtData.data.settings?.defaultProgesteroneFrequencyDays ?? 1);
+    let pFrequency = $state(hrtData.data.progesterone?.frequency ?? 1);
     let pDateTime = $state("");
     let pNextDoseDate = $state("");
 
