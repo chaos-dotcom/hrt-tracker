@@ -94,6 +94,16 @@ class hrtStore {
             },
             body: dataToSave,
           });
+          // Persist settings YAML
+          if (this.data?.settings) {
+            await fetch('/api/settings', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(this.data.settings),
+            });
+          }
         } catch (error) {
           console.error('Failed to save data:', error);
         }
