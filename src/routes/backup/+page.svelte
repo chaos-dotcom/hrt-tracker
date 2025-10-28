@@ -102,7 +102,7 @@
 			<label class="block">
 				<span class="text-sm">ICS URL secret (optional)</span>
 				<input type="text" placeholder="e.g. my-private-feed" class="border rounded px-2 py-1 w-full" bind:value={s.icsSecret} />
-				<p class="text-xs opacity-75 mt-1">When set, your ICS URL becomes /api/ics/{secret}. Keep it hard to guess.</p>
+				<p class="text-xs opacity-75 mt-1">When set, your ICS URL becomes /api/ics/&#123;secret&#125;. Keep it hard to guess.</p>
 			</label>
 		</div>
 		<div class="flex items-center gap-3">
