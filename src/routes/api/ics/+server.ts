@@ -1,8 +1,10 @@
 import type { RequestHandler } from './$types';
 import fs from 'fs/promises';
+import { parse } from 'yaml';
 
 const DATA_FILE = 'hrt-data.json';
 const DAY_MS = 24 * 60 * 60 * 1000;
+const settingsFilePath = 'hrt-settings.yaml';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 function toICSDateTime(ms: number): string {
@@ -44,6 +46,16 @@ function makeEvent(uid: string, startMs: number, summary: string, description?: 
 }
 
 export const GET: RequestHandler = async ({ url }) => {
+	// If a secret is configured, this public path is disabled; use /api/ics/[secret]
+	try {
+		const yamlText = await fs.readFile(settingsFilePath, 'utf-8');
+		const conf = parse(yamlText) ?? {};
+		if (conf && typeof (conf as any).icsSecret === 'string' && (conf as any).icsSecret.trim().length > 0) {
+			return new Response('Not found', { status: 404 });
+		}
+	} catch (e) {
+		// ignore missing settings
+	}
 	// Options via query params
 	const horizonDaysParam = url.searchParams.get('horizonDays');
 	const includePastParam = url.searchParams.get('includePast');

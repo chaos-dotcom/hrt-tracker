@@ -11,6 +11,7 @@ const defaultData: HRTData = {
   notes: [],
   settings: {
     enableAutoBackfill: true,
+    icsSecret: '',
   },
 };
 
