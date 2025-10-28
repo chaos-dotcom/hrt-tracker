@@ -25,6 +25,7 @@
 		"@observablehq/plot": "^0.6.17",
 		"@tailwindcss/vite": "^4.1.5",
 		"@types/d3": "^7.4.3",
-		"tailwindcss": "^4.1.5"
+		"tailwindcss": "^4.1.5",
+		"yaml": "^2.8.1"
 	}
 }

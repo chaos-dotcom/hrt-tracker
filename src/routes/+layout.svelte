@@ -37,7 +37,7 @@
 				<a
 					href="/backup"
 					class="text-latte-rose-pine-iris transition-colors hover:text-rose-pine-love dark:text-rose-pine-iris"
-					>Backup/Restore</a
+					>Settings & Backup/Restore</a
 				>
 			</div>
 		</div>
