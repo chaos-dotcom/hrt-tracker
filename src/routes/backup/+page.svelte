@@ -82,7 +82,7 @@
 		<h2 class="text-2xl mb-2">Settings</h2>
 		<label class="flex items-center gap-2">
 			<input type="checkbox" bind:checked={s.enableAutoBackfill} />
-			<span>Enable automatic schedule advance (no backfill)</span>
+			<span>Enable automatic schedule advance</span>
 		</label>
 		<div class="flex items-center gap-3">
 			<button
