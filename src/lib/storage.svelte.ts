@@ -27,6 +27,21 @@ class hrtStore {
     if (this.#initialized || !browser) return;
     this.data = initialData ? { ...defaultData, ...initialData } : { ...defaultData };
 
+    // Load settings from server-side YAML if available
+    ;(async () => {
+      try {
+        const resp = await fetch('/api/settings');
+        if (resp.ok) {
+          const s = await resp.json();
+          if (s && typeof s === 'object') {
+            this.data.settings = { ...this.data.settings, ...s };
+          }
+        }
+      } catch (err) {
+        console.warn('Unable to load settings from /api/settings, using defaults:', err);
+      }
+    })();
+
     // One-time migration of localStorage notes ("hrt.notes") to centralized store
     try {
       if (browser) {
