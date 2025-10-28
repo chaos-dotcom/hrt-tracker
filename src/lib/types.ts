@@ -151,6 +151,13 @@ export interface DiaryEntry {
 }
 
 export const HRT_STORAGE_KEY = "hrt-meow-data";
+export interface Settings {
+  enableAutoBackfill: boolean;
+  defaultInjectionFrequencyDays: number;
+  defaultOralFrequencyDays: number;
+  defaultAntiandrogenFrequencyDays: number;
+  defaultProgesteroneFrequencyDays: number;
+}
 export interface HRTData {
   injectableEstradiol?: {
     type: InjectableEstradiols;
@@ -185,4 +192,5 @@ export interface HRTData {
   dosageHistory: DosageHistoryEntry[];
   measurements: Measurement[];
   notes: DiaryEntry[];
+  settings?: Settings;
 }
