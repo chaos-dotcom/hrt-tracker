@@ -185,6 +185,8 @@
             hrtData.data.progesterone = undefined;
         }
         hrtData.backfillScheduledDoses();
+        // Persist to server files explicitly
+        hrtData.saveNow();
         alert("Schedule saved!");
     }
 

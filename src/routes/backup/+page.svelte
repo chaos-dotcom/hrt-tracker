@@ -5,20 +5,18 @@
 	if (!hrtData.data.settings) {
 		hrtData.data.settings = {
 			enableAutoBackfill: true,
-			defaultInjectionFrequencyDays: 7,
-			defaultOralFrequencyDays: 1,
-			defaultAntiandrogenFrequencyDays: 1,
-			defaultProgesteroneFrequencyDays: 1,
 		};
 	}
 	const s = hrtData.data.settings;
 
-	$effect(() => {
-		s.enableAutoBackfill;
-		if (s.enableAutoBackfill) {
-			hrtData.backfillScheduledDoses();
-		}
-	});
+	let saveMessage = $state('');
+	async function saveAll() {
+		const ok = await hrtData.saveNow();
+		saveMessage = ok ? 'Saved settings and data' : 'Failed to save';
+		setTimeout(() => (saveMessage = ''), 3000);
+	}
+
+	// Auto-advance can be triggered when saving; removed live effect to avoid constant file writes.
 
 	function exportToJson() {
 		const dataStr = JSON.stringify(hrtData.data, null, 2);
@@ -86,25 +84,18 @@
 			<input type="checkbox" bind:checked={s.enableAutoBackfill} />
 			<span>Enable automatic schedule advance (no backfill)</span>
 		</label>
-		<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-			<label class="block">
-				<span class="text-sm">Default Injectable Estradiol Frequency (days)</span>
-				<input type="number" min="1" class="border rounded px-2 py-1 w-full" bind:value={s.defaultInjectionFrequencyDays} />
-			</label>
-			<label class="block">
-				<span class="text-sm">Default Oral Estradiol Frequency (days)</span>
-				<input type="number" min="1" class="border rounded px-2 py-1 w-full" bind:value={s.defaultOralFrequencyDays} />
-			</label>
-			<label class="block">
-				<span class="text-sm">Default Antiandrogen Frequency (days)</span>
-				<input type="number" min="1" class="border rounded px-2 py-1 w-full" bind:value={s.defaultAntiandrogenFrequencyDays} />
-			</label>
-			<label class="block">
-				<span class="text-sm">Default Progesterone Frequency (days)</span>
-				<input type="number" min="1" class="border rounded px-2 py-1 w-full" bind:value={s.defaultProgesteroneFrequencyDays} />
-			</label>
+		<div class="flex items-center gap-3">
+			<button
+				class="w-fit cursor-pointer rounded bg-latte-rose-pine-foam px-4 py-2 font-medium text-white transition-colors hover:bg-rose-pine-pine focus:outline-none focus:shadow-outline"
+				onclick={saveAll}
+			>
+				Save
+			</button>
+			{#if saveMessage}
+				<p class="text-sm text-latte-rose-pine-text dark:text-rose-pine-text">{saveMessage}</p>
+			{/if}
 		</div>
-		<p class="text-sm text-gray-500">Changes auto-save and are stored server-side as YAML.</p>
+		<p class="text-sm text-gray-500">Click Save to persist settings and data to the server.</p>
 	</div>
 
 	<div class="flex flex-col space-y-4">
