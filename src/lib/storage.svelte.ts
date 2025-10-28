@@ -11,10 +11,6 @@ const defaultData: HRTData = {
   notes: [],
   settings: {
     enableAutoBackfill: true,
-    defaultInjectionFrequencyDays: 7,
-    defaultOralFrequencyDays: 1,
-    defaultAntiandrogenFrequencyDays: 1,
-    defaultProgesteroneFrequencyDays: 1,
   },
 };
 
@@ -78,36 +74,8 @@ class hrtStore {
     this.#initialized = true;
 
     $effect(() => {
-      // This is a dependency on data.
-      const dataToSave = JSON.stringify(this.data);
-
-      if (this.#debounceTimeout) {
-        clearTimeout(this.#debounceTimeout);
-      }
-
-      this.#debounceTimeout = setTimeout(async () => {
-        try {
-          await fetch('/api/data', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: dataToSave,
-          });
-          // Persist settings YAML
-          if (this.data?.settings) {
-            await fetch('/api/settings', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify(this.data.settings),
-            });
-          }
-        } catch (error) {
-          console.error('Failed to save data:', error);
-        }
-      }, 500);
+      // Autosave disabled to avoid dev server refresh loops. Use hrtData.saveNow() to persist explicitly.
+      this.data; // depend to keep Svelte happy, but do nothing
     });
   }
 
@@ -133,6 +101,28 @@ class hrtStore {
 
   deleteMeasurement(measurement: Measurement) {
     this.data.measurements = this.data.measurements.filter((m) => m !== measurement);
+  }
+
+  async saveNow() {
+    try {
+      const dataToSave = JSON.stringify(this.data);
+      await fetch('/api/data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: dataToSave,
+      });
+      if (this.data?.settings) {
+        await fetch('/api/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(this.data.settings),
+        });
+      }
+      return true;
+    } catch (error) {
+      console.error('Failed to save data:', error);
+      return false;
+    }
   }
 
   backfillScheduledDoses() {
@@ -169,16 +159,8 @@ class hrtStore {
     ) => {
         if (!schedule || !schedule.nextDoseDate) return;
 
-        const intervalDays =
-          Number(schedule.frequency) > 0
-            ? schedule.frequency
-            : (medicationType === 'injectableEstradiol'
-                ? (this.data.settings?.defaultInjectionFrequencyDays ?? 7)
-                : medicationType === 'oralEstradiol'
-                ? (this.data.settings?.defaultOralFrequencyDays ?? 1)
-                : medicationType === 'antiandrogen'
-                ? (this.data.settings?.defaultAntiandrogenFrequencyDays ?? 1)
-                : (this.data.settings?.defaultProgesteroneFrequencyDays ?? 1));
+        const intervalDays = Number(schedule.frequency) > 0 ? schedule.frequency : undefined;
+        if (!intervalDays) return;
 
         const intervalMillis = intervalDays * 24 * 60 * 60 * 1000;
         if (intervalMillis <= 0) return;
