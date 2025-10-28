@@ -32,3 +32,4 @@ vite.config.ts.timestamp-*
 # Data file
 hrt-data.json
 .aider*
+hrt-settings.yaml
