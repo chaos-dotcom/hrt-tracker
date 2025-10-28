@@ -35,9 +35,14 @@
  
 	// ICS calendar subscription URL (defaults to 1-year horizon, includes past entries)
 	let icsUrl = $state('');
-	if (typeof window !== 'undefined') {
-		icsUrl = `${location.origin}/api/ics?horizonDays=365&includePast=1`;
-	}
+	$effect(() => {
+		s.icsSecret;
+		if (typeof window !== 'undefined') {
+			icsUrl = s.icsSecret && s.icsSecret.trim().length > 0
+				? `${location.origin}/api/ics/${encodeURIComponent(s.icsSecret.trim())}?horizonDays=365&includePast=1`
+				: `${location.origin}/api/ics?horizonDays=365&includePast=1`;
+		}
+	});
 	function copyIcsUrl() {
 		navigator.clipboard?.writeText(icsUrl);
 	}
@@ -93,6 +98,13 @@
 			<input type="checkbox" bind:checked={s.enableAutoBackfill} />
 			<span>Enable automatic schedule filling</span>
 		</label>
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+			<label class="block">
+				<span class="text-sm">ICS URL secret (optional)</span>
+				<input type="text" placeholder="e.g. my-private-feed" class="border rounded px-2 py-1 w-full" bind:value={s.icsSecret} />
+				<p class="text-xs opacity-75 mt-1">When set, your ICS URL becomes /api/ics/{secret}. Keep it hard to guess.</p>
+			</label>
+		</div>
 		<div class="flex items-center gap-3">
 			<button
 				class="w-fit cursor-pointer rounded bg-latte-rose-pine-foam px-4 py-2 font-medium text-white transition-colors hover:bg-rose-pine-pine focus:outline-none focus:shadow-outline"
