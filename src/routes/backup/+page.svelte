@@ -1,6 +1,18 @@
 <script lang="ts">
 	import { hrtData } from '$lib/storage.svelte';
 
+	// Ensure settings object exists
+	if (!hrtData.data.settings) {
+		hrtData.data.settings = {
+			enableAutoBackfill: true,
+			defaultInjectionFrequencyDays: 7,
+			defaultOralFrequencyDays: 1,
+			defaultAntiandrogenFrequencyDays: 1,
+			defaultProgesteroneFrequencyDays: 1,
+		};
+	}
+	const s = hrtData.data.settings;
+
 	function exportToJson() {
 		const dataStr = JSON.stringify(hrtData.data, null, 2);
 		const blob = new Blob([dataStr], { type: 'application/json' });
@@ -59,6 +71,35 @@
 
 <div class="p-10 flex flex-col space-y-2 sm:space-y-10">
 	<h1 class="text-4xl">backup & restore</h1>
+
+	<!-- Settings Section -->
+	<div class="p-4 border rounded space-y-3 bg-white dark:bg-rose-pine-surface">
+		<h2 class="text-2xl mb-2">Settings</h2>
+		<label class="flex items-center gap-2">
+			<input type="checkbox" bind:checked={s.enableAutoBackfill} />
+			<span>Enable automatic backfill (auto-schedule)</span>
+		</label>
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+			<label class="block">
+				<span class="text-sm">Default Injectable Estradiol Frequency (days)</span>
+				<input type="number" min="1" class="border rounded px-2 py-1 w-full" bind:value={s.defaultInjectionFrequencyDays} />
+			</label>
+			<label class="block">
+				<span class="text-sm">Default Oral Estradiol Frequency (days)</span>
+				<input type="number" min="1" class="border rounded px-2 py-1 w-full" bind:value={s.defaultOralFrequencyDays} />
+			</label>
+			<label class="block">
+				<span class="text-sm">Default Antiandrogen Frequency (days)</span>
+				<input type="number" min="1" class="border rounded px-2 py-1 w-full" bind:value={s.defaultAntiandrogenFrequencyDays} />
+			</label>
+			<label class="block">
+				<span class="text-sm">Default Progesterone Frequency (days)</span>
+				<input type="number" min="1" class="border rounded px-2 py-1 w-full" bind:value={s.defaultProgesteroneFrequencyDays} />
+			</label>
+		</div>
+		<p class="text-sm text-gray-500">Changes auto-save and are stored server-side as YAML.</p>
+	</div>
+
 	<div class="flex flex-col space-y-4">
 		<div>
 			<h2 class="text-2xl mb-2">Export Data</h2>
