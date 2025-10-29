@@ -108,12 +108,16 @@ class hrtStore {
 
   async saveNow() {
     try {
-      const dataToSave = JSON.stringify(this.data);
+      // Do not persist settings in JSON; store them only in YAML via /api/settings
+      const { settings: _settings, ...dataWithoutSettings } = this.data as any;
+      const dataToSave = JSON.stringify(dataWithoutSettings);
+
       await fetch('/api/data', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: dataToSave,
       });
+
       if (this.data?.settings) {
         await fetch('/api/settings', {
           method: 'POST',

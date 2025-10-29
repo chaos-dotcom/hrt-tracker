@@ -7,7 +7,12 @@ const dataFilePath = 'hrt-data.json';
 export const GET: RequestHandler = async () => {
     try {
         const data = await fs.readFile(dataFilePath, 'utf-8');
-        return json(JSON.parse(data));
+        const parsed = JSON.parse(data);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            // Ensure secrets/settings are not served from JSON
+            delete (parsed as any).settings;
+        }
+        return json(parsed);
     } catch (error: any) {
         if (error.code === 'ENOENT') {
             // File doesn't exist, return default structure
@@ -21,6 +26,10 @@ export const GET: RequestHandler = async () => {
 export const POST: RequestHandler = async ({ request }) => {
     try {
         const data = await request.json();
+        // Strip settings before persisting JSON
+        if (data && typeof data === 'object' && !Array.isArray(data)) {
+            delete (data as any).settings;
+        }
         await fs.writeFile(dataFilePath, JSON.stringify(data, null, 2), 'utf-8');
         return json({ success: true });
     } catch (error) {
