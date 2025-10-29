@@ -99,7 +99,14 @@
 	const injectionSiteOptions = enumToDropdownOptions(InjectionSites);
 
 	function save() {
-		item.date = new Date(date).getTime();
+		const chosenMs = new Date(date).getTime();
+		// For blood tests, snap to the next injection day (trough measurement).
+		// For other entries (dosage/measurement), keep the chosen timestamp.
+		if (isDosage || isMeasurement) {
+			item.date = chosenMs;
+		} else {
+			item.date = hrtData.snapToNextInjectionBoundary(chosenMs);
+		}
 
 		if (isDosage) {
 			const dosageItem = item as DosageHistoryEntry;

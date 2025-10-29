@@ -83,6 +83,13 @@ class hrtStore {
   }
 
   addBloodTest(test: BloodTest) {
+    if (typeof test?.date === 'number' && isFinite(test.date)) {
+      try {
+        test.date = this.snapToNextInjectionBoundary(test.date);
+      } catch {
+        // If snapping fails, keep original date
+      }
+    }
     this.data.bloodTests.push(test);
   }
 
@@ -104,6 +111,60 @@ class hrtStore {
 
   deleteMeasurement(measurement: Measurement) {
     this.data.measurements = this.data.measurements.filter((m) => m !== measurement);
+  }
+
+  // Snap a timestamp to the next scheduled injectable estradiol boundary (trough day)
+  // If an injectable schedule exists, uses its frequency; otherwise derives from the last two injections in history.
+  // Returns the original timestamp if no cadence can be determined.
+  snapToNextInjectionBoundary(ts: number): number {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const inj = this.data.injectableEstradiol;
+
+    // Determine interval in ms
+    let stepMs: number | undefined;
+    if (inj && typeof inj.frequency === 'number' && inj.frequency > 0) {
+      stepMs = inj.frequency * DAY_MS;
+    } else {
+      // Derive from history if possible (use the last interval)
+      const hist = (this.data.dosageHistory ?? [])
+        .filter(
+          (d) =>
+            d &&
+            d.medicationType === 'injectableEstradiol' &&
+            typeof d.date === 'number' &&
+            isFinite(d.date)
+        )
+        .sort((a, b) => a.date - b.date);
+      if (hist.length >= 2) {
+        const last = hist[hist.length - 1].date;
+        const prev = hist[hist.length - 2].date;
+        const gap = last - prev;
+        if (gap > 0) stepMs = gap;
+      }
+    }
+    if (!stepMs) return ts;
+
+    // Choose a reference boundary R on the injection grid
+    let reference: number | undefined;
+    const lastTakenDates = (this.data.dosageHistory ?? [])
+      .filter(
+        (d) =>
+          d &&
+          d.medicationType === 'injectableEstradiol' &&
+          typeof d.date === 'number' &&
+          isFinite(d.date)
+      )
+      .map((d) => d.date);
+    if (lastTakenDates.length > 0) {
+      reference = Math.max(...lastTakenDates);
+    } else if (inj && typeof inj.nextDoseDate === 'number' && isFinite(inj.nextDoseDate)) {
+      reference = inj.nextDoseDate;
+    }
+    if (reference === undefined) return ts;
+
+    // Compute the smallest boundary >= ts (ceil towards the next injection day)
+    const n = Math.ceil((ts - reference) / stepMs);
+    return reference + n * stepMs;
   }
 
   async saveNow() {
