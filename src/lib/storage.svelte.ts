@@ -160,7 +160,7 @@ class hrtStore {
         schedule: { frequency: number; nextDoseDate?: UnixTime; [key: string]: any } | undefined,
         medicationType: DosageHistoryEntry['medicationType']
     ) => {
-        if (!schedule || !schedule.nextDoseDate) return;
+        if (!schedule) return;
 
         const intervalDays = Number(schedule.frequency) > 0 ? schedule.frequency : undefined;
         if (!intervalDays) return;
@@ -168,13 +168,39 @@ class hrtStore {
         const intervalMillis = intervalDays * 24 * 60 * 60 * 1000;
         if (intervalMillis <= 0) return;
 
-        let nextDoseTime = schedule.nextDoseDate;
+        // Derive next dose from either configured nextDoseDate or last recorded dose + frequency
+        let nextDoseTime: number | undefined = schedule.nextDoseDate;
 
-        while (nextDoseTime <= now) {
-            nextDoseTime += intervalMillis;
+        const lastTakenDates = (this.data.dosageHistory ?? [])
+            .filter((d) => d && d.medicationType === medicationType && typeof d.date === 'number' && isFinite(d.date))
+            .map((d) => d.date);
+
+        if (lastTakenDates.length > 0) {
+            const lastTaken = Math.max(...lastTakenDates);
+            const nextAfterLast = lastTaken + intervalMillis;
+            if (!Number.isFinite(nextDoseTime as number) || (nextDoseTime as number) < nextAfterLast) {
+                nextDoseTime = nextAfterLast;
+            }
         }
 
-        schedule.nextDoseDate = nextDoseTime;
+        if (!Number.isFinite(nextDoseTime as number)) return;
+
+        // Advance to at least today (ignore time-of-day so "today" is kept)
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const todayStartMs = today.getTime();
+
+        const getDayStart = (ms: number) => {
+            const d = new Date(ms);
+            d.setHours(0, 0, 0, 0);
+            return d.getTime();
+        };
+
+        while (getDayStart(nextDoseTime as number) < todayStartMs) {
+            nextDoseTime = (nextDoseTime as number) + intervalMillis;
+        }
+
+        schedule.nextDoseDate = nextDoseTime as number;
     };
 
     processSchedule(this.data.injectableEstradiol, "injectableEstradiol");
