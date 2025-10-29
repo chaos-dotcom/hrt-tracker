@@ -151,10 +151,14 @@ export const GET: RequestHandler = async ({ params, url }) => {
 			}
 		}
 
-		// Ensure the first generated event is in the future
+		// Ensure the first generated event is not before today (UTC) so we keep "today" occurrences
 		if (!Number.isFinite(t)) continue;
-		while (t <= now) {
-			t += step;
+		{
+			const dNow = new Date();
+			const todayUTCStart = Date.UTC(dNow.getUTCFullYear(), dNow.getUTCMonth(), dNow.getUTCDate(), 0, 0, 0, 0);
+			while (t < todayUTCStart) {
+				t += step;
+			}
 		}
 
 		while (t <= horizonEnd) {
