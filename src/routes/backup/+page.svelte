@@ -1,11 +1,15 @@
 <script lang="ts">
+	export const ssr = false;
 	import { hrtData } from '$lib/storage.svelte';
 
 	// Ensure settings object exists
 	if (!hrtData.data.settings) {
 		hrtData.data.settings = {
 			enableAutoBackfill: true,
+			icsSecret: '',
 		};
+	} else if (hrtData.data.settings.icsSecret === undefined) {
+		hrtData.data.settings.icsSecret = '';
 	}
 	const s = hrtData.data.settings;
 
