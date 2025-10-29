@@ -2,7 +2,7 @@ import fs from 'fs/promises';
 import type { LayoutServerLoad } from './$types';
 import type { HRTData } from '$lib/types';
 
-const dataFilePath = 'hrt-data.json';
+const dataFilePath = 'data/hrt-data.json';
 
 const defaultData: HRTData = {
   bloodTests: [],

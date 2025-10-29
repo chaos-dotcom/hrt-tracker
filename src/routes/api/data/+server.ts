@@ -2,7 +2,7 @@ import { json } from '@sveltejs/kit';
 import fs from 'fs/promises';
 import type { RequestHandler } from './$types';
 
-const dataFilePath = 'hrt-data.json';
+const dataFilePath = 'data/hrt-data.json';
 
 export const GET: RequestHandler = async () => {
     try {
