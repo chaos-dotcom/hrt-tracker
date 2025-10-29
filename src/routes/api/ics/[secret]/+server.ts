@@ -2,9 +2,9 @@ import type { RequestHandler } from './$types';
 import fs from 'fs/promises';
 import { parse } from 'yaml';
 
-const DATA_FILE = 'hrt-data.json';
+const DATA_FILE = 'data/hrt-data.json';
 const DAY_MS = 24 * 60 * 60 * 1000;
-const settingsFilePath = 'hrt-settings.yaml';
+const settingsFilePath = 'data/hrt-settings.yaml';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 function toICSDateTime(ms: number): string {
