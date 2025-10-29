@@ -148,7 +148,7 @@ export const GET: RequestHandler = async ({ url }) => {
 		if (lastTakenDates.length > 0) {
 			const lastTaken = Math.max(...lastTakenDates);
 			t = lastTaken + step;
-		} else if (Number.isFinite(next)) {
+		} else if (next && Number.isFinite(next)) {
 			t = next;
 		} else {
 			continue;
