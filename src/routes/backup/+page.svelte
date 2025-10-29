@@ -8,8 +8,10 @@
 			enableAutoBackfill: true,
 			icsSecret: '',
 		};
-	} else if (hrtData.data.settings.icsSecret === undefined) {
-		hrtData.data.settings.icsSecret = '';
+	} else {
+		if (hrtData.data.settings.icsSecret === undefined) hrtData.data.settings.icsSecret = '';
+		if (hrtData.data.settings.enableBloodTestSchedule === undefined) hrtData.data.settings.enableBloodTestSchedule = false;
+		if (hrtData.data.settings.bloodTestIntervalMonths === undefined) hrtData.data.settings.bloodTestIntervalMonths = 3;
 	}
 	const s = hrtData.data.settings;
 
@@ -102,11 +104,20 @@
 			<input type="checkbox" bind:checked={s.enableAutoBackfill} />
 			<span>Enable automatic schedule filling</span>
 		</label>
+		<label class="flex items-center gap-2">
+			<input type="checkbox" bind:checked={s.enableBloodTestSchedule} />
+			<span>Enable scheduled blood tests</span>
+		</label>
 		<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
 			<label class="block">
 				<span class="text-sm">ICS URL secret (optional)</span>
 				<input type="text" placeholder="e.g. my-private-feed" class="border rounded px-2 py-1 w-full" bind:value={s.icsSecret} />
 				<p class="text-xs opacity-75 mt-1">When set, your ICS URL becomes /api/ics/&#123;secret&#125;. Keep it hard to guess.</p>
+			</label>
+			<label class="block">
+				<span class="text-sm">Blood test interval (months)</span>
+				<input type="number" min="1" placeholder="e.g. 3" class="border rounded px-2 py-1 w-full" bind:value={s.bloodTestIntervalMonths} />
+				<p class="text-xs opacity-75 mt-1">Used to place future blood test reminders in the calendar when enabled.</p>
 			</label>
 		</div>
 		<div class="flex items-center gap-3">
