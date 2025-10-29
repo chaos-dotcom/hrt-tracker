@@ -164,7 +164,11 @@ class hrtStore {
 
     // Compute the smallest boundary >= ts (ceil towards the next injection day)
     const n = Math.ceil((ts - reference) / stepMs);
-    return reference + n * stepMs;
+    const target = reference + n * stepMs;
+    // Always set to morning of that day (10:00 local time)
+    const d = new Date(target);
+    d.setHours(10, 0, 0, 0);
+    return d.getTime();
   }
 
   async saveNow() {
