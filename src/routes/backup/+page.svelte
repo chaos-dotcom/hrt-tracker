@@ -25,7 +25,9 @@
 	// Auto-advance can be triggered when saving; removed live effect to avoid constant file writes.
 
 	function exportToJson() {
-		const dataStr = JSON.stringify(hrtData.data, null, 2);
+		// Exclude settings (secrets) from backup JSON; they are stored in YAML
+		const { settings: _settings, ...dataWithoutSettings } = hrtData.data as any;
+		const dataStr = JSON.stringify(dataWithoutSettings, null, 2);
 		const blob = new Blob([dataStr], { type: 'application/json' });
 		const url = URL.createObjectURL(blob);
 		const a = document.createElement('a');
@@ -65,16 +67,32 @@
 						const jsonData = JSON.parse(text);
 						// A simple validation to check for expected keys
 						if (jsonData.bloodTests && jsonData.dosageHistory) {
+							// If backup included settings, persist them to YAML and omit from JSON restore
+							let payload = jsonData;
+							if (jsonData.settings && typeof jsonData.settings === 'object') {
+								try {
+									await fetch('/api/settings', {
+										method: 'POST',
+										headers: { 'Content-Type': 'application/json' },
+										body: JSON.stringify(jsonData.settings),
+									});
+									// Reflect settings in current session
+									hrtData.data.settings = { ...hrtData.data.settings, ...jsonData.settings };
+								} catch {}
+								const { settings: _s, ...rest } = jsonData;
+								payload = rest;
+							}
+
 							const response = await fetch('/api/data', {
 								method: 'POST',
 								headers: {
 									'Content-Type': 'application/json',
 								},
-								body: JSON.stringify(jsonData),
+								body: JSON.stringify(payload),
 							});
 
 							if (response.ok) {
-								hrtData.data = { ...hrtData.data, ...jsonData, notes: jsonData.notes ?? [] };
+								hrtData.data = { ...hrtData.data, ...payload, notes: payload.notes ?? [] };
 								restoreMessage = 'Data restored successfully!';
 							} else {
 								restoreMessage = 'Failed to restore data on the server.';
