@@ -135,20 +135,22 @@ export const GET: RequestHandler = async ({ params, url }) => {
 
 		const step = freqDays * DAY_MS;
 
-		// Determine start time from either nextDoseDate or the last recorded dose + frequency
-		let t = Number.isFinite(next) ? next : NaN;
+		// Determine start time prioritizing last recorded dose; fallback to configured nextDoseDate
+		let t: number;
 
-		if (Array.isArray(data.dosageHistory)) {
-			const lastTakenDates = data.dosageHistory
-				.filter((d: any) => d && d.medicationType === key && typeof d.date === 'number' && isFinite(d.date))
-				.map((d: any) => d.date);
-			if (lastTakenDates.length > 0) {
-				const lastTaken = Math.max(...lastTakenDates);
-				const nextAfterLast = lastTaken + step;
-				if (!Number.isFinite(t) || nextAfterLast > t) {
-					t = nextAfterLast;
-				}
-			}
+		const lastTakenDates = Array.isArray(data.dosageHistory)
+			? data.dosageHistory
+					.filter((d: any) => d && d.medicationType === key && typeof d.date === 'number' && isFinite(d.date))
+					.map((d: any) => d.date)
+			: [];
+
+		if (lastTakenDates.length > 0) {
+			const lastTaken = Math.max(...lastTakenDates);
+			t = lastTaken + step;
+		} else if (Number.isFinite(next)) {
+			t = next;
+		} else {
+			continue;
 		}
 
 		// Ensure the first generated event is not before today (UTC) so we keep "today" occurrences
