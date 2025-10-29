@@ -61,6 +61,11 @@ function addMonthsUTC(ms: number, months: number): number {
 	next.setUTCDate(safeDay);
 	return next.getTime();
 }
+function setLocalMorning10(ms: number): number {
+	const d = new Date(ms);
+	d.setHours(10, 0, 0, 0);
+	return d.getTime();
+}
 
 export const GET: RequestHandler = async ({ params, url }) => {
 	// Verify secret from settings
@@ -193,8 +198,10 @@ export const GET: RequestHandler = async ({ params, url }) => {
 			if (lastDates.length > 0) {
 				const last = Math.max(...lastDates);
 				let t = addMonthsUTC(last, intervalMonths);
+				t = setLocalMorning10(t);
 				while (t <= now) {
 					t = addMonthsUTC(t, intervalMonths);
+					t = setLocalMorning10(t);
 				}
 				while (t <= horizonEnd) {
 					const uid = `bloodtest-${t}-scheduled@hrt-tracker`;
@@ -202,6 +209,7 @@ export const GET: RequestHandler = async ({ params, url }) => {
 					const desc = `Routine blood test every ${intervalMonths} month(s).`;
 					events.push(makeEvent(uid, t, summary, desc));
 					t = addMonthsUTC(t, intervalMonths);
+					t = setLocalMorning10(t);
 				}
 			}
 		}
