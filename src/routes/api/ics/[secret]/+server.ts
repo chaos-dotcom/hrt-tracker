@@ -45,6 +45,23 @@ function makeEvent(uid: string, startMs: number, summary: string, description?: 
 	return lines.join('\r\n');
 }
 
+function addMonthsUTC(ms: number, months: number): number {
+	const d = new Date(ms);
+	const y = d.getUTCFullYear();
+	const m = d.getUTCMonth();
+	const day = d.getUTCDate();
+	const hh = d.getUTCHours();
+	const mm = d.getUTCMinutes();
+	const ss = d.getUTCSeconds();
+	// days in target month
+	const targetMonthIndex = m + months;
+	const lastDayTargetMonth = new Date(Date.UTC(y, targetMonthIndex + 1, 0)).getUTCDate();
+	const safeDay = Math.min(day, lastDayTargetMonth);
+	const next = new Date(Date.UTC(y, targetMonthIndex, 1, hh, mm, ss));
+	next.setUTCDate(safeDay);
+	return next.getTime();
+}
+
 export const GET: RequestHandler = async ({ params, url }) => {
 	// Verify secret from settings
 	let configuredSecret = '';
@@ -152,6 +169,37 @@ export const GET: RequestHandler = async ({ params, url }) => {
 			t += step;
 		}
 	}
+
+	// 3) Scheduled blood tests (optional, from settings; start from last recorded test)
+	try {
+		let enableBlood = false;
+		let intervalMonths = 0;
+		try {
+			const yamlText = await fs.readFile(settingsFilePath, 'utf-8');
+			const settings = parse(yamlText) ?? {};
+			enableBlood = !!(settings as any).enableBloodTestSchedule;
+			intervalMonths = Number((settings as any).bloodTestIntervalMonths);
+		} catch {}
+		if (enableBlood && Number.isFinite(intervalMonths) && intervalMonths > 0 && Array.isArray(data.bloodTests) && data.bloodTests.length > 0) {
+			const lastDates = data.bloodTests
+				.filter((b: any) => b && typeof b.date === 'number' && isFinite(b.date))
+				.map((b: any) => b.date);
+			if (lastDates.length > 0) {
+				const last = Math.max(...lastDates);
+				let t = addMonthsUTC(last, intervalMonths);
+				while (t <= now) {
+					t = addMonthsUTC(t, intervalMonths);
+				}
+				while (t <= horizonEnd) {
+					const uid = `bloodtest-${t}-scheduled@hrt-tracker`;
+					const summary = 'Scheduled Blood Test';
+					const desc = `Routine blood test every ${intervalMonths} month(s).`;
+					events.push(makeEvent(uid, t, summary, desc));
+					t = addMonthsUTC(t, intervalMonths);
+				}
+			}
+		}
+	} catch { /* ignore */ }
 
 	const calendar = [
 		'BEGIN:VCALENDAR',

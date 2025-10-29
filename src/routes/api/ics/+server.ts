@@ -45,11 +45,29 @@ function makeEvent(uid: string, startMs: number, summary: string, description?: 
 	return lines.join('\r\n');
 }
 
+function addMonthsUTC(ms: number, months: number): number {
+	const d = new Date(ms);
+	const y = d.getUTCFullYear();
+	const m = d.getUTCMonth();
+	const day = d.getUTCDate();
+	const hh = d.getUTCHours();
+	const mm = d.getUTCMinutes();
+	const ss = d.getUTCSeconds();
+	// days in target month
+	const targetMonthIndex = m + months;
+	const lastDayTargetMonth = new Date(Date.UTC(y, targetMonthIndex + 1, 0)).getUTCDate();
+	const safeDay = Math.min(day, lastDayTargetMonth);
+	const next = new Date(Date.UTC(y, targetMonthIndex, 1, hh, mm, ss));
+	next.setUTCDate(safeDay);
+	return next.getTime();
+}
+
 export const GET: RequestHandler = async ({ url }) => {
 	// If a secret is configured, this public path is disabled; use /api/ics/[secret]
+	let conf: any = {};
 	try {
 		const yamlText = await fs.readFile(settingsFilePath, 'utf-8');
-		const conf = parse(yamlText) ?? {};
+		conf = parse(yamlText) ?? {};
 		if (conf && typeof (conf as any).icsSecret === 'string' && (conf as any).icsSecret.trim().length > 0) {
 			return new Response('Not found', { status: 404 });
 		}
@@ -146,6 +164,33 @@ export const GET: RequestHandler = async ({ url }) => {
 			events.push(makeEvent(uid, t, summary, desc));
 			t += step;
 		}
+	}
+
+	// 3) Scheduled blood tests (optional, from settings; start from last recorded test)
+	try {
+		const enableBlood = !!(conf && (conf as any).enableBloodTestSchedule);
+		const intervalMonths = Number((conf as any).bloodTestIntervalMonths);
+		if (enableBlood && Number.isFinite(intervalMonths) && intervalMonths > 0 && Array.isArray(data.bloodTests) && data.bloodTests.length > 0) {
+			const lastDates = data.bloodTests
+				.filter((b: any) => b && typeof b.date === 'number' && isFinite(b.date))
+				.map((b: any) => b.date);
+			if (lastDates.length > 0) {
+				const last = Math.max(...lastDates);
+				let t = addMonthsUTC(last, intervalMonths);
+				while (t <= now) {
+					t = addMonthsUTC(t, intervalMonths);
+				}
+				while (t <= horizonEnd) {
+					const uid = `bloodtest-${t}-scheduled@hrt-tracker`;
+					const summary = 'Scheduled Blood Test';
+					const desc = `Routine blood test every ${intervalMonths} month(s).`;
+					events.push(makeEvent(uid, t, summary, desc));
+					t = addMonthsUTC(t, intervalMonths);
+				}
+			}
+		}
+	} catch (e) {
+		// ignore blood test scheduling errors
 	}
 
 	const calendar = [

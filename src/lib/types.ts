@@ -154,6 +154,8 @@ export const HRT_STORAGE_KEY = "hrt-meow-data";
 export interface Settings {
   enableAutoBackfill: boolean;
   icsSecret?: string;
+  enableBloodTestSchedule?: boolean;
+  bloodTestIntervalMonths?: number;
 }
 export interface HRTData {
   injectableEstradiol?: {
