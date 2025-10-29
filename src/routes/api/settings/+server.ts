@@ -3,7 +3,7 @@ import fs from 'fs/promises';
 import { parse, stringify } from 'yaml';
 import type { RequestHandler } from './$types';
 
-const settingsFilePath = 'hrt-settings.yaml';
+const settingsFilePath = 'data/hrt-settings.yaml';
 
 export const GET: RequestHandler = async () => {
   try {
