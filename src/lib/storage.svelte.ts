@@ -12,6 +12,8 @@ const defaultData: HRTData = {
   settings: {
     enableAutoBackfill: true,
     icsSecret: '',
+    enableBloodTestSchedule: false,
+    bloodTestIntervalMonths: 3,
   },
 };
 
