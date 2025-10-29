@@ -109,10 +109,31 @@ export const GET: RequestHandler = async ({ url }) => {
 		const freqDays = Number(sched.frequency);
 		const next = Number(sched.nextDoseDate);
 		if (!freqDays || !Number.isFinite(freqDays) || freqDays <= 0) continue;
-		if (!Number.isFinite(next)) continue;
+		
 
 		const step = freqDays * DAY_MS;
-		let t = next;
+
+		// Determine start time from either nextDoseDate or the last recorded dose + frequency
+		let t = Number.isFinite(next) ? next : NaN;
+
+		if (Array.isArray(data.dosageHistory)) {
+			const lastTakenDates = data.dosageHistory
+				.filter((d: any) => d && d.medicationType === key && typeof d.date === 'number' && isFinite(d.date))
+				.map((d: any) => d.date);
+			if (lastTakenDates.length > 0) {
+				const lastTaken = Math.max(...lastTakenDates);
+				const nextAfterLast = lastTaken + step;
+				if (!Number.isFinite(t) || nextAfterLast > t) {
+					t = nextAfterLast;
+				}
+			}
+		}
+
+		// Ensure the first generated event is in the future
+		if (!Number.isFinite(t)) continue;
+		while (t <= now) {
+			t += step;
+		}
 
 		while (t <= horizonEnd) {
 			const name = sched.type || '';
