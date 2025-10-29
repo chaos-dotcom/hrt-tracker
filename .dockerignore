@@ -19,6 +19,7 @@ build/
 
 # Data file (mounted as volume)
 hrt-data.json
+hrt-settings.yaml
 
 # Environment variables
 .env
