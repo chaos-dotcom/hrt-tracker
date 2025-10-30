@@ -58,6 +58,12 @@ export type UnixTime = number;
 export enum InjectionSites {
   StomachRight = "Stomach right",
   StomachLeft = "Stomach left",
+  TopThighRight = "Top thigh right",
+  TopThighLeft = "Top thigh left",
+  InnerThighRight = "Inner thigh right",
+  InnerThighLeft = "Inner thigh left",
+  OuterThighRight = "Outer thigh right",
+  OuterThighLeft = "Outer thigh left",  
   ThighRight = "Thigh right",
   ThighLeft = "Thigh left",
   ButtockRight = "Buttock right",
