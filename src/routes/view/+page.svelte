@@ -324,7 +324,7 @@
 
     let nextScheduledCandidate = $derived(getNextScheduledCandidate());
 
-    function recordNextDoseNow() {
+    async function recordNextDoseNow() {
         const c = getNextScheduledCandidate();
         if (!c) return;
 
@@ -340,6 +340,9 @@
                     unit: cfg.unit,
                 } as any;
                 hrtData.addDosageRecord(rec);
+                if (typeof cfg.frequency === 'number' && isFinite(cfg.frequency) && cfg.frequency > 0) {
+                    cfg.nextDoseDate = now + cfg.frequency * DAY_MS;
+                }
                 break;
             }
             case 'oralEstradiol': {
@@ -380,6 +383,11 @@
                 break;
             }
         }
+        try {
+            await hrtData.saveNow();
+        } catch {
+            // ignore persistence errors for UX; ICS will catch up on next save attempt
+        }
     }
 
     let daysSinceFirstDose: number | null = $state(null);
@@ -412,6 +420,7 @@
     function onCloseModal() {
         itemToEdit = null;
         renderChart();
+        hrtData.saveNow().catch(() => {});
     }
 
     // Chart related code
