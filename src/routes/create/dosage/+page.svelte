@@ -334,6 +334,13 @@
                                 <option value={InjectionSites.StomachRight}>Stomach right</option>
                                 <option value={InjectionSites.StomachLeft}>Stomach left</option>
                                 <option value={InjectionSites.ThighRight}>Thigh right</option>
+                                <option value={InjectionSites.TopThighRight}>Thigh right</option>
+                                <option value={InjectionSites.TopThighLeft}>Thigh right</option>
+                                <option value={InjectionSites.InnerThighRight}>Thigh right</option>
+                                <option value={InjectionSites.InnerThighLeft}>Thigh right</option>
+                                <option value={InjectionSites.OuterThighLeft}>Thigh right</option>
+                                <option value={InjectionSites.OuterThighRight}>Thigh right</option>
+
                                 <option value={InjectionSites.ThighLeft}>Thigh left</option>
                                 <option value={InjectionSites.ButtockRight}>Buttock right</option>
                                 <option value={InjectionSites.ButtockLeft}>Buttock left</option>
