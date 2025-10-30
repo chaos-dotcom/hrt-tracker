@@ -95,7 +95,8 @@ class hrtStore {
 
   addDosageRecord(rec: DosageHistoryEntry) {
     this.data.dosageHistory.push(rec);
-    this.saveSoon();
+    // Persist immediately so ICS consumers see it right away
+    this.saveNow().catch(() => {});
   }
 
   deleteBloodTest(test: BloodTest) {
