@@ -231,7 +231,9 @@ export const GET: RequestHandler = async ({ params, url }) => {
 		status: 200,
 		headers: {
 			'Content-Type': 'text/calendar; charset=utf-8',
-			'Cache-Control': 'no-cache'
+			'Cache-Control': 'no-cache, no-store, must-revalidate',
+			'Pragma': 'no-cache',
+			'Expires': '0'
 		}
 	});
 };
