@@ -95,6 +95,7 @@ class hrtStore {
 
   addDosageRecord(rec: DosageHistoryEntry) {
     this.data.dosageHistory.push(rec);
+    this.saveSoon();
   }
 
   deleteBloodTest(test: BloodTest) {
@@ -103,6 +104,7 @@ class hrtStore {
 
   deleteDosageRecord(rec: DosageHistoryEntry) {
     this.data.dosageHistory = this.data.dosageHistory.filter((r) => r !== rec);
+    this.saveSoon();
   }
 
   addMeasurement(measurement: Measurement) {
@@ -195,6 +197,14 @@ class hrtStore {
       console.error('Failed to save data:', error);
       return false;
     }
+  }
+
+  saveSoon(delayMs: number = 300) {
+    if (!browser) return;
+    if (this.#debounceTimeout) clearTimeout(this.#debounceTimeout);
+    this.#debounceTimeout = setTimeout(() => {
+      this.saveNow().catch(() => {});
+    }, delayMs);
   }
 
   backfillScheduledDoses() {

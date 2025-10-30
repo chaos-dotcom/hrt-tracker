@@ -1,5 +1,6 @@
 import { json } from '@sveltejs/kit';
 import fs from 'fs/promises';
+import path from 'path';
 import type { RequestHandler } from './$types';
 
 const dataFilePath = 'data/hrt-data.json';
@@ -30,7 +31,14 @@ export const POST: RequestHandler = async ({ request }) => {
         if (data && typeof data === 'object' && !Array.isArray(data)) {
             delete (data as any).settings;
         }
-        await fs.writeFile(dataFilePath, JSON.stringify(data, null, 2), 'utf-8');
+        // Ensure data directory exists
+        await fs.mkdir(path.dirname(dataFilePath), { recursive: true });
+
+        // Atomic write: write to temp file then rename
+        const tmpPath = `${dataFilePath}.tmp`;
+        await fs.writeFile(tmpPath, JSON.stringify(data, null, 2), 'utf-8');
+        await fs.rename(tmpPath, dataFilePath);
+
         return json({ success: true });
     } catch (error) {
         console.error('Failed to write data file:', error);
