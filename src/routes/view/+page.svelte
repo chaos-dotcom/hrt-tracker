@@ -219,6 +219,169 @@
     let fudgeFactor = $derived(getLatestFudgeFactor());
     let estrannaiseUrl = $derived(generateEstrannaiseUrl());
 
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    type RegimenKey = 'injectableEstradiol' | 'oralEstradiol' | 'antiandrogen' | 'progesterone';
+
+    let hasAnyRegimen = $derived(
+        Boolean(
+            hrtData.data.injectableEstradiol ||
+            hrtData.data.oralEstradiol ||
+            hrtData.data.antiandrogen ||
+            hrtData.data.progesterone
+        )
+    );
+
+    function getLastDoseDateForType(medType: RegimenKey): number | null {
+        const recs = (hrtData.data.dosageHistory || []).filter((d) => d.medicationType === medType);
+        if (recs.length === 0) return null;
+        return Math.max(...recs.map((d) => d.date));
+    }
+
+    function getNextScheduledDateFor(medType: RegimenKey): number | null {
+        const now = Date.now();
+        switch (medType) {
+            case 'injectableEstradiol': {
+                const cfg = hrtData.data.injectableEstradiol;
+                if (!cfg) return null;
+                const last = getLastDoseDateForType('injectableEstradiol');
+                if (typeof cfg.nextDoseDate === 'number' && (!last || cfg.nextDoseDate > last)) {
+                    return cfg.nextDoseDate;
+                }
+                if (typeof last === 'number') {
+                    return last + cfg.frequency * DAY_MS;
+                }
+                return now;
+            }
+            case 'oralEstradiol': {
+                const cfg = hrtData.data.oralEstradiol;
+                if (!cfg) return null;
+                const last = getLastDoseDateForType('oralEstradiol');
+                if (typeof last === 'number') {
+                    return last + cfg.frequency * DAY_MS;
+                }
+                return now;
+            }
+            case 'antiandrogen': {
+                const cfg = hrtData.data.antiandrogen;
+                if (!cfg) return null;
+                const last = getLastDoseDateForType('antiandrogen');
+                if (typeof last === 'number') {
+                    return last + cfg.frequency * DAY_MS;
+                }
+                return now;
+            }
+            case 'progesterone': {
+                const cfg = hrtData.data.progesterone;
+                if (!cfg) return null;
+                const last = getLastDoseDateForType('progesterone');
+                if (typeof last === 'number') {
+                    return last + cfg.frequency * DAY_MS;
+                }
+                return now;
+            }
+        }
+    }
+
+    function getNextScheduledCandidate(): { medType: RegimenKey; label: string } | null {
+        const options: { medType: RegimenKey; date: number; label: string }[] = [];
+        const now = Date.now();
+
+        const pushIf = (medType: RegimenKey, labelBuilder: () => string) => {
+            const d = getNextScheduledDateFor(medType);
+            if (typeof d === 'number') {
+                options.push({ medType, date: d, label: labelBuilder() });
+            }
+        };
+
+        if (hrtData.data.injectableEstradiol) {
+            const cfg = hrtData.data.injectableEstradiol;
+            pushIf('injectableEstradiol', () => `Injection: ${cfg.type}, ${cfg.dose} ${cfg.unit}`);
+        }
+        if (hrtData.data.oralEstradiol) {
+            const cfg = hrtData.data.oralEstradiol;
+            pushIf('oralEstradiol', () => `Oral Estradiol: ${cfg.type}, ${cfg.dose} ${cfg.unit}`);
+        }
+        if (hrtData.data.antiandrogen) {
+            const cfg = hrtData.data.antiandrogen;
+            pushIf('antiandrogen', () => `Antiandrogen: ${cfg.type}, ${cfg.dose} ${cfg.unit}`);
+        }
+        if (hrtData.data.progesterone) {
+            const cfg = hrtData.data.progesterone as any;
+            pushIf('progesterone', () => `Progesterone (${cfg.route}): ${cfg.type}, ${cfg.dose} ${cfg.unit}`);
+        }
+
+        if (options.length === 0) return null;
+
+        const future = options.filter((o) => o.date >= now);
+        if (future.length > 0) {
+            future.sort((a, b) => a.date - b.date);
+            return { medType: future[0].medType, label: future[0].label };
+        }
+        // If all options are in the past, pick the most recent one
+        options.sort((a, b) => b.date - a.date);
+        return { medType: options[0].medType, label: options[0].label };
+    }
+
+    let nextScheduledCandidate = $derived(getNextScheduledCandidate());
+
+    function recordNextDoseNow() {
+        const c = getNextScheduledCandidate();
+        if (!c) return;
+
+        const now = Date.now();
+        switch (c.medType) {
+            case 'injectableEstradiol': {
+                const cfg = hrtData.data.injectableEstradiol!;
+                const rec: DosageHistoryEntry = {
+                    date: now,
+                    medicationType: 'injectableEstradiol',
+                    type: cfg.type,
+                    dose: cfg.dose,
+                    unit: cfg.unit,
+                } as any;
+                hrtData.addDosageRecord(rec);
+                break;
+            }
+            case 'oralEstradiol': {
+                const cfg = hrtData.data.oralEstradiol!;
+                const rec: DosageHistoryEntry = {
+                    date: now,
+                    medicationType: 'oralEstradiol',
+                    type: cfg.type,
+                    dose: cfg.dose,
+                    unit: cfg.unit,
+                } as any;
+                hrtData.addDosageRecord(rec);
+                break;
+            }
+            case 'antiandrogen': {
+                const cfg = hrtData.data.antiandrogen!;
+                const rec: DosageHistoryEntry = {
+                    date: now,
+                    medicationType: 'antiandrogen',
+                    type: cfg.type,
+                    dose: cfg.dose,
+                    unit: cfg.unit,
+                } as any;
+                hrtData.addDosageRecord(rec);
+                break;
+            }
+            case 'progesterone': {
+                const cfg = hrtData.data.progesterone as any;
+                const rec: DosageHistoryEntry = {
+                    date: now,
+                    medicationType: 'progesterone',
+                    type: cfg.type,
+                    dose: cfg.dose,
+                    unit: cfg.unit,
+                    route: cfg.route,
+                } as any;
+                hrtData.addDosageRecord(rec);
+                break;
+            }
+        }
+    }
+
     let daysSinceFirstDose: number | null = $state(null);
     let firstDoseDate: number | null = $state(null);
     let xAxisMode = $state<"date" | "days">("date");
@@ -805,6 +968,14 @@
                         >View on Estrannaise</a
                     >
                 {/if}
+                <button
+                    class="px-3 py-1 text-sm rounded bg-latte-rose-pine-foam text-white hover:bg-rose-pine-pine transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    onclick={recordNextDoseNow}
+                    disabled={!hasAnyRegimen}
+                    title={nextScheduledCandidate ? `Record: ${nextScheduledCandidate.label}` : ''}
+                >
+                    Record next dose now
+                </button>
                 <a
                     href="/create/dosage?mode=schedule"
                     class="px-3 py-1 text-sm rounded bg-latte-rose-pine-foam text-white hover:bg-rose-pine-pine transition-colors"
