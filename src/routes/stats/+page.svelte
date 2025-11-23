@@ -2,7 +2,7 @@
   export const ssr = false;
 
   import { hrtData } from '$lib/storage.svelte';
-  import { ProgesteroneRoutes } from '$lib/types';
+  import { ProgesteroneRoutes, SyringeKinds } from '$lib/types';
 
   const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -14,6 +14,10 @@
   );
   const injectableRecords = $derived(
     (hrtData.data.dosageHistory ?? []).filter((d) => d.medicationType === 'injectableEstradiol')
+  );
+
+  const totalInjectableEstradiolMg = $derived(
+    injectableRecords.reduce((sum, d: any) => sum + (d.unit === 'mg' ? d.dose : 0), 0)
   );
 
   // Totals (mg)
@@ -56,6 +60,59 @@
     if (!isFinite(ml)) return '—';
     return String(Math.round(ml * 100)); // 1 mL = 100 IU
   }
+
+  function deadspaceULFor(kind: string | undefined): number | null {
+    if (!kind) return null;
+    // Normalize to enum labels
+    switch (kind) {
+      case SyringeKinds.RegularSyringe: return 92;
+      case SyringeKinds.LowWasteSyringe: return 59;
+      case SyringeKinds.LowWasteNeedle: return 17;
+      case SyringeKinds.InsulinSyringe: return 3;
+      case SyringeKinds.InsulinPen: return 3;
+      default: return null;
+    }
+  }
+
+  const wastageAgg = $derived(() => {
+    let totalMl = 0;
+    let totalMg = 0;
+    let skippedNoKind = 0;
+    let skippedNoConcForMg = 0;
+    let counted = 0;
+    let deadForPctMl = 0;
+    let drawnForPctMl = 0;
+
+    for (const d of injectableRecords as any[]) {
+      const dsUL = deadspaceULFor(d.syringeKind);
+      if (dsUL === null) {
+        skippedNoKind++;
+        continue;
+      }
+      const dsMl = dsUL / 1000;
+      totalMl += dsMl;
+      counted++;
+
+      const vial = d.vialId ? hrtData.data.vials.find((v) => v.id === d.vialId) : undefined;
+      const conc = vial?.concentrationMgPerMl;
+      if (typeof conc === 'number' && conc > 0) {
+        totalMg += conc * dsMl;
+        // For percent, need dose volume (mg -> mL) alongside deadspace
+        if (d.unit === 'mg' && typeof d.dose === 'number' && d.dose > 0) {
+          const doseMl = d.dose / conc;
+          deadForPctMl += dsMl;
+          drawnForPctMl += dsMl + doseMl;
+        }
+      } else {
+        skippedNoConcForMg++;
+      }
+    }
+    return { totalMl, totalMg, skippedNoKind, skippedNoConcForMg, counted, deadForPctMl, drawnForPctMl };
+  });
+
+  const wastagePct = $derived(
+    wastageAgg.drawnForPctMl > 0 ? (100 * wastageAgg.deadForPctMl) / wastageAgg.drawnForPctMl : NaN
+  );
 
   function parseNeedleLengthToMm(raw: string): number | null {
     const s = String(raw || '').trim().toLowerCase();
@@ -140,7 +197,13 @@
     <h2 class="text-lg font-medium mb-2">Total Estrogen Taken</h2>
     <div class="text-sm text-gray-700 dark:text-gray-300">
       <div class="mb-1">
-        <strong>{fmt(totalEstrogenMg, 2)}</strong> mg (injectable + oral)
+        Injectable estradiol total: <strong>{fmt(totalInjectableEstradiolMg, 2)}</strong> mg
+      </div>
+      <div class="mb-1">
+        Oral estradiol total: <strong>{fmt(totalOralEstradiolMg, 2)}</strong> mg
+      </div>
+      <div class="text-xs opacity-70 mb-1">
+        Combined: <strong>{fmt(totalInjectableEstradiolMg + totalOralEstradiolMg, 2)}</strong> mg
       </div>
 
       {#if injectableRecords.length > 0}
@@ -208,6 +271,27 @@
         <strong>{isFinite(totalNeedleLengthMm) ? fmt(totalNeedleLengthMm, 1) : '—'}</strong> mm
         {#if isFinite(totalNeedleLengthMm)}(<strong>{fmt(totalNeedleLengthMm / 25.4, 2)}</strong> in){/if}
       </div>
+      <div class="mt-2">
+        Wastage from needle dead space:
+        <strong>{isFinite(wastageAgg.totalMl) ? fmt(wastageAgg.totalMl, 3) : '—'}</strong> mL
+        {#if isFinite(wastageAgg.totalMl)}(<strong>{fmtIUFromMl(wastageAgg.totalMl)}</strong> IU){/if}
+        {#if wastageAgg.totalMg > 0}
+          · ≈ <strong>{fmt(wastageAgg.totalMg, 2)}</strong> mg
+        {/if}
+        {#if isFinite(wastagePct)}
+          · <strong>{fmt(wastagePct, 1)}</strong>% of drawn volume
+        {/if}
+      </div>
+      {#if wastageAgg.skippedNoKind > 0 || wastageAgg.skippedNoConcForMg > 0}
+        <div class="text-xs opacity-70 mt-1">
+          {#if wastageAgg.skippedNoKind > 0}
+            Skipped {wastageAgg.skippedNoKind} injection(s) without a syringe kind.
+          {/if}
+          {#if wastageAgg.skippedNoConcForMg > 0}
+            {wastageAgg.skippedNoKind > 0 ? ' ' : ''}No mg estimate for {wastageAgg.skippedNoConcForMg} injection(s) lacking vial concentration.
+          {/if}
+        </div>
+      {/if}
       {#if needleAgg.skipped > 0}
         <div class="text-xs opacity-70 mt-1">
           Skipped {needleAgg.skipped} injection(s) without a parsable needle length.

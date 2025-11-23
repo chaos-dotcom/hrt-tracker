@@ -448,7 +448,7 @@
                             <div class="flex items-center gap-2">
                                 <select id="eVial" class="border py-2 px-3 rounded w-full leading-tight" bind:value={selectedVialId}>
                                     <option value="">None</option>
-                                    {#each hrtData.data.vials as v}
+                                    {#each hrtData.data.vials.filter(v => !v.isSpent || v.id === selectedVialId) as v}
                                         <option value={v.id}>
                                             {(v.esterKind || 'Unknown ester') + ' · ' + (v.batchNumber || 'batch ?') + (v.source ? ' · ' + v.source : '')}
                                         </option>
@@ -511,7 +511,7 @@
                         <div class="flex items-center gap-2">
                             <select id="schedVial" class="border py-2 px-3 rounded w-full leading-tight" bind:value={selectedVialId}>
                                 <option value="">None</option>
-                                {#each hrtData.data.vials as v}
+                                {#each hrtData.data.vials.filter(v => !v.isSpent || v.id === selectedVialId) as v}
                                     <option value={v.id}>
                                         {(v.esterKind || 'Unknown ester') + ' · ' + (v.batchNumber || 'batch ?') + (v.source ? ' · ' + v.source : '')}
                                     </option>
