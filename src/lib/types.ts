@@ -92,6 +92,7 @@ export type DosageHistoryEntry =
       subVialId?: string;   // ADDED
       syringeKind?: SyringeKinds | string;  // ADDED
       needleLength?: string;                // ADDED
+      needleGauge?: string;                 // ADDED
       photos?: { file: string; note?: string }[]; // filenames (under data/dosage-photos/{id}/) with optional notes
     }
   | {
@@ -213,6 +214,7 @@ export interface HRTData {
     subVialId?: string;   // ADDED
     syringeKind?: SyringeKinds | string;  // ADDED
     needleLength?: string;                // ADDED
+    needleGauge?: string;                 // ADDED
     nextDoseDate?: UnixTime;
   };
   oralEstradiol?: {
