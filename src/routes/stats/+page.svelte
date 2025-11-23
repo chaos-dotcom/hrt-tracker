@@ -48,6 +48,40 @@
     if (!isFinite(ml)) return '—';
     return String(Math.round(ml * 100)); // 1 mL = 100 IU
   }
+
+  function parseNeedleLengthToMm(raw: string): number | null {
+    const s = String(raw || '').trim().toLowerCase();
+    if (!s) return null;
+    const m = s.match(/([0-9]+(?:\.[0-9]+)?)/);
+    if (!m) return null;
+    const val = parseFloat(m[1]);
+    if (!isFinite(val) || val <= 0) return null;
+    if (/\bcm\b|centimet(er|re)s?/.test(s)) return val * 10;
+    if (/\bmm\b|millimet(er|re)s?/.test(s)) return val;
+    if (/"/.test(s) || /\binches?\b/.test(s)) return val * 25.4;
+    // No unit specified: assume mm
+    return val;
+  }
+
+  const needleAgg = $derived(() => {
+    let sumMm = 0;
+    let skipped = 0;
+    for (const d of injectableRecords) {
+      const nl = (d as any).needleLength;
+      if (!nl || String(nl).trim() === '') {
+        skipped++;
+        continue;
+      }
+      const mm = parseNeedleLengthToMm(String(nl));
+      if (typeof mm === 'number' && isFinite(mm) && mm > 0) {
+        sumMm += mm;
+      } else {
+        skipped++;
+      }
+    }
+    return { sumMm, skipped };
+  });
+  const totalNeedleLengthMm = $derived(needleAgg.sumMm);
 </script>
 
 <div class="p-6 space-y-6 max-w-3xl mx-auto">
@@ -83,5 +117,21 @@
         No doses recorded yet.
       </div>
     {/if}
+  </section>
+
+  <section class="border rounded-lg p-4 bg-white dark:bg-rose-pine-surface shadow">
+    <h2 class="text-lg font-medium mb-2">Needle Usage</h2>
+    <div class="text-sm text-gray-700 dark:text-gray-300">
+      <div>
+        Total combined needle length:
+        <strong>{isFinite(totalNeedleLengthMm) ? fmt(totalNeedleLengthMm, 1) : '—'}</strong> mm
+        {#if isFinite(totalNeedleLengthMm)}(<strong>{fmt(totalNeedleLengthMm / 25.4, 2)}</strong> in){/if}
+      </div>
+      {#if needleAgg.skipped > 0}
+        <div class="text-xs opacity-70 mt-1">
+          Skipped {needleAgg.skipped} injection(s) without a parsable needle length.
+        </div>
+      {/if}
+    </div>
   </section>
 </div>
