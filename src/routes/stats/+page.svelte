@@ -2,6 +2,7 @@
   export const ssr = false;
 
   import { hrtData } from '$lib/storage.svelte';
+  import { ProgesteroneRoutes } from '$lib/types';
 
   const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -20,30 +21,21 @@
     estrogenRecords.reduce((sum, d) => sum + (d.unit === 'mg' ? d.dose : 0), 0)
   );
 
-  // Fallback concentration for records without a vial conc (mg/mL)
-  let assumedConcMgPerMl = $state(40);
-
-  // Sum volume using recorded vial concentrations when available
-  const volumeAgg = $derived(() => {
+  // Sum volume only from doses with recorded vial concentration
+  const totalInjectionMl = $derived(() => {
     let sumMl = 0;
-    let usedFallbackCount = 0;
     for (const d of injectableRecords) {
       if (d.unit !== 'mg') continue;
       const vial = (d as any).vialId
         ? hrtData.data.vials.find((v) => v.id === (d as any).vialId)
         : undefined;
       const conc = vial?.concentrationMgPerMl;
-      const usedConc = typeof conc === 'number' && conc > 0
-        ? conc
-        : (assumedConcMgPerMl > 0 ? assumedConcMgPerMl : undefined);
-      if (usedConc) {
-        sumMl += d.dose / usedConc;
-        if (!(typeof conc === 'number' && conc > 0)) usedFallbackCount++;
+      if (typeof conc === 'number' && conc > 0) {
+        sumMl += d.dose / conc;
       }
     }
-    return { sumMl, usedFallbackCount };
+    return sumMl;
   });
-  const totalInjectionMl = $derived(volumeAgg.sumMl);
 
   // Days since first dose (centralized helper)
   const totalDaysSinceStart = $derived(hrtData.getDaysSinceFirstDose());
@@ -57,6 +49,69 @@
     if (!isFinite(ml)) return '—';
     return String(Math.round(ml * 100)); // 1 mL = 100 IU
   }
+
+  function parseNeedleLengthToMm(raw: string): number | null {
+    const s = String(raw || '').trim().toLowerCase();
+    if (!s) return null;
+    const m = s.match(/([0-9]+(?:\.[0-9]+)?)/);
+    if (!m) return null;
+    const val = parseFloat(m[1]);
+    if (!isFinite(val) || val <= 0) return null;
+    if (/\bcm\b|centimet(er|re)s?/.test(s)) return val * 10;
+    if (/\bmm\b|millimet(er|re)s?/.test(s)) return val;
+    if (/"/.test(s) || /\binches?\b/.test(s)) return val * 25.4;
+    // No unit specified: assume mm
+    return val;
+  }
+
+  const needleAgg = $derived(() => {
+    let sumMm = 0;
+    let skipped = 0;
+    for (const d of injectableRecords) {
+      const nl = (d as any).needleLength;
+      if (!nl || String(nl).trim() === '') {
+        skipped++;
+        continue;
+      }
+      const mm = parseNeedleLengthToMm(String(nl));
+      if (typeof mm === 'number' && isFinite(mm) && mm > 0) {
+        sumMm += mm;
+      } else {
+        skipped++;
+      }
+    }
+    return { sumMm, skipped };
+  });
+  const totalNeedleLengthMm = $derived(needleAgg.sumMm);
+
+  // Pills: oral estradiol and progesterone (Boofed = "boofed")
+  const oralEstradiolRecords = $derived(
+    (hrtData.data.dosageHistory ?? []).filter((d) => d.medicationType === 'oralEstradiol')
+  );
+  const totalOralPillsCount = $derived(
+    oralEstradiolRecords.reduce((sum, d: any) => sum + (Number(d.pillQuantity) > 0 ? Number(d.pillQuantity) : 1), 0)
+  );
+  const totalOralEstradiolMg = $derived(
+    oralEstradiolRecords.reduce((sum, d) => sum + (d.unit === 'mg' ? d.dose : 0), 0)
+  );
+
+  const progesteroneRecords = $derived(
+    (hrtData.data.dosageHistory ?? []).filter((d) => d.medicationType === 'progesterone')
+  );
+  const boofedProgesteroneRecords = $derived(
+    progesteroneRecords.filter((d: any) => d.route === ProgesteroneRoutes.Boofed)
+  );
+  const boofedProgesteroneCount = $derived(
+    boofedProgesteroneRecords.reduce((sum, d: any) => sum + (Number(d.pillQuantity) > 0 ? Number(d.pillQuantity) : 1), 0)
+  );
+  const boofedProgesteroneMg = $derived(
+    boofedProgesteroneRecords.reduce((sum, d) => sum + (d.unit === 'mg' ? d.dose : 0), 0)
+  );
+  const totalProgesteroneMg = $derived(
+    progesteroneRecords.reduce((sum, d) => sum + (d.unit === 'mg' ? d.dose : 0), 0)
+  );
+  const totalPillsCount = $derived(totalOralPillsCount + boofedProgesteroneCount);
+  const totalPillsMgCombined = $derived(totalOralEstradiolMg + boofedProgesteroneMg);
 </script>
 
 <div class="p-6 space-y-6 max-w-3xl mx-auto">
@@ -71,27 +126,43 @@
 
       {#if injectableRecords.length > 0}
         <div class="mt-3">
-          <label class="block text-sm font-medium mb-1">Assumed injectable concentration (for volume estimate)</label>
-          <div class="flex items-center gap-2">
-            <input
-              type="number"
-              min="0"
-              step="0.1"
-              class="border rounded px-2 py-1 w-28"
-              bind:value={assumedConcMgPerMl}
-            />
-            <span>mg/mL</span>
-          </div>
-          <div class="mt-2">
-            Estimated total injection volume:
+          <div>
+            Total injection volume (from recorded vial concentrations):
             <strong>{isFinite(totalInjectionMl) ? fmt(totalInjectionMl, 3) : '—'}</strong> mL
             {#if isFinite(totalInjectionMl)}(<strong>{fmtIUFromMl(totalInjectionMl)}</strong> IU){/if}
-            {#if volumeAgg.usedFallbackCount > 0}
-              <div class="text-xs opacity-70 mt-1">
-                Used fallback concentration for {volumeAgg.usedFallbackCount} dose(s) without recorded vial concentration.
-              </div>
-            {/if}
           </div>
+        </div>
+      {/if}
+    </div>
+  </section>
+
+  <section class="border rounded-lg p-4 bg-white dark:bg-rose-pine-surface shadow">
+    <h2 class="text-lg font-medium mb-2">Pills</h2>
+    <div class="text-sm text-gray-700 dark:text-gray-300 space-y-1">
+      <div>
+        Estradiol pills taken:
+        <strong>{totalOralPillsCount}</strong>
+        {#if totalOralPillsCount > 0}
+          (<strong>{fmt(totalOralEstradiolMg, 2)}</strong> mg total)
+        {/if}
+      </div>
+      <div class="mt-1">
+        Progesterone pills boofed:
+        <strong>{boofedProgesteroneCount}</strong>
+        {#if boofedProgesteroneCount > 0}
+          (<strong>{fmt(boofedProgesteroneMg, 2)}</strong> mg total)
+        {/if}
+      </div>
+      {#if totalPillsCount > 0}
+        <div class="mt-1">
+          All pills combined:
+          <strong>{totalPillsCount}</strong> {totalPillsCount === 1 ? 'pill' : 'pills'}
+          (<strong>{fmt(totalPillsMgCombined, 2)}</strong> mg total)
+        </div>
+      {/if}
+      {#if progesteroneRecords.length > 0}
+        <div class="text-xs opacity-70 mt-1">
+          Total progesterone (all routes): <strong>{fmt(totalProgesteroneMg, 2)}</strong> mg
         </div>
       {/if}
     </div>
@@ -108,5 +179,21 @@
         No doses recorded yet.
       </div>
     {/if}
+  </section>
+
+  <section class="border rounded-lg p-4 bg-white dark:bg-rose-pine-surface shadow">
+    <h2 class="text-lg font-medium mb-2">Needle Usage</h2>
+    <div class="text-sm text-gray-700 dark:text-gray-300">
+      <div>
+        Total combined needle length:
+        <strong>{isFinite(totalNeedleLengthMm) ? fmt(totalNeedleLengthMm, 1) : '—'}</strong> mm
+        {#if isFinite(totalNeedleLengthMm)}(<strong>{fmt(totalNeedleLengthMm / 25.4, 2)}</strong> in){/if}
+      </div>
+      {#if needleAgg.skipped > 0}
+        <div class="text-xs opacity-70 mt-1">
+          Skipped {needleAgg.skipped} injection(s) without a parsable needle length.
+        </div>
+      {/if}
+    </div>
   </section>
 </div>

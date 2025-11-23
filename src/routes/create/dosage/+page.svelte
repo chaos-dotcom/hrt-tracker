@@ -12,6 +12,7 @@
         Progesterones,
         ProgesteroneRoutes,
         InjectionSites,
+        SyringeKinds,   // ADD
     } from "$lib/types";
 
     let mode: "record" | "schedule" = $state("record");
@@ -26,7 +27,6 @@
     let eUnit: HormoneUnits = $state(HormoneUnits.mg);
     let injectionFrequency = $state(hrtData.data.injectableEstradiol?.frequency ?? 7);
     let oralEFrequency = $state(hrtData.data.oralEstradiol?.frequency ?? 1);
-    let eDateTime = $state("");
     let eNextDoseDate = $state("");
 
     // Injection helper: dose/conc <-> volume
@@ -43,7 +43,6 @@
     let aaDose = $state(0);
     let aaUnit: HormoneUnits = $state(HormoneUnits.mg);
     let aaFrequency = $state(hrtData.data.antiandrogen?.frequency ?? 1);
-    let aaDateTime = $state("");
     let aaNextDoseDate = $state("");
 
     // Progesterone state
@@ -52,7 +51,6 @@
     let pUnit: HormoneUnits = $state(HormoneUnits.mg);
     let pRoute: ProgesteroneRoutes = $state(ProgesteroneRoutes.Oral);
     let pFrequency = $state(hrtData.data.progesterone?.frequency ?? 1);
-    let pDateTime = $state("");
     let pNextDoseDate = $state("");
 
     // State for "Record Dose" mode
@@ -64,9 +62,13 @@
     let eNote = $state("");
     let aaNote = $state("");
     let pNote = $state("");
+    let ePillQty = $state(1);     // for oral estradiol
+    let pPillQty = $state(1);     // for progesterone
     
     // Injection site for injectable estrogen
     let eInjectionSite: InjectionSites | "" = $state("");
+    let syringeKind: SyringeKinds | '' = $state('');
+    let needleLength = $state('');
 
     // Selected vial/sub‑vial (for injections)
     let selectedVialId = $state('');
@@ -89,6 +91,14 @@
         return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
     }
 
+    let recordDateTime = $state("");
+
+    $effect(() => {
+        if (mode === "record" && !recordDateTime) {
+            recordDateTime = toLocalInputValue(Date.now());
+        }
+    });
+
     $effect(() => {
         if ($page.url.searchParams.get("mode") === "schedule") {
             mode = "schedule";
@@ -106,6 +116,8 @@
             eNextDoseDate = injSched.nextDoseDate ? toLocalInputValue(injSched.nextDoseDate) : "";
             selectedVialId = injSched.vialId || '';          // ADDED
             selectedSubVialId = injSched.subVialId || '';    // ADDED
+            syringeKind = (injSched as any).syringeKind || '';
+            needleLength = (injSched as any).needleLength || '';
         } else if (oralSched) {
             estrogenMethod = "oral";
             oralEType = oralSched.type;
@@ -115,6 +127,8 @@
             eNextDoseDate = oralSched.nextDoseDate ? toLocalInputValue(oralSched.nextDoseDate) : "";
             selectedVialId = '';          // ADDED
             selectedSubVialId = '';       // ADDED
+            syringeKind = '';
+            needleLength = '';
         }
 
         // AA
@@ -169,6 +183,8 @@
                 frequency: injectionFrequency,
                 vialId: selectedVialId || undefined,         // ADDED
                 subVialId: selectedSubVialId || undefined,   // ADDED
+                syringeKind: syringeKind || undefined,         // ADDED
+                needleLength: needleLength.trim() || undefined, // ADDED
                 nextDoseDate: eNextDoseDate ? new Date(eNextDoseDate).getTime() : undefined,
             };
             hrtData.data.oralEstradiol = undefined;
@@ -216,11 +232,12 @@
     }
 
     function submitDosageForm() {
+        const recordMs = new Date(recordDateTime).getTime();
         if (recordEstrogen) {
             let estrogenRecord: DosageHistoryEntry;
             if (estrogenMethod === "injection") {
                 estrogenRecord = {
-                    date: new Date(eDateTime).getTime(),
+                    date: recordMs,
                     medicationType: "injectableEstradiol",
                     type: injectableEType,
                     dose: eDose,
@@ -229,14 +246,17 @@
                     injectionSite: eInjectionSite || undefined,
                     vialId: selectedVialId || undefined,       // ADDED
                     subVialId: selectedSubVialId || undefined, // ADDED
+                    syringeKind: syringeKind || undefined,         // ADDED
+                    needleLength: needleLength.trim() || undefined, // ADDED
                 };
             } else {
                 estrogenRecord = {
-                    date: new Date(eDateTime).getTime(),
+                    date: recordMs,
                     medicationType: "oralEstradiol",
                     type: oralEType,
                     dose: eDose,
                     unit: eUnit,
+                    pillQuantity: Number.isFinite(+ePillQty) && +ePillQty > 0 ? +ePillQty : undefined,
                     note: eNote.trim() || undefined,
                 };
             }
@@ -245,7 +265,7 @@
 
         if (recordAA && aaType !== "") {
             const aaRecord: DosageHistoryEntry = {
-                date: new Date(aaDateTime).getTime(),
+                date: recordMs,
                 medicationType: "antiandrogen",
                 type: aaType,
                 dose: aaDose,
@@ -257,12 +277,13 @@
 
         if (recordProg && pType !== "") {
             const pRecord: DosageHistoryEntry = {
-                date: new Date(pDateTime).getTime(),
+                date: recordMs,
                 medicationType: "progesterone",
                 type: pType,
                 route: pRoute,
                 dose: pDose,
                 unit: pUnit,
+                pillQuantity: Number.isFinite(+pPillQty) && +pPillQty > 0 ? +pPillQty : undefined,
                 note: pNote.trim() || undefined,
             };
             hrtData.addDosageRecord(pRecord);
@@ -347,6 +368,19 @@
             </label>
         </div>
 
+        {#if mode === "record"}
+            <div class="mb-4">
+                <label class="block text-sm font-medium mb-2" for="recordDateTime">date / time</label>
+                <input
+                    id="recordDateTime"
+                    type="datetime-local"
+                    class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight"
+                    bind:value={recordDateTime}
+                    required
+                />
+            </div>
+        {/if}
+
         <div class="space-y-6">
             <!-- Estrogen Section -->
             <div class="p-4 border rounded-lg">
@@ -385,10 +419,6 @@
                         </label>
                     </div>
                     {#if recordEstrogen}
-                        <div class="mb-4">
-                            <label class="block text-sm font-medium mb-2" for="eDateTime">date / time</label>
-                            <input id="eDateTime" type="datetime-local" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={eDateTime} required />
-                        </div>
                         <div class="mb-4">
                             <label class="block text-sm font-medium mb-2" for="eNote">note (optional)</label>
                             <textarea id="eNote" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={eNote} rows="2" placeholder="Add any notes about this dose"></textarea>
@@ -442,6 +472,25 @@
                                 {/if}
                             {/each}
                         {/if}
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium mb-2" for="eSyringeKind">syringe kind (optional)</label>
+                            <select id="eSyringeKind" class="border py-2 px-3 rounded w-full leading-tight" bind:value={syringeKind}>
+                                <option value="">Select...</option>
+                                {#each Object.values(SyringeKinds) as opt}
+                                    <option value={opt}>{opt}</option>
+                                {/each}
+                            </select>
+                        </div>
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium mb-2" for="eNeedleLen">needle length (optional)</label>
+                            <input id="eNeedleLen" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" placeholder='e.g., 4mm or 1"' bind:value={needleLength} />
+                        </div>
+                        {/if}
+                        {#if estrogenMethod === 'oral'}
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium mb-2" for="ePillQty">pill quantity</label>
+                            <input id="ePillQty" type="number" min="1" step="1" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={ePillQty} />
+                        </div>
                         {/if}
                     {/if}
                 {/if}
@@ -483,6 +532,19 @@
                             {/if}
                         {/each}
                     {/if}
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-2" for="schedSyringeKind">syringe kind (optional)</label>
+                        <select id="schedSyringeKind" class="border py-2 px-3 rounded w-full leading-tight" bind:value={syringeKind}>
+                            <option value="">Select...</option>
+                            {#each Object.values(SyringeKinds) as opt}
+                                <option value={opt}>{opt}</option>
+                            {/each}
+                        </select>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-2" for="schedNeedleLen">needle length (optional)</label>
+                        <input id="schedNeedleLen" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" placeholder='e.g., 4mm or 1"' bind:value={needleLength} />
+                    </div>
                 {/if}
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -538,10 +600,6 @@
                         </label>
                     </div>
                     {#if recordAA}
-                        <div class="mb-4">
-                            <label class="block text-sm font-medium mb-2" for="aaDateTime">date / time</label>
-                            <input id="aaDateTime" type="datetime-local" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={aaDateTime} required />
-                        </div>
                         <div class="mb-4">
                             <label class="block text-sm font-medium mb-2" for="aaNote">note (optional)</label>
                             <textarea id="aaNote" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={aaNote} rows="2" placeholder="Add any notes about this dose"></textarea>
@@ -599,12 +657,12 @@
                     </div>
                     {#if recordProg}
                         <div class="mb-4">
-                            <label class="block text-sm font-medium mb-2" for="pDateTime">date / time</label>
-                            <input id="pDateTime" type="datetime-local" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={pDateTime} required />
-                        </div>
-                        <div class="mb-4">
                             <label class="block text-sm font-medium mb-2" for="pNote">note (optional)</label>
                             <textarea id="pNote" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={pNote} rows="2" placeholder="Add any notes about this dose"></textarea>
+                        </div>
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium mb-2" for="pPillQty">pill quantity</label>
+                            <input id="pPillQty" type="number" min="1" step="1" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={pPillQty} />
                         </div>
                     {/if}
                 {/if}

@@ -95,6 +95,9 @@ class hrtStore {
   }
 
   addDosageRecord(rec: DosageHistoryEntry) {
+    if (!rec.id) {
+      rec.id = globalThis.crypto?.randomUUID?.() ?? String(Date.now());
+    }
     this.data.dosageHistory.push(rec);
     // Persist immediately so ICS consumers see it right away
     this.saveNow().catch(() => {});
@@ -107,6 +110,60 @@ class hrtStore {
   deleteDosageRecord(rec: DosageHistoryEntry) {
     this.data.dosageHistory = this.data.dosageHistory.filter((r) => r !== rec);
     this.saveSoon();
+  }
+
+  ensureDosageId(rec: DosageHistoryEntry): string {
+    if (!rec.id) {
+      rec.id = globalThis.crypto?.randomUUID?.() ?? String(Date.now());
+      this.saveSoon();
+    }
+    return rec.id;
+  }
+
+  addDosagePhoto(entryId: string, filename: string): boolean {
+    const rec = (this.data.dosageHistory ?? []).find((r) => r.id === entryId);
+    if (!rec) return false;
+    const inj = rec as any;
+    if (!inj.photos) inj.photos = [];
+    // Migrate legacy string[] -> {file}[]
+    if (inj.photos.length && typeof inj.photos[0] === 'string') {
+      inj.photos = (inj.photos as string[]).map((f: string) => ({ file: f }));
+    }
+    if (!inj.photos.some((p: any) => p.file === filename)) {
+      inj.photos.push({ file: filename });
+    }
+    this.saveSoon();
+    return true;
+  }
+
+  removeDosagePhoto(entryId: string, filename: string): boolean {
+    const rec = (this.data.dosageHistory ?? []).find((r) => r.id === entryId);
+    if (!rec) return false;
+    const inj = rec as any;
+    if (Array.isArray(inj.photos)) {
+      inj.photos = inj.photos.filter((p: any) =>
+        typeof p === 'string' ? p !== filename : p.file !== filename
+      );
+      this.saveSoon();
+      return true;
+    }
+    return false;
+  }
+
+  setDosagePhotoNote(entryId: string, filename: string, note: string): boolean {
+    const rec = (this.data.dosageHistory ?? []).find((r) => r.id === entryId);
+    if (!rec) return false;
+    const inj = rec as any;
+    if (!inj.photos) inj.photos = [];
+    // Migrate legacy
+    if (inj.photos.length && typeof inj.photos[0] === 'string') {
+      inj.photos = (inj.photos as string[]).map((f: string) => ({ file: f }));
+    }
+    const p = inj.photos.find((x: any) => x.file === filename);
+    if (!p) return false;
+    p.note = note || undefined;
+    this.saveSoon();
+    return true;
   }
 
   addMeasurement(measurement: Measurement) {

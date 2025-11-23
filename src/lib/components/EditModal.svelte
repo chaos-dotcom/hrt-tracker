@@ -8,7 +8,8 @@
 		type Measurement,
 		WeightUnit,
 		LengthUnit,
-		InjectionSites
+		InjectionSites,
+		SyringeKinds   // ADD
 	} from '$lib/types';
 
 	let { item, close }: { item: BloodTest | DosageHistoryEntry | Measurement; close: () => void } = $props();
@@ -72,6 +73,24 @@
 			? (item as any).injectionSite
 			: undefined
 	);
+	let syringeKindEdit = $state(
+		isDosage && (item as DosageHistoryEntry).medicationType === 'injectableEstradiol'
+			? ((item as any).syringeKind || '')
+			: ''
+	);
+	let needleLengthEdit = $state(
+		isDosage && (item as DosageHistoryEntry).medicationType === 'injectableEstradiol'
+			? ((item as any).needleLength || '')
+			: ''
+	);
+	const syringeKindOptions = enumToDropdownOptions(SyringeKinds);
+
+	// Pill quantity for oral estradiol and progesterone
+	let pillQtyEdit = $state(
+		isDosage && ((item as DosageHistoryEntry).medicationType === 'oralEstradiol' || (item as DosageHistoryEntry).medicationType === 'progesterone')
+			? (Number((item as any).pillQuantity) || 1)
+			: 1
+	);
 
 	// Added: vial and sub‑vial selection for injectable dosage items
 	let selectedVialId = $state(
@@ -94,6 +113,12 @@
 		if (!v.subVials.some((s) => s.id === selectedSubVialId)) {
 			selectedSubVialId = '';
 		}
+	});
+
+	// Ensure injectable dosage entries have an id to key photos on disk
+	$effect(() => {
+		if (!isDosage || (item as DosageHistoryEntry).medicationType !== 'injectableEstradiol') return;
+		hrtData.ensureDosageId(item as DosageHistoryEntry);
 	});
 
 	// Measurement fields
@@ -143,6 +168,11 @@
 				(dosageItem as any).injectionSite = injectionSite || undefined;
 				(dosageItem as any).vialId = selectedVialId || undefined;         // add
 				(dosageItem as any).subVialId = selectedSubVialId || undefined;   // add
+				(dosageItem as any).syringeKind = syringeKindEdit || undefined;       // add
+				(dosageItem as any).needleLength = (needleLengthEdit || '').trim() || undefined; // add
+			}
+			if (dosageItem.medicationType === 'progesterone' || dosageItem.medicationType === 'oralEstradiol') {
+				(dosageItem as any).pillQuantity = Number.isFinite(+pillQtyEdit) && +pillQtyEdit > 0 ? +pillQtyEdit : undefined;
 			}
 		} else if (isMeasurement) {
 			const measurementItem = item as Measurement;
@@ -191,6 +221,49 @@
 				hrtData.deleteBloodTest(item as BloodTest);
 			}
 			close();
+		}
+	}
+
+	let uploadBusy = $state(false);
+
+	let fileInputEl: HTMLInputElement | null = null;
+
+	function openPhotoPicker() {
+		if (uploadBusy) return;
+		fileInputEl?.click();
+	}
+
+	async function handleFilesSelected(e: Event) {
+		const input = e.target as HTMLInputElement;
+		if (!isDosage || (item as DosageHistoryEntry).medicationType !== 'injectableEstradiol') return;
+		const id = (item as any).id as string;
+		if (!id || !input.files || input.files.length === 0) return;
+		uploadBusy = true;
+		try {
+			for (const file of Array.from(input.files)) {
+				const fd = new FormData();
+				fd.append('file', file);
+				const res = await fetch(`/api/dosage-photo/${encodeURIComponent(id)}`, { method: 'POST', body: fd });
+				if (res.ok) {
+					const { filenames } = await res.json();
+					for (const fn of filenames) {
+						hrtData.addDosagePhoto(id, fn);
+					}
+				}
+			}
+		} finally {
+			uploadBusy = false;
+			input.value = '';
+		}
+	}
+
+	async function handleDeletePhoto(fname: string) {
+		if (!isDosage || (item as DosageHistoryEntry).medicationType !== 'injectableEstradiol') return;
+		const id = (item as any).id as string;
+		if (!id) return;
+		const res = await fetch(`/api/dosage-photo/${encodeURIComponent(id)}/${encodeURIComponent(fname)}`, { method: 'DELETE' });
+		if (res.ok) {
+			hrtData.removeDosagePhoto(id, fname);
 		}
 	}
 </script>
@@ -257,6 +330,10 @@
 						</select>
 					</div>
 				</div>
+				<div class="mt-3">
+					<label for="pillQtyProg" class="block text-sm mb-1">Pill quantity</label>
+					<input id="pillQtyProg" type="number" min="1" step="1" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={pillQtyEdit} />
+				</div>
 			{:else}
 				<div class="flex gap-5">
 					<div class="w-full">
@@ -282,6 +359,12 @@
 						</select>
 					</div>
 				</div>
+				{#if (item as DosageHistoryEntry).medicationType === 'oralEstradiol'}
+					<div class="mt-3">
+						<label for="pillQtyOral" class="block text-sm mb-1">Pill quantity</label>
+						<input id="pillQtyOral" type="number" min="1" step="1" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={pillQtyEdit} />
+					</div>
+				{/if}
 			{/if}
 			{#if isDosage}
 				<div class="mb-4">
@@ -345,6 +428,86 @@
 						{/if}
 					{/each}
 				{/if}
+				<div class="mb-4">
+					<label for="modalSyringeKind" class="block text-sm mb-1">Syringe kind (optional)</label>
+					<select
+						id="modalSyringeKind"
+						bind:value={syringeKindEdit}
+						class="border py-2 px-3 rounded w-full leading-tight"
+					>
+						<option value="">None</option>
+						{#each syringeKindOptions as option}
+							<option value={option.value}>{option.label}</option>
+						{/each}
+					</select>
+				</div>
+				<div class="mb-4">
+					<label for="modalNeedleLen" class="block text-sm mb-1">Needle length (optional)</label>
+					<input
+						id="modalNeedleLen"
+						type="text"
+						class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight"
+						placeholder='e.g., 4mm or 1"'
+						bind:value={needleLengthEdit}
+					/>
+				</div>
+				<div class="mb-4">
+					<label class="block text-sm mb-1">Photos (optional)</label>
+					{#if (dosageItem as any).photos?.length}
+						<div class="flex flex-wrap gap-3 mb-2">
+							{#each (dosageItem as any).photos as p (typeof p === 'string' ? p : p.file)}
+								<div class="relative">
+									<img
+										src={`/api/dosage-photo/${(dosageItem as any).id}/${typeof p === 'string' ? p : p.file}`}
+										alt="injection site"
+										class="h-24 w-24 object-cover rounded border"
+									/>
+									<button
+										type="button"
+										class="absolute top-1 right-1 bg-black/70 text-white text-xs px-1 rounded"
+										onclick={() => handleDeletePhoto(typeof p === 'string' ? p : p.file)}
+										title="Delete photo"
+									>×</button>
+									<input
+										type="text"
+										class="mt-1 w-24 text-[11px] border rounded px-1 py-0.5 bg-white/80 dark:bg-rose-pine-base/80"
+										placeholder="Add a note…"
+										value={typeof p === 'string' ? '' : (p.note || '')}
+										oninput={(e) =>
+											hrtData.setDosagePhotoNote(
+												(dosageItem as any).id as string,
+												typeof p === 'string' ? p : p.file,
+												(e.target as HTMLInputElement).value
+											)
+										}
+									/>
+								</div>
+							{/each}
+						</div>
+					{/if}
+					<div class="flex items-center gap-3">
+						<input
+							id="modalPhotos"
+							type="file"
+							accept="image/*"
+							multiple
+							disabled={uploadBusy}
+							onchange={handleFilesSelected}
+							class="hidden"
+							bind:this={fileInputEl}
+						/>
+						<button
+							type="button"
+							class="px-3 py-1 rounded bg-latte-rose-pine-foam text-white hover:bg-rose-pine-pine transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+							onclick={openPhotoPicker}
+							disabled={uploadBusy}
+							title="Add photos"
+						>
+							{uploadBusy ? 'Uploading…' : 'Add Photos'}
+						</button>
+						<span class="text-xs opacity-70">JPEG/PNG/WEBP/HEIC · Multiple files allowed</span>
+					</div>
+				</div>
 				{/if}
 			{/if}
 		{:else if isMeasurement}

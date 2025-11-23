@@ -28,7 +28,7 @@ export enum Progesterones {
 
 export enum ProgesteroneRoutes {
   Oral = "Oral",
-  Rectal = "Rectal",
+  Boofed = "Boofed",
 }
 
 export enum WeightUnit {
@@ -70,9 +70,18 @@ export enum InjectionSites {
   ButtockLeft = "Buttock left",
 }
 
+export enum SyringeKinds {
+  RegularSyringe = "Regular syringe",
+  LowWasteSyringe = "Low waste syringe",
+  LowWasteNeedle = "Low waste needle",
+  InsulinSyringe = "Insulin syringe",
+  InsulinPen = "Insulin pen",
+}
+
 export type DosageHistoryEntry =
   | {
       date: UnixTime;
+      id?: string;                 // ADDED
       medicationType: "injectableEstradiol";
       type: InjectableEstradiols;
       dose: number;
@@ -81,17 +90,23 @@ export type DosageHistoryEntry =
       injectionSite?: InjectionSites;
       vialId?: string;      // ADDED
       subVialId?: string;   // ADDED
+      syringeKind?: SyringeKinds | string;  // ADDED
+      needleLength?: string;                // ADDED
+      photos?: { file: string; note?: string }[]; // filenames (under data/dosage-photos/{id}/) with optional notes
     }
   | {
       date: UnixTime;
+      id?: string;                 // ADDED
       medicationType: "oralEstradiol";
       type: OralEstradiols;
       dose: number;
       unit: HormoneUnits;
+      pillQuantity?: number;       // ADDED
       note?: string;
     }
   | {
       date: UnixTime;
+      id?: string;                 // ADDED
       medicationType: "antiandrogen";
       type: Antiandrogens;
       dose: number;
@@ -100,11 +115,13 @@ export type DosageHistoryEntry =
     }
   | {
       date: UnixTime;
+      id?: string;                 // ADDED
       medicationType: "progesterone";
       type: Progesterones;
       route: ProgesteroneRoutes;
       dose: number;
       unit: HormoneUnits;
+      pillQuantity?: number;       // ADDED
       note?: string;
     };
 
@@ -191,6 +208,8 @@ export interface HRTData {
     frequency: number; // in days
     vialId?: string;      // ADDED
     subVialId?: string;   // ADDED
+    syringeKind?: SyringeKinds | string;  // ADDED
+    needleLength?: string;                // ADDED
     nextDoseDate?: UnixTime;
   };
   oralEstradiol?: {
