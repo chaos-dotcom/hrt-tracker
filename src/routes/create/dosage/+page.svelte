@@ -89,6 +89,14 @@
         return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
     }
 
+    let recordDateTime = $state("");
+
+    $effect(() => {
+        if (mode === "record" && !recordDateTime) {
+            recordDateTime = toLocalInputValue(Date.now());
+        }
+    });
+
     $effect(() => {
         if ($page.url.searchParams.get("mode") === "schedule") {
             mode = "schedule";
