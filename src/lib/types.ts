@@ -73,6 +73,7 @@ export enum InjectionSites {
 export type DosageHistoryEntry =
   | {
       date: UnixTime;
+      id?: string;                 // ADDED
       medicationType: "injectableEstradiol";
       type: InjectableEstradiols;
       dose: number;
@@ -81,9 +82,11 @@ export type DosageHistoryEntry =
       injectionSite?: InjectionSites;
       vialId?: string;      // ADDED
       subVialId?: string;   // ADDED
+      photos?: string[];     // ADDED (filenames under data/dosage-photos/{id}/)
     }
   | {
       date: UnixTime;
+      id?: string;                 // ADDED
       medicationType: "oralEstradiol";
       type: OralEstradiols;
       dose: number;
@@ -92,6 +95,7 @@ export type DosageHistoryEntry =
     }
   | {
       date: UnixTime;
+      id?: string;                 // ADDED
       medicationType: "antiandrogen";
       type: Antiandrogens;
       dose: number;
@@ -100,6 +104,7 @@ export type DosageHistoryEntry =
     }
   | {
       date: UnixTime;
+      id?: string;                 // ADDED
       medicationType: "progesterone";
       type: Progesterones;
       route: ProgesteroneRoutes;

@@ -96,6 +96,12 @@
 		}
 	});
 
+	// Ensure injectable dosage entries have an id to key photos on disk
+	$effect(() => {
+		if (!isDosage || (item as DosageHistoryEntry).medicationType !== 'injectableEstradiol') return;
+		hrtData.ensureDosageId(item as DosageHistoryEntry);
+	});
+
 	// Measurement fields
 	let weight = $state(isMeasurement ? (item as Measurement).weight : undefined);
 	let weightUnit = $state(isMeasurement ? (item as Measurement).weightUnit || WeightUnit.KG : undefined);
@@ -191,6 +197,42 @@
 				hrtData.deleteBloodTest(item as BloodTest);
 			}
 			close();
+		}
+	}
+
+	let uploadBusy = $state(false);
+
+	async function handleFilesSelected(e: Event) {
+		const input = e.target as HTMLInputElement;
+		if (!isDosage || (item as DosageHistoryEntry).medicationType !== 'injectableEstradiol') return;
+		const id = (item as any).id as string;
+		if (!id || !input.files || input.files.length === 0) return;
+		uploadBusy = true;
+		try {
+			for (const file of Array.from(input.files)) {
+				const fd = new FormData();
+				fd.append('file', file);
+				const res = await fetch(`/api/dosage-photo/${encodeURIComponent(id)}`, { method: 'POST', body: fd });
+				if (res.ok) {
+					const { filenames } = await res.json();
+					for (const fn of filenames) {
+						hrtData.addDosagePhoto(id, fn);
+					}
+				}
+			}
+		} finally {
+			uploadBusy = false;
+			input.value = '';
+		}
+	}
+
+	async function handleDeletePhoto(fname: string) {
+		if (!isDosage || (item as DosageHistoryEntry).medicationType !== 'injectableEstradiol') return;
+		const id = (item as any).id as string;
+		if (!id) return;
+		const res = await fetch(`/api/dosage-photo/${encodeURIComponent(id)}/${encodeURIComponent(fname)}`, { method: 'DELETE' });
+		if (res.ok) {
+			hrtData.removeDosagePhoto(id, fname);
 		}
 	}
 </script>
@@ -345,6 +387,29 @@
 						{/if}
 					{/each}
 				{/if}
+				<div class="mb-4">
+					<label class="block text-sm mb-1">Photos (optional)</label>
+					{#if (dosageItem as any).photos?.length}
+						<div class="flex flex-wrap gap-2 mb-2">
+							{#each (dosageItem as any).photos as fname (fname)}
+								<div class="relative">
+									<img
+										src={`/api/dosage-photo/${(dosageItem as any).id}/${fname}`}
+										alt="injection site"
+										class="h-24 w-24 object-cover rounded border"
+									/>
+									<button
+										type="button"
+										class="absolute top-1 right-1 bg-black/70 text-white text-xs px-1 rounded"
+										onclick={() => handleDeletePhoto(fname)}
+										title="Delete photo"
+									>×</button>
+								</div>
+							{/each}
+						</div>
+					{/if}
+					<input type="file" accept="image/*" multiple disabled={uploadBusy} onchange={handleFilesSelected} />
+				</div>
 				{/if}
 			{/if}
 		{:else if isMeasurement}
