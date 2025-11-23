@@ -30,15 +30,13 @@
     let eNextDoseDate = $state("");
 
     // Injection helper: dose/conc <-> volume
-    let injConvDoseMg: number = 4;
-    let injConvConcMgPerMl: number = 40;
-    let injConvVolMl: number;
-    $: injConvVolMl = injConvConcMgPerMl > 0 ? injConvDoseMg / injConvConcMgPerMl : NaN;
+    let injConvDoseMg = $state(4);
+    let injConvConcMgPerMl = $state(40);
+    const injConvVolMl = $derived(injConvConcMgPerMl > 0 ? injConvDoseMg / injConvConcMgPerMl : NaN);
 
-    let injConvVol2Ml: number = 0.1;
-    let injConvConc2MgPerMl: number = 40;
-    let injConvDose2Mg: number;
-    $: injConvDose2Mg = injConvConc2MgPerMl > 0 ? injConvVol2Ml * injConvConc2MgPerMl : NaN;
+    let injConvVol2Ml = $state(0.1);
+    let injConvConc2MgPerMl = $state(40);
+    const injConvDose2Mg = $derived(injConvConc2MgPerMl > 0 ? injConvVol2Ml * injConvConc2MgPerMl : NaN);
 
     // Antiandrogen state
     let aaType: Antiandrogens | "" = $state("");
