@@ -101,6 +101,7 @@ export type DosageHistoryEntry =
       type: OralEstradiols;
       dose: number;
       unit: HormoneUnits;
+      pillQuantity?: number;       // ADDED
       note?: string;
     }
   | {
@@ -120,6 +121,7 @@ export type DosageHistoryEntry =
       route: ProgesteroneRoutes;
       dose: number;
       unit: HormoneUnits;
+      pillQuantity?: number;       // ADDED
       note?: string;
     };
 

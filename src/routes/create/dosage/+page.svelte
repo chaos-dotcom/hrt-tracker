@@ -62,6 +62,8 @@
     let eNote = $state("");
     let aaNote = $state("");
     let pNote = $state("");
+    let ePillQty = $state(1);     // for oral estradiol
+    let pPillQty = $state(1);     // for progesterone
     
     // Injection site for injectable estrogen
     let eInjectionSite: InjectionSites | "" = $state("");
@@ -254,6 +256,7 @@
                     type: oralEType,
                     dose: eDose,
                     unit: eUnit,
+                    pillQuantity: Number.isFinite(+ePillQty) && +ePillQty > 0 ? +ePillQty : undefined,
                     note: eNote.trim() || undefined,
                 };
             }
@@ -280,6 +283,7 @@
                 route: pRoute,
                 dose: pDose,
                 unit: pUnit,
+                pillQuantity: Number.isFinite(+pPillQty) && +pPillQty > 0 ? +pPillQty : undefined,
                 note: pNote.trim() || undefined,
             };
             hrtData.addDosageRecord(pRecord);
@@ -482,6 +486,12 @@
                             <input id="eNeedleLen" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" placeholder='e.g., 4mm or 1"' bind:value={needleLength} />
                         </div>
                         {/if}
+                        {#if estrogenMethod === 'oral'}
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium mb-2" for="ePillQty">pill quantity</label>
+                            <input id="ePillQty" type="number" min="1" step="1" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={ePillQty} />
+                        </div>
+                        {/if}
                     {/if}
                 {/if}
 
@@ -649,6 +659,10 @@
                         <div class="mb-4">
                             <label class="block text-sm font-medium mb-2" for="pNote">note (optional)</label>
                             <textarea id="pNote" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={pNote} rows="2" placeholder="Add any notes about this dose"></textarea>
+                        </div>
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium mb-2" for="pPillQty">pill quantity</label>
+                            <input id="pPillQty" type="number" min="1" step="1" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={pPillQty} />
                         </div>
                     {/if}
                 {/if}
