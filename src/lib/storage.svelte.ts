@@ -95,6 +95,9 @@ class hrtStore {
   }
 
   addDosageRecord(rec: DosageHistoryEntry) {
+    if (!rec.id) {
+      rec.id = globalThis.crypto?.randomUUID?.() ?? String(Date.now());
+    }
     this.data.dosageHistory.push(rec);
     // Persist immediately so ICS consumers see it right away
     this.saveNow().catch(() => {});
@@ -107,6 +110,36 @@ class hrtStore {
   deleteDosageRecord(rec: DosageHistoryEntry) {
     this.data.dosageHistory = this.data.dosageHistory.filter((r) => r !== rec);
     this.saveSoon();
+  }
+
+  ensureDosageId(rec: DosageHistoryEntry): string {
+    if (!rec.id) {
+      rec.id = globalThis.crypto?.randomUUID?.() ?? String(Date.now());
+      this.saveSoon();
+    }
+    return rec.id;
+  }
+
+  addDosagePhoto(entryId: string, filename: string): boolean {
+    const rec = (this.data.dosageHistory ?? []).find((r) => r.id === entryId);
+    if (!rec) return false;
+    const inj = rec as any;
+    if (!inj.photos) inj.photos = [];
+    if (!inj.photos.includes(filename)) inj.photos.push(filename);
+    this.saveSoon();
+    return true;
+  }
+
+  removeDosagePhoto(entryId: string, filename: string): boolean {
+    const rec = (this.data.dosageHistory ?? []).find((r) => r.id === entryId);
+    if (!rec) return false;
+    const inj = rec as any;
+    if (Array.isArray(inj.photos)) {
+      inj.photos = inj.photos.filter((f: string) => f !== filename);
+      this.saveSoon();
+      return true;
+    }
+    return false;
   }
 
   addMeasurement(measurement: Measurement) {
