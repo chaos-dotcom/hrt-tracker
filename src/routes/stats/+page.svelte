@@ -18,7 +18,14 @@
 
   // Totals (mg)
   const totalEstrogenMg = $derived(
-    estrogenRecords.reduce((sum, d) => sum + (d.unit === 'mg' ? d.dose : 0), 0)
+    estrogenRecords.reduce((sum, d: any) => {
+      if (d.unit !== 'mg') return sum;
+      if (d.medicationType === 'oralEstradiol') {
+        const qty = Number(d.pillQuantity) > 0 ? Number(d.pillQuantity) : 1;
+        return sum + d.dose * qty;
+      }
+      return sum + d.dose; // injectables
+    }, 0)
   );
 
   // Sum volume only from doses with recorded vial concentration
@@ -92,7 +99,11 @@
     oralEstradiolRecords.reduce((sum, d: any) => sum + (Number(d.pillQuantity) > 0 ? Number(d.pillQuantity) : 1), 0)
   );
   const totalOralEstradiolMg = $derived(
-    oralEstradiolRecords.reduce((sum, d) => sum + (d.unit === 'mg' ? d.dose : 0), 0)
+    oralEstradiolRecords.reduce(
+      (sum, d: any) =>
+        sum + (d.unit === 'mg' ? d.dose * (Number(d.pillQuantity) > 0 ? Number(d.pillQuantity) : 1) : 0),
+      0
+    )
   );
 
   const progesteroneRecords = $derived(
@@ -105,10 +116,18 @@
     boofedProgesteroneRecords.reduce((sum, d: any) => sum + (Number(d.pillQuantity) > 0 ? Number(d.pillQuantity) : 1), 0)
   );
   const boofedProgesteroneMg = $derived(
-    boofedProgesteroneRecords.reduce((sum, d) => sum + (d.unit === 'mg' ? d.dose : 0), 0)
+    boofedProgesteroneRecords.reduce(
+      (sum, d: any) =>
+        sum + (d.unit === 'mg' ? d.dose * (Number(d.pillQuantity) > 0 ? Number(d.pillQuantity) : 1) : 0),
+      0
+    )
   );
   const totalProgesteroneMg = $derived(
-    progesteroneRecords.reduce((sum, d) => sum + (d.unit === 'mg' ? d.dose : 0), 0)
+    progesteroneRecords.reduce(
+      (sum, d: any) =>
+        sum + (d.unit === 'mg' ? d.dose * (Number(d.pillQuantity) > 0 ? Number(d.pillQuantity) : 1) : 0),
+      0
+    )
   );
   const totalPillsCount = $derived(totalOralPillsCount + boofedProgesteroneCount);
   const totalPillsMgCombined = $derived(totalOralEstradiolMg + boofedProgesteroneMg);
