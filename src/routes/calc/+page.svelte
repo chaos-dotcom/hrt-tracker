@@ -30,6 +30,11 @@
     return s.replace(/\.?0+$/, '');
   }
 
+  function fmtIUFromMl(ml: number): string {
+    if (!isFinite(ml)) return '—';
+    return String(Math.round(ml * 100)); // 1 mL = 100 IU
+  }
+
   // Match HRT Cafe examples: show 1 decimal if <2%, else whole number
   function fmtPct(p: number): string {
     if (!isFinite(p)) return '—';
@@ -86,7 +91,7 @@
           </label>
         </div>
         <p style="margin: 0.5rem 0 0 0;">
-          Volume = Dose ÷ Concentration = <strong>{isFinite(tfsVolMl) ? fmt(tfsVolMl, 3) : '—'}</strong> mL
+          Volume = Dose ÷ Concentration = <strong>{isFinite(tfsVolMl) ? fmt(tfsVolMl, 3) : '—'}</strong> mL {#if isFinite(tfsVolMl)}(<strong>{fmtIUFromMl(tfsVolMl)}</strong> IU){/if}
         </p>
       </div>
 
@@ -95,6 +100,7 @@
         <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
           <label> Volume:
             <input type="number" min="0" step="0.01" bind:value={tfsVol2Ml} style="width: 8rem;" /> mL
+            <span style="opacity:0.7; font-size: 0.9em;">(≈ {isFinite(tfsVol2Ml) ? fmtIUFromMl(tfsVol2Ml) : '—'} IU)</span>
           </label>
           <label> Concentration:
             <input type="number" min="0" step="0.1" bind:value={tfsConc2MgPerMl} style="width: 8rem;" /> mg/mL
@@ -135,7 +141,7 @@
     </div>
 
     <p style="margin-top: 0.75rem;">
-      Inject a volume of <strong>{isFinite(injVolMl) ? fmt(injVolMl, 3) : '—'}</strong> mL
+      Inject a volume of <strong>{isFinite(injVolMl) ? fmt(injVolMl, 3) : '—'}</strong> mL {#if isFinite(injVolMl)}(<strong>{fmtIUFromMl(injVolMl)}</strong> IU){/if}
     </p>
 
     <h3 style="margin: 1rem 0 0.5rem 0;">Estimated Vial Lifetime</h3>

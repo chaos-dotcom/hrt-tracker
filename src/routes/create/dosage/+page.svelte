@@ -298,7 +298,7 @@
                         </label>
                     </div>
                     <div class="mt-2 text-sm">
-                        Volume = Dose ÷ Concentration = <strong>{Number.isFinite(injConvVolMl) ? injConvVolMl.toFixed(3).replace(/\.?0+$/, '') : '—'}</strong> mL
+                        Volume = Dose ÷ Concentration = <strong>{Number.isFinite(injConvVolMl) ? injConvVolMl.toFixed(3).replace(/\.?0+$/, '') : '—'}</strong> mL {#if Number.isFinite(injConvVolMl)}(≈ <strong>{Math.round(injConvVolMl * 100)}</strong> IU){/if}
                     </div>
                 </div>
                 <div>
@@ -307,6 +307,7 @@
                         <label class="flex items-center gap-2">
                             <span>Volume</span>
                             <input type="number" step="any" class="shadow appearance-none border rounded px-3 py-2 leading-tight w-32" bind:value={injConvVol2Ml} /> mL
+                            <span style="opacity:0.7; font-size: 0.9em;">(≈ {Number.isFinite(injConvVol2Ml) ? Math.round(injConvVol2Ml * 100) : '—'} IU)</span>
                         </label>
                         <label class="flex items-center gap-2">
                             <span>Concentration</span>
