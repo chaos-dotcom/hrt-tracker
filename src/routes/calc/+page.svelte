@@ -165,3 +165,54 @@
     </details>
   </section>
 </div>
+
+<style>
+  /* Make label text + input + unit nicely spaced */
+  label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  /* Input appearance */
+  input[type="number"] {
+    padding: 0.45rem 0.6rem;
+    border: 1px solid var(--border, #d1d5db);
+    border-radius: 0.5rem;
+    background: #ffffff;
+    color: inherit;
+    outline: none;
+    transition: border-color 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  }
+  input[type="number"]:focus {
+    border-color: #7c4dff; /* accent outline */
+    box-shadow: 0 0 0 3px rgba(124,77,255,0.25);
+    background: #fff;
+  }
+
+  /* Remove number input spinners */
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type="number"] {
+    -moz-appearance: textfield;
+  }
+
+  /* Dark mode-friendly defaults */
+  @media (prefers-color-scheme: dark) {
+    input[type="number"] {
+      background: rgba(255,255,255,0.06);
+      border-color: rgba(148,163,184,0.35);
+      box-shadow: 0 1px 1px rgba(0,0,0,0.2) inset;
+      color: inherit;
+    }
+    input[type="number"]:focus {
+      border-color: #c4a7e7;
+      box-shadow: 0 0 0 3px rgba(196,167,231,0.35);
+      background: rgba(255,255,255,0.1);
+    }
+  }
+</style>
