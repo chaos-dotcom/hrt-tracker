@@ -202,6 +202,13 @@
 
 	let uploadBusy = $state(false);
 
+	let fileInputEl: HTMLInputElement | null = null;
+
+	function openPhotoPicker() {
+		if (uploadBusy) return;
+		fileInputEl?.click();
+	}
+
 	async function handleFilesSelected(e: Event) {
 		const input = e.target as HTMLInputElement;
 		if (!isDosage || (item as DosageHistoryEntry).medicationType !== 'injectableEstradiol') return;
@@ -408,7 +415,28 @@
 							{/each}
 						</div>
 					{/if}
-					<input type="file" accept="image/*" multiple disabled={uploadBusy} onchange={handleFilesSelected} />
+					<div class="flex items-center gap-3">
+						<input
+							id="modalPhotos"
+							type="file"
+							accept="image/*"
+							multiple
+							disabled={uploadBusy}
+							onchange={handleFilesSelected}
+							class="hidden"
+							bind:this={fileInputEl}
+						/>
+						<button
+							type="button"
+							class="px-3 py-1 rounded bg-latte-rose-pine-foam text-white hover:bg-rose-pine-pine transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+							onclick={openPhotoPicker}
+							disabled={uploadBusy}
+							title="Add photos"
+						>
+							{uploadBusy ? 'Uploading…' : 'Add Photos'}
+						</button>
+						<span class="text-xs opacity-70">JPEG/PNG/WEBP/HEIC · Multiple files allowed</span>
+					</div>
 				</div>
 				{/if}
 			{/if}
