@@ -16,6 +16,10 @@
     (hrtData.data.dosageHistory ?? []).filter((d) => d.medicationType === 'injectableEstradiol')
   );
 
+  const totalInjectableEstradiolMg = $derived(
+    injectableRecords.reduce((sum, d: any) => sum + (d.unit === 'mg' ? d.dose : 0), 0)
+  );
+
   // Totals (mg)
   const totalEstrogenMg = $derived(
     estrogenRecords.reduce((sum, d: any) => {
@@ -181,7 +185,13 @@
     <h2 class="text-lg font-medium mb-2">Total Estrogen Taken</h2>
     <div class="text-sm text-gray-700 dark:text-gray-300">
       <div class="mb-1">
-        <strong>{fmt(totalEstrogenMg, 2)}</strong> mg (injectable + oral)
+        Injectable estradiol total: <strong>{fmt(totalInjectableEstradiolMg, 2)}</strong> mg
+      </div>
+      <div class="mb-1">
+        Oral estradiol total: <strong>{fmt(totalOralEstradiolMg, 2)}</strong> mg
+      </div>
+      <div class="text-xs opacity-70 mb-1">
+        Combined: <strong>{fmt(totalInjectableEstradiolMg + totalOralEstradiolMg, 2)}</strong> mg
       </div>
 
       {#if injectableRecords.length > 0}
