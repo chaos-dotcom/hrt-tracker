@@ -1506,12 +1506,13 @@
                                                     : "AA"}</span
                                         >
                                         <span>{t.type}</span>
-                                        <span>{t.dose} {t.unit || "mg"}</span>
-                                        {#if t.medicationType === "oralEstradiol" && (t as any).pillQuantity}
-                                            <span>· {(t as any).pillQuantity} {((t as any).pillQuantity === 1) ? 'pill' : 'pills'}</span>
-                                        {/if}
-                                        {#if t.medicationType === "progesterone" && (t as any).pillQuantity}
-                                            <span>· {(t as any).pillQuantity} {((t as any).pillQuantity === 1) ? 'pill' : 'pills'}</span>
+                                        {#if t.medicationType === 'oralEstradiol' || t.medicationType === 'progesterone'}
+                                            <span>{t.dose} {t.unit || 'mg'}/pill</span>
+                                            <span>× {(t as any).pillQuantity || 1} = {t.unit === 'mg'
+                                                ? (t.dose * ((t as any).pillQuantity || 1))
+                                                : t.dose} mg</span>
+                                        {:else}
+                                            <span>{t.dose} {t.unit || 'mg'}</span>
                                         {/if}
                                     </div>
                                     {#if t.medicationType === "injectableEstradiol" && t.injectionSite}
