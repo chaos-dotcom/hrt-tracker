@@ -16,6 +16,10 @@
   let batchNumber: string = $state('');
   let source: string = $state('');
   let concentrationMgPerMl: number | '' = $state('');
+  let createdDate: string = $state('');
+  let useByDate: string = $state('');
+  let isSpent: boolean = $state(false);
+  let spentDate: string = $state('');
 
   $effect(() => {
     if (!vial) return;
@@ -25,6 +29,10 @@
     batchNumber = vial.batchNumber ?? '';
     source = vial.source ?? '';
     concentrationMgPerMl = typeof vial.concentrationMgPerMl === 'number' ? vial.concentrationMgPerMl : '';
+    createdDate = vial?.createdAt ? new Date(vial.createdAt).toISOString().slice(0,10) : '';
+    useByDate = vial?.useBy ? new Date(vial.useBy).toISOString().slice(0,10) : '';
+    isSpent = !!vial?.isSpent;
+    spentDate = vial?.spentAt ? new Date(vial.spentAt).toISOString().slice(0,10) : '';
     customEster = '';
   });
 
@@ -38,7 +46,11 @@
       otherIngredients: otherIngredients.trim() || undefined,
       batchNumber: batchNumber.trim() || undefined,
       source: source.trim() || undefined,
-      concentrationMgPerMl: Number.isFinite(+concentrationMgPerMl) && +concentrationMgPerMl > 0 ? +concentrationMgPerMl : undefined
+      concentrationMgPerMl: Number.isFinite(+concentrationMgPerMl) && +concentrationMgPerMl > 0 ? +concentrationMgPerMl : undefined,
+      createdAt: createdDate ? new Date(createdDate).getTime() : (vial.createdAt ?? Date.now()),
+      useBy: useByDate ? new Date(useByDate).getTime() : undefined,
+      isSpent,
+      spentAt: isSpent ? (spentDate ? new Date(spentDate).getTime() : (vial.spentAt ?? Date.now())) : undefined
     });
     goto('/vials');
   }
@@ -80,8 +92,23 @@
         <input class="border rounded px-2 py-2 w-full" bind:value={batchNumber} />
       </div>
       <div>
+        <label class="block text-sm font-medium mb-1">Vial date</label>
+        <input class="border rounded px-2 py-2 w-full" type="date" bind:value={createdDate} />
+      </div>
+      <div>
+        <label class="block text-sm font-medium mb-1">Use by date</label>
+        <input class="border rounded px-2 py-2 w-full" type="date" bind:value={useByDate} />
+      </div>
+      <div>
         <label class="block text-sm font-medium mb-1">Manufacturer / Source</label>
         <input class="border rounded px-2 py-2 w-full" bind:value={source} />
+      </div>
+      <div class="flex items-center gap-2">
+        <label class="block text-sm font-medium">Spent</label>
+        <input type="checkbox" bind:checked={isSpent} />
+        {#if isSpent}
+          <input class="border rounded px-2 py-2" type="date" bind:value={spentDate} />
+        {/if}
       </div>
       <div class="pt-2">
         <button type="submit" class="bg-latte-rose-pine-foam text-white px-4 py-2 rounded">Save</button>
