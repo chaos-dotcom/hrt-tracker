@@ -188,6 +188,8 @@ export interface HRTData {
     dose: number;
     unit: HormoneUnits;
     frequency: number; // in days
+    vialId?: string;      // ADDED
+    subVialId?: string;   // ADDED
     nextDoseDate?: UnixTime;
   };
   oralEstradiol?: {
