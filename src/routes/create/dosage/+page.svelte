@@ -68,6 +68,16 @@
     // Injection site for injectable estrogen
     let eInjectionSite: InjectionSites | "" = $state("");
 
+    // Selected vial/sub‑vial (for injections)
+    let selectedVialId = $state('');
+    let selectedSubVialId = $state('');
+    $effect(() => {
+        const v = hrtData.data.vials.find((x) => x.id === selectedVialId);
+        if (!v || !v.subVials.some((s) => s.id === selectedSubVialId)) {
+            selectedSubVialId = '';
+        }
+    });
+
     function toLocalInputValue(ms: number) {
         const d = new Date(ms);
         const pad = (n: number) => String(n).padStart(2, "0");
@@ -211,6 +221,8 @@
                     unit: eUnit,
                     note: eNote.trim() || undefined,
                     injectionSite: eInjectionSite || undefined,
+                    vialId: selectedVialId || undefined,       // ADDED
+                    subVialId: selectedSubVialId || undefined, // ADDED
                 };
             } else {
                 estrogenRecord = {
@@ -394,6 +406,35 @@
                                 <option value={InjectionSites.ButtockLeft}>Buttock left</option>
                             </select>
                         </div>
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium mb-2" for="eVial">vial (optional)</label>
+                            <div class="flex items-center gap-2">
+                                <select id="eVial" class="border py-2 px-3 rounded w-full leading-tight" bind:value={selectedVialId}>
+                                    <option value="">None</option>
+                                    {#each hrtData.data.vials as v}
+                                        <option value={v.id}>
+                                            {(v.esterKind || 'Unknown ester') + ' · ' + (v.batchNumber || 'batch ?') + (v.source ? ' · ' + v.source : '')}
+                                        </option>
+                                    {/each}
+                                </select>
+                                <a class="text-latte-rose-pine-iris hover:text-rose-pine-love whitespace-nowrap" href="/vials/create">New…</a>
+                            </div>
+                        </div>
+                        {#if selectedVialId}
+                            {#each hrtData.data.vials.filter(v => v.id === selectedVialId) as v}
+                                {#if v.subVials.length > 0}
+                                    <div class="mb-4">
+                                        <label class="block text-sm font-medium mb-2" for="eSubVial">sub‑vial / cartridge (optional)</label>
+                                        <select id="eSubVial" class="border py-2 px-3 rounded w-full leading-tight" bind:value={selectedSubVialId}>
+                                            <option value="">None</option>
+                                            {#each v.subVials as s}
+                                                <option value={s.id}>#{s.personalNumber}</option>
+                                            {/each}
+                                        </select>
+                                    </div>
+                                {/if}
+                            {/each}
+                        {/if}
                         {/if}
                     {/if}
                 {/if}
