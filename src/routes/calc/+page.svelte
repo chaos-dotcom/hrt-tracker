@@ -2,11 +2,13 @@
   // Transfeminine Science: Dose/Conc -> Volume; Volume/Conc -> Dose
   let tfsDoseMg: number = 4;
   let tfsConcMgPerMl: number = 40;
-  $: tfsVolMl: number = tfsConcMgPerMl > 0 ? tfsDoseMg / tfsConcMgPerMl : NaN;
+  let tfsVolMl: number;
+  $: tfsVolMl = tfsConcMgPerMl > 0 ? tfsDoseMg / tfsConcMgPerMl : NaN;
 
   let tfsVol2Ml: number = 0.1;
   let tfsConc2MgPerMl: number = 40;
-  $: tfsDose2Mg: number = tfsConc2MgPerMl > 0 ? tfsVol2Ml * tfsConc2MgPerMl : NaN;
+  let tfsDose2Mg: number;
+  $: tfsDose2Mg = tfsConc2MgPerMl > 0 ? tfsVol2Ml * tfsConc2MgPerMl : NaN;
 
   // HRT Cafe: Vial Life & Dose
   let cafeDoseMg: number = 4;
@@ -22,7 +24,8 @@
     { name: 'Insulin Syringe (SubQ Only)', dead_uL: 3 }
   ];
 
-  $: injVolMl: number = cafeConcMgMl > 0 ? cafeDoseMg / cafeConcMgMl : NaN;
+  let injVolMl: number;
+  $: injVolMl = cafeConcMgMl > 0 ? cafeDoseMg / cafeConcMgMl : NaN;
 
   function fmt(x: number, decimals = 3): string {
     if (!isFinite(x)) return '—';
