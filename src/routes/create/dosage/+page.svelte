@@ -27,7 +27,6 @@
     let eUnit: HormoneUnits = $state(HormoneUnits.mg);
     let injectionFrequency = $state(hrtData.data.injectableEstradiol?.frequency ?? 7);
     let oralEFrequency = $state(hrtData.data.oralEstradiol?.frequency ?? 1);
-    let eDateTime = $state("");
     let eNextDoseDate = $state("");
 
     // Injection helper: dose/conc <-> volume
@@ -44,7 +43,6 @@
     let aaDose = $state(0);
     let aaUnit: HormoneUnits = $state(HormoneUnits.mg);
     let aaFrequency = $state(hrtData.data.antiandrogen?.frequency ?? 1);
-    let aaDateTime = $state("");
     let aaNextDoseDate = $state("");
 
     // Progesterone state
@@ -53,7 +51,6 @@
     let pUnit: HormoneUnits = $state(HormoneUnits.mg);
     let pRoute: ProgesteroneRoutes = $state(ProgesteroneRoutes.Oral);
     let pFrequency = $state(hrtData.data.progesterone?.frequency ?? 1);
-    let pDateTime = $state("");
     let pNextDoseDate = $state("");
 
     // State for "Record Dose" mode
@@ -225,11 +222,12 @@
     }
 
     function submitDosageForm() {
+        const recordMs = new Date(recordDateTime).getTime();
         if (recordEstrogen) {
             let estrogenRecord: DosageHistoryEntry;
             if (estrogenMethod === "injection") {
                 estrogenRecord = {
-                    date: new Date(eDateTime).getTime(),
+                    date: recordMs,
                     medicationType: "injectableEstradiol",
                     type: injectableEType,
                     dose: eDose,
@@ -243,7 +241,7 @@
                 };
             } else {
                 estrogenRecord = {
-                    date: new Date(eDateTime).getTime(),
+                    date: recordMs,
                     medicationType: "oralEstradiol",
                     type: oralEType,
                     dose: eDose,
@@ -256,7 +254,7 @@
 
         if (recordAA && aaType !== "") {
             const aaRecord: DosageHistoryEntry = {
-                date: new Date(aaDateTime).getTime(),
+                date: recordMs,
                 medicationType: "antiandrogen",
                 type: aaType,
                 dose: aaDose,
@@ -268,7 +266,7 @@
 
         if (recordProg && pType !== "") {
             const pRecord: DosageHistoryEntry = {
-                date: new Date(pDateTime).getTime(),
+                date: recordMs,
                 medicationType: "progesterone",
                 type: pType,
                 route: pRoute,
@@ -358,6 +356,19 @@
             </label>
         </div>
 
+        {#if mode === "record"}
+            <div class="mb-4">
+                <label class="block text-sm font-medium mb-2" for="recordDateTime">date / time</label>
+                <input
+                    id="recordDateTime"
+                    type="datetime-local"
+                    class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight"
+                    bind:value={recordDateTime}
+                    required
+                />
+            </div>
+        {/if}
+
         <div class="space-y-6">
             <!-- Estrogen Section -->
             <div class="p-4 border rounded-lg">
@@ -396,10 +407,6 @@
                         </label>
                     </div>
                     {#if recordEstrogen}
-                        <div class="mb-4">
-                            <label class="block text-sm font-medium mb-2" for="eDateTime">date / time</label>
-                            <input id="eDateTime" type="datetime-local" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={eDateTime} required />
-                        </div>
                         <div class="mb-4">
                             <label class="block text-sm font-medium mb-2" for="eNote">note (optional)</label>
                             <textarea id="eNote" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={eNote} rows="2" placeholder="Add any notes about this dose"></textarea>
@@ -576,10 +583,6 @@
                     </div>
                     {#if recordAA}
                         <div class="mb-4">
-                            <label class="block text-sm font-medium mb-2" for="aaDateTime">date / time</label>
-                            <input id="aaDateTime" type="datetime-local" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={aaDateTime} required />
-                        </div>
-                        <div class="mb-4">
                             <label class="block text-sm font-medium mb-2" for="aaNote">note (optional)</label>
                             <textarea id="aaNote" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={aaNote} rows="2" placeholder="Add any notes about this dose"></textarea>
                         </div>
@@ -635,10 +638,6 @@
                         </label>
                     </div>
                     {#if recordProg}
-                        <div class="mb-4">
-                            <label class="block text-sm font-medium mb-2" for="pDateTime">date / time</label>
-                            <input id="pDateTime" type="datetime-local" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={pDateTime} required />
-                        </div>
                         <div class="mb-4">
                             <label class="block text-sm font-medium mb-2" for="pNote">note (optional)</label>
                             <textarea id="pNote" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={pNote} rows="2" placeholder="Add any notes about this dose"></textarea>
