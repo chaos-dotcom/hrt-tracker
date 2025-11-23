@@ -80,6 +80,8 @@
     let skippedNoKind = 0;
     let skippedNoConcForMg = 0;
     let counted = 0;
+    let deadForPctMl = 0;
+    let drawnForPctMl = 0;
 
     for (const d of injectableRecords as any[]) {
       const dsUL = deadspaceULFor(d.syringeKind);
@@ -95,12 +97,22 @@
       const conc = vial?.concentrationMgPerMl;
       if (typeof conc === 'number' && conc > 0) {
         totalMg += conc * dsMl;
+        // For percent, need dose volume (mg -> mL) alongside deadspace
+        if (d.unit === 'mg' && typeof d.dose === 'number' && d.dose > 0) {
+          const doseMl = d.dose / conc;
+          deadForPctMl += dsMl;
+          drawnForPctMl += dsMl + doseMl;
+        }
       } else {
         skippedNoConcForMg++;
       }
     }
-    return { totalMl, totalMg, skippedNoKind, skippedNoConcForMg, counted };
+    return { totalMl, totalMg, skippedNoKind, skippedNoConcForMg, counted, deadForPctMl, drawnForPctMl };
   });
+
+  const wastagePct = $derived(
+    wastageAgg.drawnForPctMl > 0 ? (100 * wastageAgg.deadForPctMl) / wastageAgg.drawnForPctMl : NaN
+  );
 
   function parseNeedleLengthToMm(raw: string): number | null {
     const s = String(raw || '').trim().toLowerCase();
@@ -265,6 +277,9 @@
         {#if isFinite(wastageAgg.totalMl)}(<strong>{fmtIUFromMl(wastageAgg.totalMl)}</strong> IU){/if}
         {#if wastageAgg.totalMg > 0}
           · ≈ <strong>{fmt(wastageAgg.totalMg, 2)}</strong> mg
+        {/if}
+        {#if isFinite(wastagePct)}
+          · <strong>{fmt(wastagePct, 1)}</strong>% of drawn volume
         {/if}
       </div>
       {#if wastageAgg.skippedNoKind > 0 || wastageAgg.skippedNoConcForMg > 0}
