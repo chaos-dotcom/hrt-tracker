@@ -20,30 +20,21 @@
     estrogenRecords.reduce((sum, d) => sum + (d.unit === 'mg' ? d.dose : 0), 0)
   );
 
-  // Fallback concentration for records without a vial conc (mg/mL)
-  let assumedConcMgPerMl = $state(40);
-
-  // Sum volume using recorded vial concentrations when available
-  const volumeAgg = $derived(() => {
+  // Sum volume only from doses with recorded vial concentration
+  const totalInjectionMl = $derived(() => {
     let sumMl = 0;
-    let usedFallbackCount = 0;
     for (const d of injectableRecords) {
       if (d.unit !== 'mg') continue;
       const vial = (d as any).vialId
         ? hrtData.data.vials.find((v) => v.id === (d as any).vialId)
         : undefined;
       const conc = vial?.concentrationMgPerMl;
-      const usedConc = typeof conc === 'number' && conc > 0
-        ? conc
-        : (assumedConcMgPerMl > 0 ? assumedConcMgPerMl : undefined);
-      if (usedConc) {
-        sumMl += d.dose / usedConc;
-        if (!(typeof conc === 'number' && conc > 0)) usedFallbackCount++;
+      if (typeof conc === 'number' && conc > 0) {
+        sumMl += d.dose / conc;
       }
     }
-    return { sumMl, usedFallbackCount };
+    return sumMl;
   });
-  const totalInjectionMl = $derived(volumeAgg.sumMl);
 
   // Days since first dose (centralized helper)
   const totalDaysSinceStart = $derived(hrtData.getDaysSinceFirstDose());
@@ -71,26 +62,10 @@
 
       {#if injectableRecords.length > 0}
         <div class="mt-3">
-          <label class="block text-sm font-medium mb-1">Assumed injectable concentration (for volume estimate)</label>
-          <div class="flex items-center gap-2">
-            <input
-              type="number"
-              min="0"
-              step="0.1"
-              class="border rounded px-2 py-1 w-28"
-              bind:value={assumedConcMgPerMl}
-            />
-            <span>mg/mL</span>
-          </div>
-          <div class="mt-2">
-            Estimated total injection volume:
+          <div>
+            Total injection volume (from recorded vial concentrations):
             <strong>{isFinite(totalInjectionMl) ? fmt(totalInjectionMl, 3) : '—'}</strong> mL
             {#if isFinite(totalInjectionMl)}(<strong>{fmtIUFromMl(totalInjectionMl)}</strong> IU){/if}
-            {#if volumeAgg.usedFallbackCount > 0}
-              <div class="text-xs opacity-70 mt-1">
-                Used fallback concentration for {volumeAgg.usedFallbackCount} dose(s) without recorded vial concentration.
-              </div>
-            {/if}
           </div>
         </div>
       {/if}
