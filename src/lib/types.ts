@@ -203,6 +203,7 @@ export interface Settings {
   icsSecret?: string;
   enableBloodTestSchedule?: boolean;
   bloodTestIntervalMonths?: number;
+  statsBreakdownBySyringeKind?: boolean; // ADDED
 }
 export interface HRTData {
   injectableEstradiol?: {

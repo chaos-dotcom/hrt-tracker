@@ -71,6 +71,53 @@
       default: return null;
     }
   }
+ 
+  function normSyringeKind(kind: string | undefined): string {
+    switch (kind) {
+      case SyringeKinds.RegularSyringe:
+      case SyringeKinds.LowWasteSyringe:
+      case SyringeKinds.LowWasteNeedle:
+      case SyringeKinds.InsulinSyringe:
+      case SyringeKinds.InsulinPen:
+        return kind as string;
+      default:
+        return (kind && String(kind).trim()) || 'Other';
+    }
+  }
+
+  // Per-kind breakdown
+  const byKindAgg = $derived(
+    injectableRecords.reduce((acc, d: any) => {
+      const k = normSyringeKind(d.syringeKind);
+      if (!acc[k]) acc[k] = { count: 0, sumMm: 0, deadMl: 0, totalMg: 0, deadForPctMl: 0, drawnForPctMl: 0 };
+      acc[k].count++;
+
+      // Needle length sum (mm)
+      const mm = parseNeedleLengthToMm(String(d.needleLength ?? ''));
+      if (typeof mm === 'number' && isFinite(mm) && mm > 0) acc[k].sumMm += mm;
+
+      // Dead space and mg/pct when we know dead space (kind) and concentration (vial)
+      const dsUL = deadspaceULFor(d.syringeKind);
+      if (dsUL !== null) {
+        const dsMl = dsUL / 1000;
+        acc[k].deadMl += dsMl;
+
+        const vial = d.vialId ? vials.find((v) => v.id === d.vialId) : undefined;
+        const conc = typeof vial?.concentrationMgPerMl === 'number' ? vial!.concentrationMgPerMl : NaN;
+        if (Number.isFinite(conc) && conc > 0) {
+          acc[k].totalMg += conc * dsMl;
+
+          const dose = Number(d.dose);
+          if (d.unit === 'mg' && Number.isFinite(dose) && dose > 0) {
+            const doseMl = dose / conc;
+            acc[k].deadForPctMl += dsMl;
+            acc[k].drawnForPctMl += dsMl + doseMl;
+          }
+        }
+      }
+      return acc;
+    }, {} as Record<string, { count: number; sumMm: number; deadMl: number; totalMg: number; deadForPctMl: number; drawnForPctMl: number }>)
+  );
 
   const wastageAgg = $derived(
     injectableRecords.reduce((acc, d: any) => {
@@ -300,6 +347,15 @@
 
   <section class="border rounded-lg p-4 bg-white dark:bg-rose-pine-surface shadow">
     <h2 class="text-lg font-medium mb-2">Needle Usage</h2>
+    <div class="text-sm mb-2 flex items-center gap-2">
+      <input
+        id="toggleBreakdown"
+        type="checkbox"
+        bind:checked={hrtData.data.settings.statsBreakdownBySyringeKind}
+        onchange={() => hrtData.saveSoon()}
+      />
+      <label for="toggleBreakdown">Break down by syringe kind</label>
+    </div>
     <div class="text-sm text-gray-700 dark:text-gray-300">
       <div>
         Total combined needle length:
@@ -330,6 +386,39 @@
       {#if needleAgg.skipped > 0}
         <div class="text-xs opacity-70 mt-1">
           Skipped {needleAgg.skipped} injection(s) without a parsable needle length.
+        </div>
+      {/if}
+
+      {#if hrtData.data.settings?.statsBreakdownBySyringeKind}
+        <div class="mt-3 border-t pt-3">
+          <div class="font-medium mb-2">Breakdown by syringe kind</div>
+          {#if Object.keys(byKindAgg).length === 0}
+            <div class="text-sm opacity-70">No injectable records with syringe kind recorded.</div>
+          {:else}
+            <div class="grid grid-cols-1 gap-2">
+              {#each Object.entries(byKindAgg) as [kind, v]}
+                {@const pct = v.drawnForPctMl > 0 ? (100 * v.deadForPctMl) / v.drawnForPctMl : NaN}
+                <div class="p-2 border rounded">
+                  <div class="text-sm font-medium">{kind}</div>
+                  <div class="text-xs opacity-80">
+                    Count: {v.count}
+                    {#if Number.isFinite(v.sumMm) && v.sumMm > 0}
+                      · Needle length: <strong>{fmt(v.sumMm, 1)}</strong> mm ({fmt(v.sumMm / 25.4, 2)} in)
+                    {/if}
+                    {#if Number.isFinite(v.deadMl) && v.deadMl > 0}
+                      · Wastage: <strong>{fmt(v.deadMl, 3)}</strong> mL ({fmtIUFromMl(v.deadMl)} IU)
+                    {/if}
+                    {#if Number.isFinite(v.totalMg) && v.totalMg > 0}
+                      · ≈ <strong>{fmt(v.totalMg, 2)}</strong> mg
+                    {/if}
+                    {#if Number.isFinite(pct)}
+                      · <strong>{fmt(pct, 1)}</strong>% of drawn volume
+                    {/if}
+                  </div>
+                </div>
+              {/each}
+            </div>
+          {/if}
         </div>
       {/if}
     </div>
