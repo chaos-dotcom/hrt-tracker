@@ -1,6 +1,4 @@
 <script lang="ts">
-    export const ssr = false;
-
     import { hrtData } from "$lib/storage.svelte";
     import {
         Antiandrogens,
