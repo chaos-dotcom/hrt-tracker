@@ -2,6 +2,7 @@
   export const ssr = false;
 
   import { hrtData } from '$lib/storage.svelte';
+  import { ProgesteroneRoutes } from '$lib/types';
 
   const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -82,6 +83,29 @@
     return { sumMm, skipped };
   });
   const totalNeedleLengthMm = $derived(needleAgg.sumMm);
+
+  // Pills: oral estradiol and progesterone (rectal = "boofed")
+  const oralEstradiolRecords = $derived(
+    (hrtData.data.dosageHistory ?? []).filter((d) => d.medicationType === 'oralEstradiol')
+  );
+  const totalOralPillsCount = $derived(oralEstradiolRecords.length);
+  const totalOralEstradiolMg = $derived(
+    oralEstradiolRecords.reduce((sum, d) => sum + (d.unit === 'mg' ? d.dose : 0), 0)
+  );
+
+  const progesteroneRecords = $derived(
+    (hrtData.data.dosageHistory ?? []).filter((d) => d.medicationType === 'progesterone')
+  );
+  const boofedProgesteroneRecords = $derived(
+    progesteroneRecords.filter((d: any) => d.route === ProgesteroneRoutes.Rectal)
+  );
+  const boofedProgesteroneCount = $derived(boofedProgesteroneRecords.length);
+  const boofedProgesteroneMg = $derived(
+    boofedProgesteroneRecords.reduce((sum, d) => sum + (d.unit === 'mg' ? d.dose : 0), 0)
+  );
+  const totalProgesteroneMg = $derived(
+    progesteroneRecords.reduce((sum, d) => sum + (d.unit === 'mg' ? d.dose : 0), 0)
+  );
 </script>
 
 <div class="p-6 space-y-6 max-w-3xl mx-auto">
@@ -101,6 +125,31 @@
             <strong>{isFinite(totalInjectionMl) ? fmt(totalInjectionMl, 3) : '—'}</strong> mL
             {#if isFinite(totalInjectionMl)}(<strong>{fmtIUFromMl(totalInjectionMl)}</strong> IU){/if}
           </div>
+        </div>
+      {/if}
+    </div>
+  </section>
+
+  <section class="border rounded-lg p-4 bg-white dark:bg-rose-pine-surface shadow">
+    <h2 class="text-lg font-medium mb-2">Pills</h2>
+    <div class="text-sm text-gray-700 dark:text-gray-300 space-y-1">
+      <div>
+        Estradiol pills taken:
+        <strong>{totalOralPillsCount}</strong>
+        {#if totalOralPillsCount > 0}
+          (<strong>{fmt(totalOralEstradiolMg, 2)}</strong> mg total)
+        {/if}
+      </div>
+      <div class="mt-1">
+        Progesterone pills boofed:
+        <strong>{boofedProgesteroneCount}</strong>
+        {#if boofedProgesteroneCount > 0}
+          (<strong>{fmt(boofedProgesteroneMg, 2)}</strong> mg total)
+        {/if}
+      </div>
+      {#if progesteroneRecords.length > 0}
+        <div class="text-xs opacity-70 mt-1">
+          Total progesterone (all routes): <strong>{fmt(totalProgesteroneMg, 2)}</strong> mg
         </div>
       {/if}
     </div>
