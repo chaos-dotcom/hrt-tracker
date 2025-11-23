@@ -88,7 +88,9 @@
   const oralEstradiolRecords = $derived(
     (hrtData.data.dosageHistory ?? []).filter((d) => d.medicationType === 'oralEstradiol')
   );
-  const totalOralPillsCount = $derived(oralEstradiolRecords.length);
+  const totalOralPillsCount = $derived(
+    oralEstradiolRecords.reduce((sum, d: any) => sum + (Number(d.pillQuantity) > 0 ? Number(d.pillQuantity) : 1), 0)
+  );
   const totalOralEstradiolMg = $derived(
     oralEstradiolRecords.reduce((sum, d) => sum + (d.unit === 'mg' ? d.dose : 0), 0)
   );
@@ -99,7 +101,9 @@
   const boofedProgesteroneRecords = $derived(
     progesteroneRecords.filter((d: any) => d.route === ProgesteroneRoutes.Boofed)
   );
-  const boofedProgesteroneCount = $derived(boofedProgesteroneRecords.length);
+  const boofedProgesteroneCount = $derived(
+    boofedProgesteroneRecords.reduce((sum, d: any) => sum + (Number(d.pillQuantity) > 0 ? Number(d.pillQuantity) : 1), 0)
+  );
   const boofedProgesteroneMg = $derived(
     boofedProgesteroneRecords.reduce((sum, d) => sum + (d.unit === 'mg' ? d.dose : 0), 0)
   );

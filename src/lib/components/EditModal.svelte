@@ -85,6 +85,13 @@
 	);
 	const syringeKindOptions = enumToDropdownOptions(SyringeKinds);
 
+	// Pill quantity for oral estradiol and progesterone
+	let pillQtyEdit = $state(
+		isDosage && ((item as DosageHistoryEntry).medicationType === 'oralEstradiol' || (item as DosageHistoryEntry).medicationType === 'progesterone')
+			? (Number((item as any).pillQuantity) || 1)
+			: 1
+	);
+
 	// Added: vial and sub‑vial selection for injectable dosage items
 	let selectedVialId = $state(
 		isDosage && (item as DosageHistoryEntry).medicationType === 'injectableEstradiol'
@@ -163,6 +170,9 @@
 				(dosageItem as any).subVialId = selectedSubVialId || undefined;   // add
 				(dosageItem as any).syringeKind = syringeKindEdit || undefined;       // add
 				(dosageItem as any).needleLength = (needleLengthEdit || '').trim() || undefined; // add
+			}
+			if (dosageItem.medicationType === 'progesterone' || dosageItem.medicationType === 'oralEstradiol') {
+				(dosageItem as any).pillQuantity = Number.isFinite(+pillQtyEdit) && +pillQtyEdit > 0 ? +pillQtyEdit : undefined;
 			}
 		} else if (isMeasurement) {
 			const measurementItem = item as Measurement;
@@ -320,6 +330,10 @@
 						</select>
 					</div>
 				</div>
+				<div class="mt-3">
+					<label for="pillQtyProg" class="block text-sm mb-1">Pill quantity</label>
+					<input id="pillQtyProg" type="number" min="1" step="1" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={pillQtyEdit} />
+				</div>
 			{:else}
 				<div class="flex gap-5">
 					<div class="w-full">
@@ -345,6 +359,12 @@
 						</select>
 					</div>
 				</div>
+				{#if (item as DosageHistoryEntry).medicationType === 'oralEstradiol'}
+					<div class="mt-3">
+						<label for="pillQtyOral" class="block text-sm mb-1">Pill quantity</label>
+						<input id="pillQtyOral" type="number" min="1" step="1" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={pillQtyEdit} />
+					</div>
+				{/if}
 			{/if}
 			{#if isDosage}
 				<div class="mb-4">
