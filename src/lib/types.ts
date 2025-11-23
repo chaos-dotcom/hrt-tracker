@@ -70,6 +70,14 @@ export enum InjectionSites {
   ButtockLeft = "Buttock left",
 }
 
+export enum SyringeKinds {
+  RegularSyringe = "Regular syringe",
+  LowWasteSyringe = "Low waste syringe",
+  LowWasteNeedle = "Low waste needle",
+  InsulinSyringe = "Insulin syringe",
+  InsulinPen = "Insulin pen",
+}
+
 export type DosageHistoryEntry =
   | {
       date: UnixTime;
@@ -82,6 +90,8 @@ export type DosageHistoryEntry =
       injectionSite?: InjectionSites;
       vialId?: string;      // ADDED
       subVialId?: string;   // ADDED
+      syringeKind?: SyringeKinds | string;  // ADDED
+      needleLength?: string;                // ADDED
       photos?: { file: string; note?: string }[]; // filenames (under data/dosage-photos/{id}/) with optional notes
     }
   | {
@@ -196,6 +206,8 @@ export interface HRTData {
     frequency: number; // in days
     vialId?: string;      // ADDED
     subVialId?: string;   // ADDED
+    syringeKind?: SyringeKinds | string;  // ADDED
+    needleLength?: string;                // ADDED
     nextDoseDate?: UnixTime;
   };
   oralEstradiol?: {

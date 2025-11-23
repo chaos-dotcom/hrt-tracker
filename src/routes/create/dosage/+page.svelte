@@ -12,6 +12,7 @@
         Progesterones,
         ProgesteroneRoutes,
         InjectionSites,
+        SyringeKinds,   // ADD
     } from "$lib/types";
 
     let mode: "record" | "schedule" = $state("record");
@@ -67,6 +68,8 @@
     
     // Injection site for injectable estrogen
     let eInjectionSite: InjectionSites | "" = $state("");
+    let syringeKind: SyringeKinds | '' = $state('');
+    let needleLength = $state('');
 
     // Selected vial/sub‑vial (for injections)
     let selectedVialId = $state('');
@@ -106,6 +109,8 @@
             eNextDoseDate = injSched.nextDoseDate ? toLocalInputValue(injSched.nextDoseDate) : "";
             selectedVialId = injSched.vialId || '';          // ADDED
             selectedSubVialId = injSched.subVialId || '';    // ADDED
+            syringeKind = (injSched as any).syringeKind || '';
+            needleLength = (injSched as any).needleLength || '';
         } else if (oralSched) {
             estrogenMethod = "oral";
             oralEType = oralSched.type;
@@ -115,6 +120,8 @@
             eNextDoseDate = oralSched.nextDoseDate ? toLocalInputValue(oralSched.nextDoseDate) : "";
             selectedVialId = '';          // ADDED
             selectedSubVialId = '';       // ADDED
+            syringeKind = '';
+            needleLength = '';
         }
 
         // AA
@@ -169,6 +176,8 @@
                 frequency: injectionFrequency,
                 vialId: selectedVialId || undefined,         // ADDED
                 subVialId: selectedSubVialId || undefined,   // ADDED
+                syringeKind: syringeKind || undefined,         // ADDED
+                needleLength: needleLength.trim() || undefined, // ADDED
                 nextDoseDate: eNextDoseDate ? new Date(eNextDoseDate).getTime() : undefined,
             };
             hrtData.data.oralEstradiol = undefined;
@@ -229,6 +238,8 @@
                     injectionSite: eInjectionSite || undefined,
                     vialId: selectedVialId || undefined,       // ADDED
                     subVialId: selectedSubVialId || undefined, // ADDED
+                    syringeKind: syringeKind || undefined,         // ADDED
+                    needleLength: needleLength.trim() || undefined, // ADDED
                 };
             } else {
                 estrogenRecord = {
@@ -442,6 +453,19 @@
                                 {/if}
                             {/each}
                         {/if}
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium mb-2" for="eSyringeKind">syringe kind (optional)</label>
+                            <select id="eSyringeKind" class="border py-2 px-3 rounded w-full leading-tight" bind:value={syringeKind}>
+                                <option value="">Select...</option>
+                                {#each Object.values(SyringeKinds) as opt}
+                                    <option value={opt}>{opt}</option>
+                                {/each}
+                            </select>
+                        </div>
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium mb-2" for="eNeedleLen">needle length (optional)</label>
+                            <input id="eNeedleLen" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" placeholder='e.g., 4mm or 1"' bind:value={needleLength} />
+                        </div>
                         {/if}
                     {/if}
                 {/if}
@@ -483,6 +507,19 @@
                             {/if}
                         {/each}
                     {/if}
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-2" for="schedSyringeKind">syringe kind (optional)</label>
+                        <select id="schedSyringeKind" class="border py-2 px-3 rounded w-full leading-tight" bind:value={syringeKind}>
+                            <option value="">Select...</option>
+                            {#each Object.values(SyringeKinds) as opt}
+                                <option value={opt}>{opt}</option>
+                            {/each}
+                        </select>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-2" for="schedNeedleLen">needle length (optional)</label>
+                        <input id="schedNeedleLen" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" placeholder='e.g., 4mm or 1"' bind:value={needleLength} />
+                    </div>
                 {/if}
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
