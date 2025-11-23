@@ -29,6 +29,15 @@
     let eDateTime = $state("");
     let eNextDoseDate = $state("");
 
+    // Injection helper: dose/conc <-> volume
+    let injConvDoseMg = $state(4);
+    let injConvConcMgPerMl = $state(40);
+    const injConvVolMl = $derived(injConvConcMgPerMl > 0 ? injConvDoseMg / injConvConcMgPerMl : NaN);
+
+    let injConvVol2Ml = $state(0.1);
+    let injConvConc2MgPerMl = $state(40);
+    const injConvDose2Mg = $derived(injConvConc2MgPerMl > 0 ? injConvVol2Ml * injConvConc2MgPerMl : NaN);
+
     // Antiandrogen state
     let aaType: Antiandrogens | "" = $state("");
     let aaDose = $state(0);
@@ -59,6 +68,16 @@
     // Injection site for injectable estrogen
     let eInjectionSite: InjectionSites | "" = $state("");
 
+    // Selected vial/sub‑vial (for injections)
+    let selectedVialId = $state('');
+    let selectedSubVialId = $state('');
+    $effect(() => {
+        const v = hrtData.data.vials.find((x) => x.id === selectedVialId);
+        if (!v || !v.subVials.some((s) => s.id === selectedSubVialId)) {
+            selectedSubVialId = '';
+        }
+    });
+
     function toLocalInputValue(ms: number) {
         const d = new Date(ms);
         const pad = (n: number) => String(n).padStart(2, "0");
@@ -85,6 +104,8 @@
             eUnit = injSched.unit;
             injectionFrequency = injSched.frequency;
             eNextDoseDate = injSched.nextDoseDate ? toLocalInputValue(injSched.nextDoseDate) : "";
+            selectedVialId = injSched.vialId || '';          // ADDED
+            selectedSubVialId = injSched.subVialId || '';    // ADDED
         } else if (oralSched) {
             estrogenMethod = "oral";
             oralEType = oralSched.type;
@@ -92,6 +113,8 @@
             eUnit = oralSched.unit;
             oralEFrequency = oralSched.frequency || 1;
             eNextDoseDate = oralSched.nextDoseDate ? toLocalInputValue(oralSched.nextDoseDate) : "";
+            selectedVialId = '';          // ADDED
+            selectedSubVialId = '';       // ADDED
         }
 
         // AA
@@ -144,6 +167,8 @@
                 dose: eDose,
                 unit: eUnit,
                 frequency: injectionFrequency,
+                vialId: selectedVialId || undefined,         // ADDED
+                subVialId: selectedSubVialId || undefined,   // ADDED
                 nextDoseDate: eNextDoseDate ? new Date(eNextDoseDate).getTime() : undefined,
             };
             hrtData.data.oralEstradiol = undefined;
@@ -202,6 +227,8 @@
                     unit: eUnit,
                     note: eNote.trim() || undefined,
                     injectionSite: eInjectionSite || undefined,
+                    vialId: selectedVialId || undefined,       // ADDED
+                    subVialId: selectedSubVialId || undefined, // ADDED
                 };
             } else {
                 estrogenRecord = {
@@ -254,6 +281,46 @@
         >
     </div>
     <form onsubmit={handleSubmit} class="shadow-md rounded pt-6 pb-8 mb-4">
+        {#if estrogenMethod === 'injection'}
+        <div class="mb-6 p-4 border rounded-lg">
+            <h3 class="text-lg font-medium mb-3">Injection helper</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <div class="text-sm font-medium mb-2">Dose and Concentration to Volume</div>
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <label class="flex items-center gap-2">
+                            <span>Dose</span>
+                            <input type="number" step="any" class="shadow appearance-none border rounded px-3 py-2 leading-tight w-32" bind:value={injConvDoseMg} /> mg
+                        </label>
+                        <label class="flex items-center gap-2">
+                            <span>Concentration</span>
+                            <input type="number" step="any" class="shadow appearance-none border rounded px-3 py-2 leading-tight w-32" bind:value={injConvConcMgPerMl} /> mg/mL
+                        </label>
+                    </div>
+                    <div class="mt-2 text-sm">
+                        Volume = Dose ÷ Concentration = <strong>{Number.isFinite(injConvVolMl) ? injConvVolMl.toFixed(3).replace(/\.?0+$/, '') : '—'}</strong> mL {#if Number.isFinite(injConvVolMl)}(≈ <strong>{Math.round(injConvVolMl * 100)}</strong> IU){/if}
+                    </div>
+                </div>
+                <div>
+                    <div class="text-sm font-medium mb-2">Volume and Concentration to Dose</div>
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <label class="flex items-center gap-2">
+                            <span>Volume</span>
+                            <input type="number" step="any" class="shadow appearance-none border rounded px-3 py-2 leading-tight w-32" bind:value={injConvVol2Ml} /> mL
+                            <span style="opacity:0.7; font-size: 0.9em;">(≈ {Number.isFinite(injConvVol2Ml) ? Math.round(injConvVol2Ml * 100) : '—'} IU)</span>
+                        </label>
+                        <label class="flex items-center gap-2">
+                            <span>Concentration</span>
+                            <input type="number" step="any" class="shadow appearance-none border rounded px-3 py-2 leading-tight w-32" bind:value={injConvConc2MgPerMl} /> mg/mL
+                        </label>
+                    </div>
+                    <div class="mt-2 text-sm">
+                        Dose = Volume × Concentration = <strong>{Number.isFinite(injConvDose2Mg) ? injConvDose2Mg.toFixed(3).replace(/\.?0+$/, '') : '—'}</strong> mg
+                    </div>
+                </div>
+            </div>
+        </div>
+        {/if}
         <div class="mb-4">
             <span
                 class="block text-latte-rose-pine-text dark:text-rose-pine-text text-sm font-medium mb-2"
@@ -346,6 +413,35 @@
                                 <option value={InjectionSites.ButtockLeft}>Buttock left</option>
                             </select>
                         </div>
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium mb-2" for="eVial">vial (optional)</label>
+                            <div class="flex items-center gap-2">
+                                <select id="eVial" class="border py-2 px-3 rounded w-full leading-tight" bind:value={selectedVialId}>
+                                    <option value="">None</option>
+                                    {#each hrtData.data.vials as v}
+                                        <option value={v.id}>
+                                            {(v.esterKind || 'Unknown ester') + ' · ' + (v.batchNumber || 'batch ?') + (v.source ? ' · ' + v.source : '')}
+                                        </option>
+                                    {/each}
+                                </select>
+                                <a class="text-latte-rose-pine-iris hover:text-rose-pine-love whitespace-nowrap" href="/vials/create">New…</a>
+                            </div>
+                        </div>
+                        {#if selectedVialId}
+                            {#each hrtData.data.vials.filter(v => v.id === selectedVialId) as v}
+                                {#if v.subVials.length > 0}
+                                    <div class="mb-4">
+                                        <label class="block text-sm font-medium mb-2" for="eSubVial">sub‑vial / cartridge (optional)</label>
+                                        <select id="eSubVial" class="border py-2 px-3 rounded w-full leading-tight" bind:value={selectedSubVialId}>
+                                            <option value="">None</option>
+                                            {#each v.subVials as s}
+                                                <option value={s.id}>#{s.personalNumber}</option>
+                                            {/each}
+                                        </select>
+                                    </div>
+                                {/if}
+                            {/each}
+                        {/if}
                         {/if}
                     {/if}
                 {/if}
@@ -355,6 +451,38 @@
                         <label class="block text-sm font-medium mb-2" for="eNextDoseDate">Next Dose Date</label>
                         <input id="eNextDoseDate" type="datetime-local" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={eNextDoseDate} />
                     </div>
+                {/if}
+
+                {#if mode === 'schedule' && estrogenMethod === 'injection'}
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-2" for="schedVial">vial (optional)</label>
+                        <div class="flex items-center gap-2">
+                            <select id="schedVial" class="border py-2 px-3 rounded w-full leading-tight" bind:value={selectedVialId}>
+                                <option value="">None</option>
+                                {#each hrtData.data.vials as v}
+                                    <option value={v.id}>
+                                        {(v.esterKind || 'Unknown ester') + ' · ' + (v.batchNumber || 'batch ?') + (v.source ? ' · ' + v.source : '')}
+                                    </option>
+                                {/each}
+                            </select>
+                            <a class="text-latte-rose-pine-iris hover:text-rose-pine-love whitespace-nowrap" href="/vials/create">New…</a>
+                        </div>
+                    </div>
+                    {#if selectedVialId}
+                        {#each hrtData.data.vials.filter(v => v.id === selectedVialId) as v}
+                            {#if v.subVials.length > 0}
+                                <div class="mb-4">
+                                    <label class="block text-sm font-medium mb-2" for="schedSubVial">sub‑vial / cartridge (optional)</label>
+                                    <select id="schedSubVial" class="border py-2 px-3 rounded w-full leading-tight" bind:value={selectedSubVialId}>
+                                        <option value="">None</option>
+                                        {#each v.subVials as s}
+                                            <option value={s.id}>#{s.personalNumber}</option>
+                                        {/each}
+                                    </select>
+                                </div>
+                            {/if}
+                        {/each}
+                    {/if}
                 {/if}
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">

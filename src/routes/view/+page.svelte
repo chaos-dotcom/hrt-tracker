@@ -220,6 +220,20 @@
     let estrannaiseUrl = $derived(generateEstrannaiseUrl());
 
     const DAY_MS = 24 * 60 * 60 * 1000;
+    function formatDateLabel(ms: number): string {
+        if (xAxisMode === "days" && firstDoseDate !== null) {
+            const days = (ms - firstDoseDate) / DAY_MS;
+            return `Day ${days.toFixed(1)}`;
+        }
+        return new Date(ms).toLocaleDateString();
+    }
+    function formatDateForTooltip(d: Date): string {
+        if (xAxisMode === "days" && firstDoseDate !== null) {
+            const days = (d.getTime() - firstDoseDate) / DAY_MS;
+            return `Day ${days.toFixed(1)}`;
+        }
+        return d.toLocaleDateString();
+    }
     type RegimenKey = 'injectableEstradiol' | 'oralEstradiol' | 'antiandrogen' | 'progesterone';
 
     let hasAnyRegimen = $derived(
@@ -338,6 +352,8 @@
                     type: cfg.type,
                     dose: cfg.dose,
                     unit: cfg.unit,
+                    vialId: cfg.vialId,           // add
+                    subVialId: cfg.subVialId,     // add
                 } as any;
                 hrtData.addDosageRecord(rec);
                 if (typeof cfg.frequency === 'number' && isFinite(cfg.frequency) && cfg.frequency > 0) {
@@ -865,7 +881,7 @@
                                   symbol: "triangle",
                                   r: 8,
                                   title: (d) =>
-                                      `Injection: ${d.name}, ${d.dose} ${d.unit || "mg"} (${d.date.toLocaleDateString()})`,
+                                      `Injection: ${d.name}, ${d.dose} ${d.unit || "mg"} (${formatDateForTooltip(d.date)})`,
                               },
                           ),
                       ]
@@ -882,7 +898,7 @@
                                   symbol: "square",
                                   r: 7,
                                   title: (d) =>
-                                      `Oral E: ${d.name}, ${d.dose} ${d.unit || "mg"} (${d.date.toLocaleDateString()})`,
+                                      `Oral E: ${d.name}, ${d.dose} ${d.unit || "mg"} (${formatDateForTooltip(d.date)})`,
                               },
                           ),
                       ]
@@ -899,7 +915,7 @@
                                   symbol: "diamond",
                                   r: 7,
                                   title: (d) =>
-                                      `AA: ${d.name}, ${d.dose} ${d.unit || "mg"} (${d.date.toLocaleDateString()})`,
+                                      `AA: ${d.name}, ${d.dose} ${d.unit || "mg"} (${formatDateForTooltip(d.date)})`,
                               },
                           ),
                       ]
@@ -918,7 +934,7 @@
                                   symbol: "hexagon",
                                   r: 7,
                                   title: (d) =>
-                                      `Progesterone: ${d.name}, ${d.dose} ${d.unit || "mg"} (${d.date.toLocaleDateString()})`,
+                                      `Progesterone: ${d.name}, ${d.dose} ${d.unit || "mg"} (${formatDateForTooltip(d.date)})`,
                               },
                           ),
                       ]
@@ -1303,7 +1319,7 @@
                                 <div class="flex justify-between items-start gap-3">
                                     <div class="min-w-0">
                                         <div class="font-medium">
-                                            {new Date(n.date).toLocaleDateString()}
+                                            {formatDateLabel(n.date)}
                                         </div>
                                         {#if n.title}
                                             <div class="text-sm opacity-80 break-words">{n.title}</div>
@@ -1353,7 +1369,7 @@
                             >
                                 <div>
                                     <div class="font-medium">
-                                        {new Date(t.date).toLocaleDateString()}
+                                        {formatDateLabel(t.date)}
                                     </div>
                                     <div
                                         class="text-sm flex flex-wrap gap-x-2 gap-y-1"
@@ -1433,7 +1449,7 @@
                             <li class="p-2 border rounded flex justify-between items-center">
                                 <div>
                                     <div class="font-medium">
-                                        {new Date(m.date).toLocaleDateString()}
+                                        {formatDateLabel(m.date)}
                                     </div>
                                     <div class="text-sm flex flex-wrap gap-x-2 gap-y-1">
                                         {#if m.weight}<span>Weight: {m.weight}{m.weightUnit}</span>{/if}
@@ -1470,7 +1486,7 @@
                             >
                                 <div class="flex-1">
                                     <div class="font-medium">
-                                        {new Date(t.date).toLocaleDateString()}
+                                        {formatDateLabel(t.date)}
                                     </div>
                                     <div class="text-sm flex gap-2">
                                         <span class="capitalize"
@@ -1491,6 +1507,23 @@
                                     {#if t.medicationType === "injectableEstradiol" && t.injectionSite}
                                         <div class="text-sm mt-1 text-gray-600 dark:text-gray-400">
                                             Site: {t.injectionSite}
+                                        </div>
+                                    {/if}
+                                    {#if t.medicationType === "injectableEstradiol" && (t as any).vialId}
+                                        {@const v = hrtData.data.vials.find(v => v.id === (t as any).vialId)}
+                                        <div class="text-sm mt-1 text-gray-600 dark:text-gray-400">
+                                            Vial:
+                                            {#if v}
+                                                {v.esterKind || '—'}
+                                                {#if v.batchNumber} · {v.batchNumber}{/if}
+                                                {#if v.source} · {v.source}{/if}
+                                                {#if (t as any).subVialId}
+                                                    {@const s = v.subVials.find(s => s.id === (t as any).subVialId)}
+                                                    {#if s} — sub‑vial #{s.personalNumber}{/if}
+                                                {/if}
+                                            {:else}
+                                                —
+                                            {/if}
                                         </div>
                                     {/if}
                                     {#if t.note}
