@@ -333,6 +333,9 @@
 				<div class="mt-3">
 					<label for="pillQtyProg" class="block text-sm mb-1">Pill quantity</label>
 					<input id="pillQtyProg" type="number" min="1" step="1" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={pillQtyEdit} />
+					<div class="mt-1 text-xs opacity-70">
+						Total = {(+dose || 0)} mg/pill × {(+pillQtyEdit || 0)} = <strong>{Number.isFinite(+dose) && Number.isFinite(+pillQtyEdit) ? (+dose) * (+pillQtyEdit) : 0}</strong> mg
+					</div>
 				</div>
 			{:else}
 				<div class="flex gap-5">
@@ -363,6 +366,9 @@
 					<div class="mt-3">
 						<label for="pillQtyOral" class="block text-sm mb-1">Pill quantity</label>
 						<input id="pillQtyOral" type="number" min="1" step="1" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={pillQtyEdit} />
+						<div class="mt-1 text-xs opacity-70">
+							Total = {(+dose || 0)} mg/pill × {(+pillQtyEdit || 0)} = <strong>{Number.isFinite(+dose) && Number.isFinite(+pillQtyEdit) ? (+dose) * (+pillQtyEdit) : 0}</strong> mg
+						</div>
 					</div>
 				{/if}
 			{/if}
