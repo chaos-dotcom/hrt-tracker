@@ -35,6 +35,11 @@
 					>Add Dosage</a
 				>
 				<a
+					href="/calc"
+					class="text-latte-rose-pine-iris transition-colors hover:text-rose-pine-love dark:text-rose-pine-iris"
+					>Calculators</a
+				>
+				<a
 					href="/backup"
 					class="text-latte-rose-pine-iris transition-colors hover:text-rose-pine-love dark:text-rose-pine-iris"
 					>Settings & Backup/Restore</a
