@@ -9,6 +9,7 @@
   let suspensionOil: string = '';
   let otherIngredients: string = '';
   let batchNumber: string = '';
+  let source: string = '';
   let firstSubNumber: string = '';
 
   function submit(e: Event) {
@@ -18,7 +19,8 @@
       esterKind: ester || undefined,
       suspensionOil: suspensionOil.trim() || undefined,
       otherIngredients: otherIngredients.trim() || undefined,
-      batchNumber: batchNumber.trim() || undefined
+      batchNumber: batchNumber.trim() || undefined,
+      source: source.trim() || undefined
     });
     if (firstSubNumber.trim()) {
       hrtData.addSubVial(id, firstSubNumber.trim());
@@ -54,6 +56,10 @@
     <div>
       <label class="block text-sm font-medium mb-1">Batch number</label>
       <input class="border rounded px-2 py-2 w-full" placeholder="Batch/lot #" bind:value={batchNumber} />
+    </div>
+    <div>
+      <label class="block text-sm font-medium mb-1">Manufacturer / Source</label>
+      <input class="border rounded px-2 py-2 w-full" placeholder="e.g., compounding pharmacy, brand, or 'homebrew'" bind:value={source} />
     </div>
     <div>
       <label class="block text-sm font-medium mb-1">First sub‑vial/cartridge number (optional)</label>

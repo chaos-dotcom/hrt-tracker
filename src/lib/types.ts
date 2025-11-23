@@ -168,6 +168,7 @@ export interface Vial {
   suspensionOil?: string;
   otherIngredients?: string;
   batchNumber?: string;
+  source?: string; // Manufacturer / source
   createdAt: UnixTime;
   subVials: SubVial[];
 }
