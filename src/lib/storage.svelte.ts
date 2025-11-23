@@ -184,6 +184,7 @@ class hrtStore {
       batchNumber: input.batchNumber,
       source: input.source,
       concentrationMgPerMl: input.concentrationMgPerMl,
+      isSpent: false,                // ADDED
       createdAt: Date.now(),
       subVials: []
     };
