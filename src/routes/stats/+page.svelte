@@ -35,15 +35,18 @@
   // Sum volume only from doses with recorded vial concentration
   const totalInjectionMl = $derived(() => {
     let sumMl = 0;
-    for (const d of injectableRecords) {
+    for (const d of injectableRecords as any[]) {
       if (d.unit !== 'mg') continue;
-      const vial = (d as any).vialId
-        ? hrtData.data.vials.find((v) => v.id === (d as any).vialId)
-        : undefined;
-      const conc = vial?.concentrationMgPerMl;
-      if (typeof conc === 'number' && conc > 0) {
-        sumMl += d.dose / conc;
-      }
+      const dose = Number(d.dose);
+      if (!Number.isFinite(dose) || dose <= 0) continue;
+
+      const vial = d.vialId ? hrtData.data.vials.find((v) => v.id === d.vialId) : undefined;
+      const concVal = typeof vial?.concentrationMgPerMl === 'number'
+        ? vial!.concentrationMgPerMl
+        : Number(vial?.concentrationMgPerMl);
+      if (!Number.isFinite(concVal) || concVal <= 0) continue;
+
+      sumMl += dose / concVal;
     }
     return sumMl;
   });
