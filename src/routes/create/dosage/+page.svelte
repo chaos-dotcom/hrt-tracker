@@ -490,6 +490,9 @@
                         <div class="mb-4">
                             <label class="block text-sm font-medium mb-2" for="ePillQty">pill quantity</label>
                             <input id="ePillQty" type="number" min="1" step="1" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={ePillQty} />
+                            <div class="text-sm opacity-80">
+                                Total = {(+eDose || 0)} mg/pill × {(+ePillQty || 0)} = <strong>{Number.isFinite(+eDose) && Number.isFinite(+ePillQty) ? (+eDose) * (+ePillQty) : 0}</strong> mg
+                            </div>
                         </div>
                         {/if}
                     {/if}
@@ -663,6 +666,9 @@
                         <div class="mb-4">
                             <label class="block text-sm font-medium mb-2" for="pPillQty">pill quantity</label>
                             <input id="pPillQty" type="number" min="1" step="1" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={pPillQty} />
+                            <div class="text-sm opacity-80">
+                                Total = {(+pDose || 0)} mg/pill × {(+pPillQty || 0)} = <strong>{Number.isFinite(+pDose) && Number.isFinite(+pPillQty) ? (+pDose) * (+pPillQty) : 0}</strong> mg
+                            </div>
                         </div>
                     {/if}
                 {/if}
