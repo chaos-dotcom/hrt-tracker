@@ -29,6 +29,17 @@
     let eDateTime = $state("");
     let eNextDoseDate = $state("");
 
+    // Injection helper: dose/conc <-> volume
+    let injConvDoseMg: number = 4;
+    let injConvConcMgPerMl: number = 40;
+    let injConvVolMl: number;
+    $: injConvVolMl = injConvConcMgPerMl > 0 ? injConvDoseMg / injConvConcMgPerMl : NaN;
+
+    let injConvVol2Ml: number = 0.1;
+    let injConvConc2MgPerMl: number = 40;
+    let injConvDose2Mg: number;
+    $: injConvDose2Mg = injConvConc2MgPerMl > 0 ? injConvVol2Ml * injConvConc2MgPerMl : NaN;
+
     // Antiandrogen state
     let aaType: Antiandrogens | "" = $state("");
     let aaDose = $state(0);
@@ -254,6 +265,45 @@
         >
     </div>
     <form onsubmit={handleSubmit} class="shadow-md rounded pt-6 pb-8 mb-4">
+        {#if estrogenMethod === 'injection'}
+        <div class="mb-6 p-4 border rounded-lg">
+            <h3 class="text-lg font-medium mb-3">Injection helper</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <div class="text-sm font-medium mb-2">Dose and Concentration to Volume</div>
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <label class="flex items-center gap-2">
+                            <span>Dose</span>
+                            <input type="number" step="any" class="shadow appearance-none border rounded px-3 py-2 leading-tight w-32" bind:value={injConvDoseMg} /> mg
+                        </label>
+                        <label class="flex items-center gap-2">
+                            <span>Concentration</span>
+                            <input type="number" step="any" class="shadow appearance-none border rounded px-3 py-2 leading-tight w-32" bind:value={injConvConcMgPerMl} /> mg/mL
+                        </label>
+                    </div>
+                    <div class="mt-2 text-sm">
+                        Volume = Dose ÷ Concentration = <strong>{Number.isFinite(injConvVolMl) ? injConvVolMl.toFixed(3).replace(/\.?0+$/, '') : '—'}</strong> mL
+                    </div>
+                </div>
+                <div>
+                    <div class="text-sm font-medium mb-2">Volume and Concentration to Dose</div>
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <label class="flex items-center gap-2">
+                            <span>Volume</span>
+                            <input type="number" step="any" class="shadow appearance-none border rounded px-3 py-2 leading-tight w-32" bind:value={injConvVol2Ml} /> mL
+                        </label>
+                        <label class="flex items-center gap-2">
+                            <span>Concentration</span>
+                            <input type="number" step="any" class="shadow appearance-none border rounded px-3 py-2 leading-tight w-32" bind:value={injConvConc2MgPerMl} /> mg/mL
+                        </label>
+                    </div>
+                    <div class="mt-2 text-sm">
+                        Dose = Volume × Concentration = <strong>{Number.isFinite(injConvDose2Mg) ? injConvDose2Mg.toFixed(3).replace(/\.?0+$/, '') : '—'}</strong> mg
+                    </div>
+                </div>
+            </div>
+        </div>
+        {/if}
         <div class="mb-4">
             <span
                 class="block text-latte-rose-pine-text dark:text-rose-pine-text text-sm font-medium mb-2"

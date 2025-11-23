@@ -1,5 +1,5 @@
 import { browser } from "$app/environment";
-import type { HRTData, DosageHistoryEntry, BloodTest, Measurement, UnixTime, DiaryEntry } from "./types";
+import type { HRTData, DosageHistoryEntry, BloodTest, Measurement, UnixTime, DiaryEntry, Vial, SubVial } from "./types";
 
 const defaultData: HRTData = {
   // injectableEstradiol: undefined,
@@ -9,6 +9,7 @@ const defaultData: HRTData = {
   dosageHistory: [],
   measurements: [],
   notes: [],
+  vials: [],
   settings: {
     enableAutoBackfill: true,
     icsSecret: '',
@@ -114,6 +115,52 @@ class hrtStore {
 
   deleteMeasurement(measurement: Measurement) {
     this.data.measurements = this.data.measurements.filter((m) => m !== measurement);
+  }
+
+  createVial(input: { esterKind?: string; suspensionOil?: string; otherIngredients?: string; batchNumber?: string }): string {
+    const id = globalThis.crypto?.randomUUID?.() ?? String(Date.now());
+    const vial: Vial = {
+      id,
+      esterKind: input.esterKind,
+      suspensionOil: input.suspensionOil,
+      otherIngredients: input.otherIngredients,
+      batchNumber: input.batchNumber,
+      createdAt: Date.now(),
+      subVials: []
+    };
+    this.data.vials.push(vial);
+    this.saveSoon();
+    return id;
+  }
+
+  updateVial(vialId: string, patch: Partial<Omit<Vial, 'id' | 'createdAt' | 'subVials'>>): boolean {
+    const v = this.data.vials.find((x) => x.id === vialId);
+    if (!v) return false;
+    Object.assign(v, patch);
+    this.saveSoon();
+    return true;
+  }
+
+  deleteVial(vialId: string): void {
+    this.data.vials = this.data.vials.filter((v) => v.id !== vialId);
+    this.saveSoon();
+  }
+
+  addSubVial(vialId: string, personalNumber: string, notes?: string): string {
+    const v = this.data.vials.find((x) => x.id === vialId);
+    if (!v) return '';
+    const id = globalThis.crypto?.randomUUID?.() ?? String(Date.now());
+    const sub: SubVial = { id, personalNumber, createdAt: Date.now(), notes };
+    v.subVials.push(sub);
+    this.saveSoon();
+    return id;
+  }
+
+  deleteSubVial(vialId: string, subId: string): void {
+    const v = this.data.vials.find((x) => x.id === vialId);
+    if (!v) return;
+    v.subVials = v.subVials.filter((s) => s.id !== subId);
+    this.saveSoon();
   }
 
   // Snap a timestamp to the next scheduled injectable estradiol boundary (trough day)

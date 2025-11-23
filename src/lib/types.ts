@@ -156,6 +156,22 @@ export interface DiaryEntry {
   content: string;
 }
 
+export interface SubVial {
+  id: string;
+  personalNumber: string; // your cartridge/sub-vial number
+  createdAt: UnixTime;
+  notes?: string;
+}
+export interface Vial {
+  id: string;
+  esterKind?: InjectableEstradiols | string; // enum or custom string
+  suspensionOil?: string;
+  otherIngredients?: string;
+  batchNumber?: string;
+  createdAt: UnixTime;
+  subVials: SubVial[];
+}
+
 export const HRT_STORAGE_KEY = "hrt-meow-data";
 export interface Settings {
   enableAutoBackfill: boolean;
@@ -197,5 +213,6 @@ export interface HRTData {
   dosageHistory: DosageHistoryEntry[];
   measurements: Measurement[];
   notes: DiaryEntry[];
+  vials: Vial[];
   settings?: Settings;
 }
