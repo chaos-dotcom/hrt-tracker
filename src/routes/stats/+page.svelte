@@ -2,7 +2,7 @@
   export const ssr = false;
 
   import { hrtData } from '$lib/storage.svelte';
-  import { ProgesteroneRoutes } from '$lib/types';
+  import { ProgesteroneRoutes, SyringeKinds } from '$lib/types';
 
   const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -56,6 +56,47 @@
     if (!isFinite(ml)) return '—';
     return String(Math.round(ml * 100)); // 1 mL = 100 IU
   }
+
+  function deadspaceULFor(kind: string | undefined): number | null {
+    if (!kind) return null;
+    // Normalize to enum labels
+    switch (kind) {
+      case SyringeKinds.RegularSyringe: return 92;
+      case SyringeKinds.LowWasteSyringe: return 59;
+      case SyringeKinds.LowWasteNeedle: return 17;
+      case SyringeKinds.InsulinSyringe: return 3;
+      case SyringeKinds.InsulinPen: return 3;
+      default: return null;
+    }
+  }
+
+  const wastageAgg = $derived(() => {
+    let totalMl = 0;
+    let totalMg = 0;
+    let skippedNoKind = 0;
+    let skippedNoConcForMg = 0;
+    let counted = 0;
+
+    for (const d of injectableRecords as any[]) {
+      const dsUL = deadspaceULFor(d.syringeKind);
+      if (dsUL === null) {
+        skippedNoKind++;
+        continue;
+      }
+      const dsMl = dsUL / 1000;
+      totalMl += dsMl;
+      counted++;
+
+      const vial = d.vialId ? hrtData.data.vials.find((v) => v.id === d.vialId) : undefined;
+      const conc = vial?.concentrationMgPerMl;
+      if (typeof conc === 'number' && conc > 0) {
+        totalMg += conc * dsMl;
+      } else {
+        skippedNoConcForMg++;
+      }
+    }
+    return { totalMl, totalMg, skippedNoKind, skippedNoConcForMg, counted };
+  });
 
   function parseNeedleLengthToMm(raw: string): number | null {
     const s = String(raw || '').trim().toLowerCase();
@@ -208,6 +249,24 @@
         <strong>{isFinite(totalNeedleLengthMm) ? fmt(totalNeedleLengthMm, 1) : '—'}</strong> mm
         {#if isFinite(totalNeedleLengthMm)}(<strong>{fmt(totalNeedleLengthMm / 25.4, 2)}</strong> in){/if}
       </div>
+      <div class="mt-2">
+        Wastage from needle dead space:
+        <strong>{isFinite(wastageAgg.totalMl) ? fmt(wastageAgg.totalMl, 3) : '—'}</strong> mL
+        {#if isFinite(wastageAgg.totalMl)}(<strong>{fmtIUFromMl(wastageAgg.totalMl)}</strong> IU){/if}
+        {#if wastageAgg.totalMg > 0}
+          · ≈ <strong>{fmt(wastageAgg.totalMg, 2)}</strong> mg
+        {/if}
+      </div>
+      {#if wastageAgg.skippedNoKind > 0 || wastageAgg.skippedNoConcForMg > 0}
+        <div class="text-xs opacity-70 mt-1">
+          {#if wastageAgg.skippedNoKind > 0}
+            Skipped {wastageAgg.skippedNoKind} injection(s) without a syringe kind.
+          {/if}
+          {#if wastageAgg.skippedNoConcForMg > 0}
+            {wastageAgg.skippedNoKind > 0 ? ' ' : ''}No mg estimate for {wastageAgg.skippedNoConcForMg} injection(s) lacking vial concentration.
+          {/if}
+        </div>
+      {/if}
       {#if needleAgg.skipped > 0}
         <div class="text-xs opacity-70 mt-1">
           Skipped {needleAgg.skipped} injection(s) without a parsable needle length.
