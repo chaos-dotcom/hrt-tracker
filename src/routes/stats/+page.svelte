@@ -106,6 +106,8 @@
   const totalProgesteroneMg = $derived(
     progesteroneRecords.reduce((sum, d) => sum + (d.unit === 'mg' ? d.dose : 0), 0)
   );
+  const totalPillsCount = $derived(totalOralPillsCount + boofedProgesteroneCount);
+  const totalPillsMgCombined = $derived(totalOralEstradiolMg + boofedProgesteroneMg);
 </script>
 
 <div class="p-6 space-y-6 max-w-3xl mx-auto">
@@ -147,6 +149,13 @@
           (<strong>{fmt(boofedProgesteroneMg, 2)}</strong> mg total)
         {/if}
       </div>
+      {#if totalPillsCount > 0}
+        <div class="mt-1">
+          All pills combined:
+          <strong>{totalPillsCount}</strong> {totalPillsCount === 1 ? 'pill' : 'pills'}
+          (<strong>{fmt(totalPillsMgCombined, 2)}</strong> mg total)
+        </div>
+      {/if}
       {#if progesteroneRecords.length > 0}
         <div class="text-xs opacity-70 mt-1">
           Total progesterone (all routes): <strong>{fmt(totalProgesteroneMg, 2)}</strong> mg
