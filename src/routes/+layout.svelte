@@ -25,6 +25,11 @@
 					>View Data</a
 				>
 				<a
+					href="/stats"
+					class="text-latte-rose-pine-iris transition-colors hover:text-rose-pine-love dark:text-rose-pine-iris"
+					>Stats</a
+				>
+				<a
 					href="/create/blood-test"
 					class="text-latte-rose-pine-iris transition-colors hover:text-rose-pine-love dark:text-rose-pine-iris"
 					>Add Blood Test</a
