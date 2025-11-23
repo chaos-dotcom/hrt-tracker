@@ -16,6 +16,15 @@
   function delSub(vialId: string, subId: string) {
     hrtData.deleteSubVial(vialId, subId);
   }
+  function markSpent(id: string) {
+    const suggested = new Date().toISOString().slice(0,10);
+    const dStr = prompt('Spent date (YYYY-MM-DD). Leave blank for today:', suggested);
+    const spentAt = dStr && dStr.trim() ? new Date(dStr).getTime() : Date.now();
+    hrtData.updateVial(id, { isSpent: true, spentAt });
+  }
+  function markActive(id: string) {
+    hrtData.updateVial(id, { isSpent: false, spentAt: undefined });
+  }
 </script>
 
 <div class="p-6 space-y-6">
@@ -35,13 +44,20 @@
               <div class="font-medium">{v.esterKind || '—'}</div>
               <div class="text-sm opacity-80">Batch: {v.batchNumber || '—'}</div>
               <div class="text-sm opacity-80">Source: {v.source || '—'}</div>
+              <div class="text-sm opacity-80">Use by: {v.useBy ? new Date(v.useBy).toLocaleDateString() : '—'}</div>
               <div class="text-sm opacity-80">Concentration: {v.concentrationMgPerMl ?? '—'} mg/mL</div>
+              <div class="text-sm opacity-80">Status: {v.isSpent ? 'Spent' : 'Active'}</div>
               <div class="text-sm opacity-80">Suspension oil: {v.suspensionOil || '—'}</div>
               <div class="text-sm opacity-80">Other ingredients: {v.otherIngredients || '—'}</div>
               <div class="text-xs opacity-60 mt-1">Created {new Date(v.createdAt).toLocaleString()}</div>
             </div>
             <div class="flex gap-3">
               <a class="text-blue-600 hover:underline" href={`/vials/${v.id}`}>Edit</a>
+              {#if v.isSpent}
+                <button class="text-green-600 hover:underline" on:click={() => markActive(v.id)}>Mark Active</button>
+              {:else}
+                <button class="text-amber-700 hover:underline" on:click={() => markSpent(v.id)}>Mark Spent</button>
+              {/if}
               <button class="text-red-600 hover:underline" on:click={() => delVial(v.id)}>Delete</button>
             </div>
           </div>
