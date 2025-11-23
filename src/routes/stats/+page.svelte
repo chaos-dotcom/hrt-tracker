@@ -115,17 +115,66 @@
   );
 
   function parseNeedleLengthToMm(raw: string): number | null {
-    const s = String(raw || '').trim().toLowerCase();
+    // normalize, including unicode primes for inches and the small “㎜” symbol
+    const s = String(raw || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[′’]/g, "'")
+      .replace(/[″”]/g, '"')
+      .replace(/\u339c/g, 'mm'); // ㎜ -> mm
     if (!s) return null;
-    const m = s.match(/([0-9]+(?:\.[0-9]+)?)/);
-    if (!m) return null;
-    const val = parseFloat(m[1]);
-    if (!isFinite(val) || val <= 0) return null;
-    if (/\bcm\b|centimet(er|re)s?/.test(s)) return val * 10;
-    if (/\bmm\b|millimet(er|re)s?/.test(s)) return val;
-    if (/"/.test(s) || /\binches?\b/.test(s)) return val * 25.4;
-    // No unit specified: assume mm
-    return val;
+
+    // 1) explicit mm (prefer this, e.g., "32g 4mm" -> 4)
+    let m = s.match(/(\d+(?:\.\d+)?)\s*mm\b/);
+    if (m) {
+      const val = parseFloat(m[1]);
+      return isFinite(val) && val > 0 ? val : null;
+    }
+
+    // 2) explicit cm
+    m = s.match(/(\d+(?:\.\d+)?)\s*cm\b/);
+    if (m) {
+      const val = parseFloat(m[1]);
+      return isFinite(val) && val > 0 ? val * 10 : null;
+    }
+
+    // 3) explicit inches (supports 1/2", 1 1/2", 0.5", 1 in, inches)
+    const inchMatch = s.match(
+      /([0-9]+(?:\.[0-9]+)?(?:\s+[0-9]+\/[0-9]+)?|[0-9]+\/[0-9]+)\s*(?:in|inch|inches|")\b/
+    );
+    if (inchMatch) {
+      const token = inchMatch[1].trim();
+      let val: number | null = null;
+      if (token.includes('/')) {
+        // mixed or simple fraction
+        const parts = token.split(/\s+/);
+        if (parts.length === 2 && parts[1].includes('/')) {
+          const whole = parseFloat(parts[0]);
+          const [num, den] = parts[1].split('/').map(Number);
+          if (isFinite(whole) && isFinite(num) && isFinite(den) && den > 0) {
+            val = whole + num / den;
+          }
+        } else if (parts.length === 1 && parts[0].includes('/')) {
+          const [num, den] = parts[0].split('/').map(Number);
+          if (isFinite(num) && isFinite(den) && den > 0) {
+            val = num / den;
+          }
+        }
+      } else {
+        const n = parseFloat(token);
+        if (isFinite(n) && n > 0) val = n;
+      }
+      return val && val > 0 ? val * 25.4 : null;
+    }
+
+    // 4) fallback: assume mm, use the last number in the string
+    const nums = Array.from(s.matchAll(/\d+(?:\.\d+)?/g)).map((x) => parseFloat(x[0]));
+    if (nums.length) {
+      const val = nums[nums.length - 1];
+      return isFinite(val) && val > 0 ? val : null;
+    }
+
+    return null;
   }
 
   const needleAgg = $derived(() => {
