@@ -191,6 +191,7 @@ export interface Vial {
   concentrationMgPerMl?: number; // Concentration (mg/mL)
   isSpent?: boolean;            // ADDED
   spentAt?: UnixTime;           // ADDED
+  useBy?: UnixTime;             // ADDED
   createdAt: UnixTime;
   subVials: SubVial[];
 }

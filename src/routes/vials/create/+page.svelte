@@ -12,6 +12,8 @@
   let source: string = '';
   let firstSubNumber: string = '';
   let concentrationMgPerMl: number | '' = '';
+  let createdDate: string = new Date().toISOString().slice(0, 10);
+  let useByDate: string = '';
 
   function submit(e: Event) {
     e.preventDefault();
@@ -22,7 +24,9 @@
       otherIngredients: otherIngredients.trim() || undefined,
       batchNumber: batchNumber.trim() || undefined,
       source: source.trim() || undefined,
-      concentrationMgPerMl: Number.isFinite(+concentrationMgPerMl) && +concentrationMgPerMl > 0 ? +concentrationMgPerMl : undefined
+      concentrationMgPerMl: Number.isFinite(+concentrationMgPerMl) && +concentrationMgPerMl > 0 ? +concentrationMgPerMl : undefined,
+      createdAt: createdDate ? new Date(createdDate).getTime() : undefined,
+      useBy: useByDate ? new Date(useByDate).getTime() : undefined
     });
     if (firstSubNumber.trim()) {
       hrtData.addSubVial(id, firstSubNumber.trim());
@@ -58,6 +62,14 @@
     <div>
       <label class="block text-sm font-medium mb-1">Batch number</label>
       <input class="border rounded px-2 py-2 w-full" placeholder="Batch/lot #" bind:value={batchNumber} />
+    </div>
+    <div>
+      <label class="block text-sm font-medium mb-1">Vial date</label>
+      <input class="border rounded px-2 py-2 w-full" type="date" bind:value={createdDate} />
+    </div>
+    <div>
+      <label class="block text-sm font-medium mb-1">Use by date</label>
+      <input class="border rounded px-2 py-2 w-full" type="date" bind:value={useByDate} />
     </div>
     <div>
       <label class="block text-sm font-medium mb-1">Concentration (mg/mL)</label>

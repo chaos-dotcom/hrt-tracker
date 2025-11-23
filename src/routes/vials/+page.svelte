@@ -17,7 +17,10 @@
     hrtData.deleteSubVial(vialId, subId);
   }
   function markSpent(id: string) {
-    hrtData.updateVial(id, { isSpent: true, spentAt: Date.now() });
+    const suggested = new Date().toISOString().slice(0,10);
+    const dStr = prompt('Spent date (YYYY-MM-DD). Leave blank for today:', suggested);
+    const spentAt = dStr && dStr.trim() ? new Date(dStr).getTime() : Date.now();
+    hrtData.updateVial(id, { isSpent: true, spentAt });
   }
   function markActive(id: string) {
     hrtData.updateVial(id, { isSpent: false, spentAt: undefined });
@@ -41,6 +44,7 @@
               <div class="font-medium">{v.esterKind || '—'}</div>
               <div class="text-sm opacity-80">Batch: {v.batchNumber || '—'}</div>
               <div class="text-sm opacity-80">Source: {v.source || '—'}</div>
+              <div class="text-sm opacity-80">Use by: {v.useBy ? new Date(v.useBy).toLocaleDateString() : '—'}</div>
               <div class="text-sm opacity-80">Concentration: {v.concentrationMgPerMl ?? '—'} mg/mL</div>
               <div class="text-sm opacity-80">Status: {v.isSpent ? 'Spent' : 'Active'}</div>
               <div class="text-sm opacity-80">Suspension oil: {v.suspensionOil || '—'}</div>

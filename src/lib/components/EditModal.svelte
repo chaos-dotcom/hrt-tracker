@@ -406,7 +406,7 @@
 							class="border py-2 px-3 rounded w-full leading-tight"
 						>
 							<option value="">None</option>
-							{#each hrtData.data.vials as v}
+							{#each hrtData.data.vials.filter(v => !v.isSpent || v.id === selectedVialId) as v}
 								<option value={v.id}>
 									{(v.esterKind || 'Unknown ester')}{#if v.batchNumber} · {v.batchNumber}{/if}{#if v.source} · {v.source}{/if}
 								</option>

@@ -174,7 +174,7 @@ class hrtStore {
     this.data.measurements = this.data.measurements.filter((m) => m !== measurement);
   }
 
-  createVial(input: { esterKind?: string; suspensionOil?: string; otherIngredients?: string; batchNumber?: string; source?: string; concentrationMgPerMl?: number }): string {
+  createVial(input: { esterKind?: string; suspensionOil?: string; otherIngredients?: string; batchNumber?: string; source?: string; concentrationMgPerMl?: number; createdAt?: number; useBy?: number }): string {
     const id = globalThis.crypto?.randomUUID?.() ?? String(Date.now());
     const vial: Vial = {
       id,
@@ -185,7 +185,8 @@ class hrtStore {
       source: input.source,
       concentrationMgPerMl: input.concentrationMgPerMl,
       isSpent: false,                // ADDED
-      createdAt: Date.now(),
+      createdAt: (typeof input.createdAt === 'number' && isFinite(input.createdAt) && input.createdAt > 0) ? input.createdAt : Date.now(),
+      useBy: (typeof input.useBy === 'number' && isFinite(input.useBy) && input.useBy > 0) ? input.useBy : undefined,
       subVials: []
     };
     this.data.vials.push(vial);
@@ -193,7 +194,7 @@ class hrtStore {
     return id;
   }
 
-  updateVial(vialId: string, patch: Partial<Omit<Vial, 'id' | 'createdAt' | 'subVials'>>): boolean {
+  updateVial(vialId: string, patch: Partial<Omit<Vial, 'id' | 'subVials'>>): boolean {
     const v = this.data.vials.find((x) => x.id === vialId);
     if (!v) return false;
     Object.assign(v, patch);
