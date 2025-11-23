@@ -117,7 +117,7 @@ class hrtStore {
     this.data.measurements = this.data.measurements.filter((m) => m !== measurement);
   }
 
-  createVial(input: { esterKind?: string; suspensionOil?: string; otherIngredients?: string; batchNumber?: string }): string {
+  createVial(input: { esterKind?: string; suspensionOil?: string; otherIngredients?: string; batchNumber?: string; source?: string }): string {
     const id = globalThis.crypto?.randomUUID?.() ?? String(Date.now());
     const vial: Vial = {
       id,
@@ -125,6 +125,7 @@ class hrtStore {
       suspensionOil: input.suspensionOil,
       otherIngredients: input.otherIngredients,
       batchNumber: input.batchNumber,
+      source: input.source,
       createdAt: Date.now(),
       subVials: []
     };
