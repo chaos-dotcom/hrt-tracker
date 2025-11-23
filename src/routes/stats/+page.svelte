@@ -4,22 +4,25 @@
 
   const DAY_MS = 24 * 60 * 60 * 1000;
 
+  const hist = $derived(() => hrtData.data.dosageHistory ?? []);
+  const vials = $derived(() => hrtData.data.vials ?? []);
+
   // Records
-  const estrogenRecords = $derived(
-    (hrtData.data.dosageHistory ?? []).filter(
+  const estrogenRecords = $derived(() =>
+    hist.filter(
       (d) => d.medicationType === 'injectableEstradiol' || d.medicationType === 'oralEstradiol'
     )
   );
-  const injectableRecords = $derived(
-    (hrtData.data.dosageHistory ?? []).filter((d) => d.medicationType === 'injectableEstradiol')
+  const injectableRecords = $derived(() =>
+    hist.filter((d) => d.medicationType === 'injectableEstradiol')
   );
 
-  const totalInjectableEstradiolMg = $derived(
+  const totalInjectableEstradiolMg = $derived(() =>
     injectableRecords.reduce((sum, d: any) => sum + (d.unit === 'mg' ? d.dose : 0), 0)
   );
 
   // Totals (mg)
-  const totalEstrogenMg = $derived(
+  const totalEstrogenMg = $derived(() =>
     estrogenRecords.reduce((sum, d: any) => {
       if (d.unit !== 'mg') return sum;
       if (d.medicationType === 'oralEstradiol') {
@@ -38,10 +41,8 @@
       const dose = Number(d.dose);
       if (!Number.isFinite(dose) || dose <= 0) continue;
 
-      const vial = d.vialId ? hrtData.data.vials.find((v) => v.id === d.vialId) : undefined;
-      const concVal = typeof vial?.concentrationMgPerMl === 'number'
-        ? vial!.concentrationMgPerMl
-        : Number(vial?.concentrationMgPerMl);
+      const vial = d.vialId ? vials.find((v) => v.id === d.vialId) : undefined;
+      const concVal = Number(vial?.concentrationMgPerMl);
       if (!Number.isFinite(concVal) || concVal <= 0) continue;
 
       sumMl += dose / concVal;
@@ -50,7 +51,7 @@
   });
 
   // Days since first dose (centralized helper)
-  const totalDaysSinceStart = $derived(hrtData.getDaysSinceFirstDose());
+  const totalDaysSinceStart = $derived(() => hrtData.getDaysSinceFirstDose());
 
   function fmt(n: number, decimals = 2): string {
     if (!isFinite(n)) return '—';
@@ -94,7 +95,7 @@
       totalMl += dsMl;
       counted++;
 
-      const vial = d.vialId ? hrtData.data.vials.find((v) => v.id === d.vialId) : undefined;
+      const vial = d.vialId ? vials.find((v) => v.id === d.vialId) : undefined;
       const conc = vial?.concentrationMgPerMl;
       if (typeof conc === 'number' && conc > 0) {
         totalMg += conc * dsMl;
@@ -199,13 +200,13 @@
   const totalNeedleLengthMm = $derived(needleAgg.sumMm);
 
   // Pills: oral estradiol and progesterone (Boofed = "boofed")
-  const oralEstradiolRecords = $derived(
-    (hrtData.data.dosageHistory ?? []).filter((d) => d.medicationType === 'oralEstradiol')
+  const oralEstradiolRecords = $derived(() =>
+    hist.filter((d) => d.medicationType === 'oralEstradiol')
   );
-  const totalOralPillsCount = $derived(
+  const totalOralPillsCount = $derived(() =>
     oralEstradiolRecords.reduce((sum, d: any) => sum + (Number(d.pillQuantity) > 0 ? Number(d.pillQuantity) : 1), 0)
   );
-  const totalOralEstradiolMg = $derived(
+  const totalOralEstradiolMg = $derived(() =>
     oralEstradiolRecords.reduce(
       (sum, d: any) =>
         sum + (d.unit === 'mg' ? d.dose * (Number(d.pillQuantity) > 0 ? Number(d.pillQuantity) : 1) : 0),
@@ -213,31 +214,31 @@
     )
   );
 
-  const progesteroneRecords = $derived(
-    (hrtData.data.dosageHistory ?? []).filter((d) => d.medicationType === 'progesterone')
+  const progesteroneRecords = $derived(() =>
+    hist.filter((d) => d.medicationType === 'progesterone')
   );
-  const boofedProgesteroneRecords = $derived(
+  const boofedProgesteroneRecords = $derived(() =>
     progesteroneRecords.filter((d: any) => d.route === ProgesteroneRoutes.Boofed)
   );
-  const boofedProgesteroneCount = $derived(
+  const boofedProgesteroneCount = $derived(() =>
     boofedProgesteroneRecords.reduce((sum, d: any) => sum + (Number(d.pillQuantity) > 0 ? Number(d.pillQuantity) : 1), 0)
   );
-  const boofedProgesteroneMg = $derived(
+  const boofedProgesteroneMg = $derived(() =>
     boofedProgesteroneRecords.reduce(
       (sum, d: any) =>
         sum + (d.unit === 'mg' ? d.dose * (Number(d.pillQuantity) > 0 ? Number(d.pillQuantity) : 1) : 0),
       0
     )
   );
-  const totalProgesteroneMg = $derived(
+  const totalProgesteroneMg = $derived(() =>
     progesteroneRecords.reduce(
       (sum, d: any) =>
         sum + (d.unit === 'mg' ? d.dose * (Number(d.pillQuantity) > 0 ? Number(d.pillQuantity) : 1) : 0),
       0
     )
   );
-  const totalPillsCount = $derived(totalOralPillsCount + boofedProgesteroneCount);
-  const totalPillsMgCombined = $derived(totalOralEstradiolMg + boofedProgesteroneMg);
+  const totalPillsCount = $derived(() => totalOralPillsCount + boofedProgesteroneCount);
+  const totalPillsMgCombined = $derived(() => totalOralEstradiolMg + boofedProgesteroneMg);
 </script>
 
 <div class="p-6 space-y-6 max-w-3xl mx-auto">
@@ -260,8 +261,8 @@
         <div class="mt-3">
           <div>
             Total injection volume (from recorded vial concentrations):
-            <strong>{isFinite(totalInjectionMl) ? fmt(totalInjectionMl, 3) : '—'}</strong> mL
-            {#if isFinite(totalInjectionMl)}(<strong>{fmtIUFromMl(totalInjectionMl)}</strong> IU){/if}
+            <strong>{Number.isFinite(totalInjectionMl) ? fmt(totalInjectionMl, 3) : '—'}</strong> mL
+            {#if Number.isFinite(totalInjectionMl)}(<strong>{fmtIUFromMl(totalInjectionMl)}</strong> IU){/if}
           </div>
         </div>
       {/if}
@@ -318,17 +319,17 @@
     <div class="text-sm text-gray-700 dark:text-gray-300">
       <div>
         Total combined needle length:
-        <strong>{isFinite(totalNeedleLengthMm) ? fmt(totalNeedleLengthMm, 1) : '—'}</strong> mm
-        {#if isFinite(totalNeedleLengthMm)}(<strong>{fmt(totalNeedleLengthMm / 25.4, 2)}</strong> in){/if}
+        <strong>{Number.isFinite(totalNeedleLengthMm) ? fmt(totalNeedleLengthMm, 1) : '—'}</strong> mm
+        {#if Number.isFinite(totalNeedleLengthMm)}(<strong>{fmt(totalNeedleLengthMm / 25.4, 2)}</strong> in){/if}
       </div>
       <div class="mt-2">
         Wastage from needle dead space:
-        <strong>{isFinite(wastageAgg.totalMl) ? fmt(wastageAgg.totalMl, 3) : '—'}</strong> mL
-        {#if isFinite(wastageAgg.totalMl)}(<strong>{fmtIUFromMl(wastageAgg.totalMl)}</strong> IU){/if}
+        <strong>{Number.isFinite(wastageAgg.totalMl) ? fmt(wastageAgg.totalMl, 3) : '—'}</strong> mL
+        {#if Number.isFinite(wastageAgg.totalMl)}(<strong>{fmtIUFromMl(wastageAgg.totalMl)}</strong> IU){/if}
         {#if wastageAgg.totalMg > 0}
           · ≈ <strong>{fmt(wastageAgg.totalMg, 2)}</strong> mg
         {/if}
-        {#if isFinite(wastagePct)}
+        {#if Number.isFinite(wastagePct)}
           · <strong>{fmt(wastagePct, 1)}</strong>% of drawn volume
         {/if}
       </div>
