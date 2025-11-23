@@ -1,20 +1,18 @@
 <script lang="ts">
   // From Transfeminine Science: Dose/Conc -> Volume; Volume/Conc -> Dose
-  let tfsDoseMg: number = 4;
-  let tfsConcMgPerMl: number = 40;
-  let tfsVolMl: number;
-  $: tfsVolMl = tfsConcMgPerMl > 0 ? tfsDoseMg / tfsConcMgPerMl : NaN;
+  let tfsDoseMg = $state(4);
+  let tfsConcMgPerMl = $state(40);
+  const tfsVolMl = $derived(tfsConcMgPerMl > 0 ? tfsDoseMg / tfsConcMgPerMl : NaN);
 
-  let tfsVol2Ml: number = 0.1;
-  let tfsConc2MgPerMl: number = 40;
-  let tfsDose2Mg: number;
-  $: tfsDose2Mg = tfsConc2MgPerMl > 0 ? tfsVol2Ml * tfsConc2MgPerMl : NaN;
+  let tfsVol2Ml = $state(0.1);
+  let tfsConc2MgPerMl = $state(40);
+  const tfsDose2Mg = $derived(tfsConc2MgPerMl > 0 ? tfsVol2Ml * tfsConc2MgPerMl : NaN);
 
   // From HRT Cafe: Vial Life & Dose
-  let cafeDoseMg: number = 4;
-  let cafeFreqDays: number = 7;
-  let cafeVialMl: number = 10;
-  let cafeConcMgMl: number = 40;
+  let cafeDoseMg = $state(4);
+  let cafeFreqDays = $state(7);
+  let cafeVialMl = $state(10);
+  let cafeConcMgMl = $state(40);
 
   type Gear = { name: string; dead_uL: number };
   const gears: Gear[] = [
@@ -24,8 +22,7 @@
     { name: 'Insulin Syringe (SubQ Only)', dead_uL: 3 }
   ];
 
-  let injVolMl: number;
-  $: injVolMl = cafeConcMgMl > 0 ? cafeDoseMg / cafeConcMgMl : NaN;
+  const injVolMl = $derived(cafeConcMgMl > 0 ? cafeDoseMg / cafeConcMgMl : NaN);
 
   function fmt(x: number, decimals = 3): string {
     if (!isFinite(x)) return '—';
@@ -62,7 +59,7 @@
     return { doses, days, pctWaste, dead_uL };
   }
 
-  $: gearResults = gears.map((g) => ({ g, r: calcFor(g.dead_uL) }));
+  const gearResults = $derived(gears.map((g) => ({ g, r: calcFor(g.dead_uL) })));
 </script>
 
 <svelte:head>
