@@ -59,7 +59,7 @@
     </div>
     <div>
       <label class="block text-sm font-medium mb-1">Manufacturer / Source</label>
-      <input class="border rounded px-2 py-2 w-full" placeholder="e.g., compounding pharmacy, brand, or 'homebrew'" bind:value={source} />
+      <input class="border rounded px-2 py-2 w-full" placeholder="e.g., compounding pharmacy,'" bind:value={source} />
     </div>
     <div>
       <label class="block text-sm font-medium mb-1">First sub‑vial/cartridge number (optional)</label>
