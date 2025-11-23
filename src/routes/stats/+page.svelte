@@ -84,7 +84,7 @@
   });
   const totalNeedleLengthMm = $derived(needleAgg.sumMm);
 
-  // Pills: oral estradiol and progesterone (rectal = "boofed")
+  // Pills: oral estradiol and progesterone (Boofed = "boofed")
   const oralEstradiolRecords = $derived(
     (hrtData.data.dosageHistory ?? []).filter((d) => d.medicationType === 'oralEstradiol')
   );
@@ -97,7 +97,7 @@
     (hrtData.data.dosageHistory ?? []).filter((d) => d.medicationType === 'progesterone')
   );
   const boofedProgesteroneRecords = $derived(
-    progesteroneRecords.filter((d: any) => d.route === ProgesteroneRoutes.Rectal)
+    progesteroneRecords.filter((d: any) => d.route === ProgesteroneRoutes.Boofed)
   );
   const boofedProgesteroneCount = $derived(boofedProgesteroneRecords.length);
   const boofedProgesteroneMg = $derived(

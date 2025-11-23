@@ -28,7 +28,7 @@ export enum Progesterones {
 
 export enum ProgesteroneRoutes {
   Oral = "Oral",
-  Rectal = "Rectal",
+  Boofed = "Boofed",
 }
 
 export enum WeightUnit {
