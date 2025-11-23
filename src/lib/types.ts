@@ -79,6 +79,8 @@ export type DosageHistoryEntry =
       unit: HormoneUnits;
       note?: string;
       injectionSite?: InjectionSites;
+      vialId?: string;      // ADDED
+      subVialId?: string;   // ADDED
     }
   | {
       date: UnixTime;
