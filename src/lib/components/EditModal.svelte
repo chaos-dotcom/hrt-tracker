@@ -397,20 +397,33 @@
 				<div class="mb-4">
 					<label class="block text-sm mb-1">Photos (optional)</label>
 					{#if (dosageItem as any).photos?.length}
-						<div class="flex flex-wrap gap-2 mb-2">
-							{#each (dosageItem as any).photos as fname (fname)}
+						<div class="flex flex-wrap gap-3 mb-2">
+							{#each (dosageItem as any).photos as p (typeof p === 'string' ? p : p.file)}
 								<div class="relative">
 									<img
-										src={`/api/dosage-photo/${(dosageItem as any).id}/${fname}`}
+										src={`/api/dosage-photo/${(dosageItem as any).id}/${typeof p === 'string' ? p : p.file}`}
 										alt="injection site"
 										class="h-24 w-24 object-cover rounded border"
 									/>
 									<button
 										type="button"
 										class="absolute top-1 right-1 bg-black/70 text-white text-xs px-1 rounded"
-										onclick={() => handleDeletePhoto(fname)}
+										onclick={() => handleDeletePhoto(typeof p === 'string' ? p : p.file)}
 										title="Delete photo"
 									>×</button>
+									<input
+										type="text"
+										class="mt-1 w-24 text-[11px] border rounded px-1 py-0.5 bg-white/80 dark:bg-rose-pine-base/80"
+										placeholder="Add a note…"
+										value={typeof p === 'string' ? '' : (p.note || '')}
+										oninput={(e) =>
+											hrtData.setDosagePhotoNote(
+												(dosageItem as any).id as string,
+												typeof p === 'string' ? p : p.file,
+												(e.target as HTMLInputElement).value
+											)
+										}
+									/>
 								</div>
 							{/each}
 						</div>

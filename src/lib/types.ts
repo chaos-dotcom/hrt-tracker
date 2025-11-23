@@ -82,7 +82,7 @@ export type DosageHistoryEntry =
       injectionSite?: InjectionSites;
       vialId?: string;      // ADDED
       subVialId?: string;   // ADDED
-      photos?: string[];     // ADDED (filenames under data/dosage-photos/{id}/)
+      photos?: { file: string; note?: string }[]; // filenames (under data/dosage-photos/{id}/) with optional notes
     }
   | {
       date: UnixTime;
