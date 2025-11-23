@@ -8,7 +8,8 @@
 		type Measurement,
 		WeightUnit,
 		LengthUnit,
-		InjectionSites
+		InjectionSites,
+		SyringeKinds   // ADD
 	} from '$lib/types';
 
 	let { item, close }: { item: BloodTest | DosageHistoryEntry | Measurement; close: () => void } = $props();
@@ -72,6 +73,17 @@
 			? (item as any).injectionSite
 			: undefined
 	);
+	let syringeKindEdit = $state(
+		isDosage && (item as DosageHistoryEntry).medicationType === 'injectableEstradiol'
+			? ((item as any).syringeKind || '')
+			: ''
+	);
+	let needleLengthEdit = $state(
+		isDosage && (item as DosageHistoryEntry).medicationType === 'injectableEstradiol'
+			? ((item as any).needleLength || '')
+			: ''
+	);
+	const syringeKindOptions = enumToDropdownOptions(SyringeKinds);
 
 	// Added: vial and sub‑vial selection for injectable dosage items
 	let selectedVialId = $state(
@@ -149,6 +161,8 @@
 				(dosageItem as any).injectionSite = injectionSite || undefined;
 				(dosageItem as any).vialId = selectedVialId || undefined;         // add
 				(dosageItem as any).subVialId = selectedSubVialId || undefined;   // add
+				(dosageItem as any).syringeKind = syringeKindEdit || undefined;       // add
+				(dosageItem as any).needleLength = (needleLengthEdit || '').trim() || undefined; // add
 			}
 		} else if (isMeasurement) {
 			const measurementItem = item as Measurement;
@@ -394,6 +408,29 @@
 						{/if}
 					{/each}
 				{/if}
+				<div class="mb-4">
+					<label for="modalSyringeKind" class="block text-sm mb-1">Syringe kind (optional)</label>
+					<select
+						id="modalSyringeKind"
+						bind:value={syringeKindEdit}
+						class="border py-2 px-3 rounded w-full leading-tight"
+					>
+						<option value="">None</option>
+						{#each syringeKindOptions as option}
+							<option value={option.value}>{option.label}</option>
+						{/each}
+					</select>
+				</div>
+				<div class="mb-4">
+					<label for="modalNeedleLen" class="block text-sm mb-1">Needle length (optional)</label>
+					<input
+						id="modalNeedleLen"
+						type="text"
+						class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight"
+						placeholder='e.g., 4mm or 1"'
+						bind:value={needleLengthEdit}
+					/>
+				</div>
 				<div class="mb-4">
 					<label class="block text-sm mb-1">Photos (optional)</label>
 					{#if (dosageItem as any).photos?.length}

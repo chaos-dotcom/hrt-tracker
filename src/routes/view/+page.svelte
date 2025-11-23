@@ -354,6 +354,8 @@
                     unit: cfg.unit,
                     vialId: cfg.vialId,           // add
                     subVialId: cfg.subVialId,     // add
+                    syringeKind: (cfg as any).syringeKind,   // add
+                    needleLength: (cfg as any).needleLength, // add
                 } as any;
                 hrtData.addDosageRecord(rec);
                 if (typeof cfg.frequency === 'number' && isFinite(cfg.frequency) && cfg.frequency > 0) {
@@ -1524,6 +1526,11 @@
                                             {:else}
                                                 —
                                             {/if}
+                                        </div>
+                                    {/if}
+                                    {#if t.medicationType === "injectableEstradiol" && ((t as any).syringeKind || (t as any).needleLength)}
+                                        <div class="text-sm mt-1 text-gray-600 dark:text-gray-400">
+                                            Syringe: {(t as any).syringeKind || '—'}{#if (t as any).needleLength} · Needle: {(t as any).needleLength}{/if}
                                         </div>
                                     {/if}
                                     {#if t.note}
