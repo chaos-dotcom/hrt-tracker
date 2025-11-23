@@ -4,25 +4,23 @@
 
   const DAY_MS = 24 * 60 * 60 * 1000;
 
-  const hist = $derived(() => hrtData.data.dosageHistory ?? []);
-  const vials = $derived(() => hrtData.data.vials ?? []);
+  const hist = $derived(hrtData.data.dosageHistory ?? []);
+  const vials = $derived(hrtData.data.vials ?? []);
 
   // Records
-  const estrogenRecords = $derived(() =>
-    hist.filter(
-      (d) => d.medicationType === 'injectableEstradiol' || d.medicationType === 'oralEstradiol'
-    )
+  const estrogenRecords = $derived(
+    hist.filter((d) => d.medicationType === 'injectableEstradiol' || d.medicationType === 'oralEstradiol')
   );
-  const injectableRecords = $derived(() =>
+  const injectableRecords = $derived(
     hist.filter((d) => d.medicationType === 'injectableEstradiol')
   );
 
-  const totalInjectableEstradiolMg = $derived(() =>
+  const totalInjectableEstradiolMg = $derived(
     injectableRecords.reduce((sum, d: any) => sum + (d.unit === 'mg' ? d.dose : 0), 0)
   );
 
   // Totals (mg)
-  const totalEstrogenMg = $derived(() =>
+  const totalEstrogenMg = $derived(
     estrogenRecords.reduce((sum, d: any) => {
       if (d.unit !== 'mg') return sum;
       if (d.medicationType === 'oralEstradiol') {
@@ -34,24 +32,22 @@
   );
 
   // Sum volume only from doses with recorded vial concentration
-  const totalInjectionMl = $derived(() => {
-    let sumMl = 0;
-    for (const d of injectableRecords as any[]) {
-      if (d.unit !== 'mg') continue;
+  const totalInjectionMl = $derived(
+    injectableRecords.reduce((sum, d: any) => {
+      if (d.unit !== 'mg') return sum;
       const dose = Number(d.dose);
-      if (!Number.isFinite(dose) || dose <= 0) continue;
-
+      if (!Number.isFinite(dose) || dose <= 0) return sum;
       const vial = d.vialId ? vials.find((v) => v.id === d.vialId) : undefined;
       const concVal = Number(vial?.concentrationMgPerMl);
-      if (!Number.isFinite(concVal) || concVal <= 0) continue;
-
-      sumMl += dose / concVal;
-    }
-    return sumMl;
-  });
+      if (!Number.isFinite(concVal) || concVal <= 0) return sum;
+      return sum + dose / concVal;
+    }, 0)
+  );
 
   // Days since first dose (centralized helper)
-  const totalDaysSinceStart = $derived(() => hrtData.getDaysSinceFirstDose());
+  const totalDaysSinceStart = $derived(
+    hist.length ? Math.floor((Date.now() - Math.min(...hist.map((d) => d.date))) / DAY_MS) : null
+  );
 
   function fmt(n: number, decimals = 2): string {
     if (!isFinite(n)) return '—';
@@ -76,41 +72,31 @@
     }
   }
 
-  const wastageAgg = $derived(() => {
-    let totalMl = 0;
-    let totalMg = 0;
-    let skippedNoKind = 0;
-    let skippedNoConcForMg = 0;
-    let counted = 0;
-    let deadForPctMl = 0;
-    let drawnForPctMl = 0;
-
-    for (const d of injectableRecords as any[]) {
+  const wastageAgg = $derived(
+    injectableRecords.reduce((acc, d: any) => {
       const dsUL = deadspaceULFor(d.syringeKind);
       if (dsUL === null) {
-        skippedNoKind++;
-        continue;
+        acc.skippedNoKind++;
+        return acc;
       }
       const dsMl = dsUL / 1000;
-      totalMl += dsMl;
-      counted++;
-
+      acc.totalMl += dsMl;
+      acc.counted++;
       const vial = d.vialId ? vials.find((v) => v.id === d.vialId) : undefined;
       const conc = vial?.concentrationMgPerMl;
       if (typeof conc === 'number' && conc > 0) {
-        totalMg += conc * dsMl;
-        // For percent, need dose volume (mg -> mL) alongside deadspace
+        acc.totalMg += conc * dsMl;
         if (d.unit === 'mg' && typeof d.dose === 'number' && d.dose > 0) {
           const doseMl = d.dose / conc;
-          deadForPctMl += dsMl;
-          drawnForPctMl += dsMl + doseMl;
+          acc.deadForPctMl += dsMl;
+          acc.drawnForPctMl += dsMl + doseMl;
         }
       } else {
-        skippedNoConcForMg++;
+        acc.skippedNoConcForMg++;
       }
-    }
-    return { totalMl, totalMg, skippedNoKind, skippedNoConcForMg, counted, deadForPctMl, drawnForPctMl };
-  });
+      return acc;
+    }, { totalMl: 0, totalMg: 0, skippedNoKind: 0, skippedNoConcForMg: 0, counted: 0, deadForPctMl: 0, drawnForPctMl: 0 })
+  );
 
   const wastagePct = $derived(
     wastageAgg.drawnForPctMl > 0 ? (100 * wastageAgg.deadForPctMl) / wastageAgg.drawnForPctMl : NaN
@@ -179,34 +165,32 @@
     return null;
   }
 
-  const needleAgg = $derived(() => {
-    let sumMm = 0;
-    let skipped = 0;
-    for (const d of injectableRecords) {
-      const nl = (d as any).needleLength;
+  const needleAgg = $derived(
+    injectableRecords.reduce((acc, d: any) => {
+      const nl = d.needleLength;
       if (!nl || String(nl).trim() === '') {
-        skipped++;
-        continue;
+        acc.skipped++;
+        return acc;
       }
       const mm = parseNeedleLengthToMm(String(nl));
       if (typeof mm === 'number' && isFinite(mm) && mm > 0) {
-        sumMm += mm;
+        acc.sumMm += mm;
       } else {
-        skipped++;
+        acc.skipped++;
       }
-    }
-    return { sumMm, skipped };
-  });
+      return acc;
+    }, { sumMm: 0, skipped: 0 })
+  );
   const totalNeedleLengthMm = $derived(needleAgg.sumMm);
 
   // Pills: oral estradiol and progesterone (Boofed = "boofed")
-  const oralEstradiolRecords = $derived(() =>
+  const oralEstradiolRecords = $derived(
     hist.filter((d) => d.medicationType === 'oralEstradiol')
   );
-  const totalOralPillsCount = $derived(() =>
+  const totalOralPillsCount = $derived(
     oralEstradiolRecords.reduce((sum, d: any) => sum + (Number(d.pillQuantity) > 0 ? Number(d.pillQuantity) : 1), 0)
   );
-  const totalOralEstradiolMg = $derived(() =>
+  const totalOralEstradiolMg = $derived(
     oralEstradiolRecords.reduce(
       (sum, d: any) =>
         sum + (d.unit === 'mg' ? d.dose * (Number(d.pillQuantity) > 0 ? Number(d.pillQuantity) : 1) : 0),
@@ -214,31 +198,31 @@
     )
   );
 
-  const progesteroneRecords = $derived(() =>
+  const progesteroneRecords = $derived(
     hist.filter((d) => d.medicationType === 'progesterone')
   );
-  const boofedProgesteroneRecords = $derived(() =>
+  const boofedProgesteroneRecords = $derived(
     progesteroneRecords.filter((d: any) => d.route === ProgesteroneRoutes.Boofed)
   );
-  const boofedProgesteroneCount = $derived(() =>
+  const boofedProgesteroneCount = $derived(
     boofedProgesteroneRecords.reduce((sum, d: any) => sum + (Number(d.pillQuantity) > 0 ? Number(d.pillQuantity) : 1), 0)
   );
-  const boofedProgesteroneMg = $derived(() =>
+  const boofedProgesteroneMg = $derived(
     boofedProgesteroneRecords.reduce(
       (sum, d: any) =>
         sum + (d.unit === 'mg' ? d.dose * (Number(d.pillQuantity) > 0 ? Number(d.pillQuantity) : 1) : 0),
       0
     )
   );
-  const totalProgesteroneMg = $derived(() =>
+  const totalProgesteroneMg = $derived(
     progesteroneRecords.reduce(
       (sum, d: any) =>
         sum + (d.unit === 'mg' ? d.dose * (Number(d.pillQuantity) > 0 ? Number(d.pillQuantity) : 1) : 0),
       0
     )
   );
-  const totalPillsCount = $derived(() => totalOralPillsCount + boofedProgesteroneCount);
-  const totalPillsMgCombined = $derived(() => totalOralEstradiolMg + boofedProgesteroneMg);
+  const totalPillsCount = $derived(totalOralPillsCount + boofedProgesteroneCount);
+  const totalPillsMgCombined = $derived(totalOralEstradiolMg + boofedProgesteroneMg);
 </script>
 
 <div class="p-6 space-y-6 max-w-3xl mx-auto">
