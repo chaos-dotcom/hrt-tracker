@@ -14,7 +14,16 @@ const defaultData: HRTData = {
 export const load: LayoutServerLoad = async () => {
     try {
         const fileContent = await fs.readFile(dataFilePath, 'utf-8');
-        const loadedData = JSON.parse(fileContent);
+        const text = fileContent?.toString() ?? '';
+        let loadedData: Partial<HRTData> = {};
+        if (text.trim().length > 0) {
+            try {
+                loadedData = JSON.parse(text);
+            } catch {
+                console.warn('Data file contains invalid JSON; starting with defaults.');
+                loadedData = {};
+            }
+        }
         return {
             initialHrtData: { ...defaultData, ...loadedData }
         };

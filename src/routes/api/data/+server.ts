@@ -8,9 +8,19 @@ const dataFilePath = 'data/hrt-data.json';
 export const GET: RequestHandler = async () => {
     try {
         const data = await fs.readFile(dataFilePath, 'utf-8');
-        const parsed = JSON.parse(data);
-        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-            // Ensure secrets/settings are not served from JSON
+        const text = data?.toString() ?? '';
+        let parsed: any = {};
+        if (text.trim().length > 0) {
+            try {
+                parsed = JSON.parse(text);
+            } catch {
+                console.warn('Invalid JSON in data file; returning empty object.');
+                parsed = {};
+            }
+        }
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            parsed = {};
+        } else {
             delete (parsed as any).settings;
         }
         return json(parsed);
