@@ -338,6 +338,8 @@
                     type: cfg.type,
                     dose: cfg.dose,
                     unit: cfg.unit,
+                    vialId: cfg.vialId,           // add
+                    subVialId: cfg.subVialId,     // add
                 } as any;
                 hrtData.addDosageRecord(rec);
                 if (typeof cfg.frequency === 'number' && isFinite(cfg.frequency) && cfg.frequency > 0) {
@@ -1491,6 +1493,23 @@
                                     {#if t.medicationType === "injectableEstradiol" && t.injectionSite}
                                         <div class="text-sm mt-1 text-gray-600 dark:text-gray-400">
                                             Site: {t.injectionSite}
+                                        </div>
+                                    {/if}
+                                    {#if t.medicationType === "injectableEstradiol" && (t as any).vialId}
+                                        {@const v = hrtData.data.vials.find(v => v.id === (t as any).vialId)}
+                                        <div class="text-sm mt-1 text-gray-600 dark:text-gray-400">
+                                            Vial:
+                                            {#if v}
+                                                {v.esterKind || '—'}
+                                                {#if v.batchNumber} · {v.batchNumber}{/if}
+                                                {#if v.source} · {v.source}{/if}
+                                                {#if (t as any).subVialId}
+                                                    {@const s = v.subVials.find(s => s.id === (t as any).subVialId)}
+                                                    {#if s} — sub‑vial #{s.personalNumber}{/if}
+                                                {/if}
+                                            {:else}
+                                                —
+                                            {/if}
                                         </div>
                                     {/if}
                                     {#if t.note}

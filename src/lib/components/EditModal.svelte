@@ -73,6 +73,29 @@
 			: undefined
 	);
 
+	// Added: vial and sub‑vial selection for injectable dosage items
+	let selectedVialId = $state(
+		isDosage && (item as DosageHistoryEntry).medicationType === 'injectableEstradiol'
+			? ((item as any).vialId || '')
+			: ''
+	);
+	let selectedSubVialId = $state(
+		isDosage && (item as DosageHistoryEntry).medicationType === 'injectableEstradiol'
+			? ((item as any).subVialId || '')
+			: ''
+	);
+	$effect(() => {
+		if (!isDosage || (item as DosageHistoryEntry).medicationType !== 'injectableEstradiol') return;
+		const v = hrtData.data.vials.find((x) => x.id === selectedVialId);
+		if (!v) {
+			selectedSubVialId = '';
+			return;
+		}
+		if (!v.subVials.some((s) => s.id === selectedSubVialId)) {
+			selectedSubVialId = '';
+		}
+	});
+
 	// Measurement fields
 	let weight = $state(isMeasurement ? (item as Measurement).weight : undefined);
 	let weightUnit = $state(isMeasurement ? (item as Measurement).weightUnit || WeightUnit.KG : undefined);
@@ -118,6 +141,8 @@
 			}
 			if (dosageItem.medicationType === 'injectableEstradiol') {
 				(dosageItem as any).injectionSite = injectionSite || undefined;
+				(dosageItem as any).vialId = selectedVialId || undefined;         // add
+				(dosageItem as any).subVialId = selectedSubVialId || undefined;   // add
 			}
 		} else if (isMeasurement) {
 			const measurementItem = item as Measurement;
@@ -283,6 +308,43 @@
 						{/each}
 					</select>
 				</div>
+				<div class="mb-4">
+					<label for="modalVial" class="block text-sm mb-1">Vial (optional)</label>
+					<div class="flex items-center gap-2">
+						<select
+							id="modalVial"
+							bind:value={selectedVialId}
+							class="border py-2 px-3 rounded w-full leading-tight"
+						>
+							<option value="">None</option>
+							{#each hrtData.data.vials as v}
+								<option value={v.id}>
+									{(v.esterKind || 'Unknown ester')}{#if v.batchNumber} · {v.batchNumber}{/if}{#if v.source} · {v.source}{/if}
+								</option>
+							{/each}
+						</select>
+						<a class="text-latte-rose-pine-iris hover:text-rose-pine-love whitespace-nowrap" href="/vials/create" target="_blank" rel="noopener noreferrer">New…</a>
+					</div>
+				</div>
+				{#if selectedVialId}
+					{#each hrtData.data.vials.filter(v => v.id === selectedVialId) as v}
+						{#if v.subVials.length > 0}
+							<div class="mb-4">
+								<label for="modalSubVial" class="block text-sm mb-1">Sub‑vial / cartridge (optional)</label>
+								<select
+									id="modalSubVial"
+									bind:value={selectedSubVialId}
+									class="border py-2 px-3 rounded w-full leading-tight"
+								>
+									<option value="">None</option>
+									{#each v.subVials as s}
+										<option value={s.id}>#{s.personalNumber}</option>
+									{/each}
+								</select>
+							</div>
+						{/if}
+					{/each}
+				{/if}
 				{/if}
 			{/if}
 		{:else if isMeasurement}
