@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Transfeminine Science: Dose/Conc -> Volume; Volume/Conc -> Dose
+  // From Transfeminine Science: Dose/Conc -> Volume; Volume/Conc -> Dose
   let tfsDoseMg: number = 4;
   let tfsConcMgPerMl: number = 40;
   let tfsVolMl: number;
@@ -10,7 +10,7 @@
   let tfsDose2Mg: number;
   $: tfsDose2Mg = tfsConc2MgPerMl > 0 ? tfsVol2Ml * tfsConc2MgPerMl : NaN;
 
-  // HRT Cafe: Vial Life & Dose
+  // From HRT Cafe: Vial Life & Dose
   let cafeDoseMg: number = 4;
   let cafeFreqDays: number = 7;
   let cafeVialMl: number = 10;
@@ -75,7 +75,7 @@
 
   <!-- TFS: Dose/Volume/Concentration -->
   <section style="border: 1px solid var(--border, #ddd); border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">
-    <h2 style="margin-top: 0;">Dose, Volume, and Concentration Conversion (Transfeminine Science)</h2>
+    <h2 style="margin-top: 0;">Dose, Volume, and Concentration Conversion (from - Transfeminine Science)</h2>
 
     <div style="display: grid; grid-template-columns: 1fr; gap: 1rem;">
       <div>
@@ -120,7 +120,7 @@
 
   <!-- HRT Cafe: Vial Life & Dose Calculator -->
   <section style="border: 1px solid var(--border, #ddd); border-radius: 8px; padding: 1rem;">
-    <h2 style="margin-top: 0;">Vial Life & Dose Calculator (HRT Cafe)</h2>
+    <h2 style="margin-top: 0;">Vial Life & Dose Calculator (from HRT Cafe)</h2>
 
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.75rem;">
       <label>I am injecting
