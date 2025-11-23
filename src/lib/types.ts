@@ -171,6 +171,7 @@ export interface Vial {
   otherIngredients?: string;
   batchNumber?: string;
   source?: string; // Manufacturer / source
+  concentrationMgPerMl?: number; // Concentration (mg/mL)
   createdAt: UnixTime;
   subVials: SubVial[];
 }

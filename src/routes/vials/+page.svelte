@@ -35,11 +35,15 @@
               <div class="font-medium">{v.esterKind || '—'}</div>
               <div class="text-sm opacity-80">Batch: {v.batchNumber || '—'}</div>
               <div class="text-sm opacity-80">Source: {v.source || '—'}</div>
+              <div class="text-sm opacity-80">Concentration: {v.concentrationMgPerMl ?? '—'} mg/mL</div>
               <div class="text-sm opacity-80">Suspension oil: {v.suspensionOil || '—'}</div>
               <div class="text-sm opacity-80">Other ingredients: {v.otherIngredients || '—'}</div>
               <div class="text-xs opacity-60 mt-1">Created {new Date(v.createdAt).toLocaleString()}</div>
             </div>
-            <button class="text-red-600 hover:underline" on:click={() => delVial(v.id)}>Delete</button>
+            <div class="flex gap-3">
+              <a class="text-blue-600 hover:underline" href={`/vials/${v.id}`}>Edit</a>
+              <button class="text-red-600 hover:underline" on:click={() => delVial(v.id)}>Delete</button>
+            </div>
           </div>
 
           <div class="mt-3">

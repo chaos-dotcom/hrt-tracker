@@ -11,6 +11,7 @@
   let batchNumber: string = '';
   let source: string = '';
   let firstSubNumber: string = '';
+  let concentrationMgPerMl: number | '' = '';
 
   function submit(e: Event) {
     e.preventDefault();
@@ -20,7 +21,8 @@
       suspensionOil: suspensionOil.trim() || undefined,
       otherIngredients: otherIngredients.trim() || undefined,
       batchNumber: batchNumber.trim() || undefined,
-      source: source.trim() || undefined
+      source: source.trim() || undefined,
+      concentrationMgPerMl: Number.isFinite(+concentrationMgPerMl) && +concentrationMgPerMl > 0 ? +concentrationMgPerMl : undefined
     });
     if (firstSubNumber.trim()) {
       hrtData.addSubVial(id, firstSubNumber.trim());
@@ -56,6 +58,10 @@
     <div>
       <label class="block text-sm font-medium mb-1">Batch number</label>
       <input class="border rounded px-2 py-2 w-full" placeholder="Batch/lot #" bind:value={batchNumber} />
+    </div>
+    <div>
+      <label class="block text-sm font-medium mb-1">Concentration (mg/mL)</label>
+      <input class="border rounded px-2 py-2 w-full" type="number" step="any" min="0" placeholder="e.g., 40" bind:value={concentrationMgPerMl} />
     </div>
     <div>
       <label class="block text-sm font-medium mb-1">Manufacturer / Source</label>

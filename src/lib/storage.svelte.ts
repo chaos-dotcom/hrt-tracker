@@ -117,7 +117,7 @@ class hrtStore {
     this.data.measurements = this.data.measurements.filter((m) => m !== measurement);
   }
 
-  createVial(input: { esterKind?: string; suspensionOil?: string; otherIngredients?: string; batchNumber?: string; source?: string }): string {
+  createVial(input: { esterKind?: string; suspensionOil?: string; otherIngredients?: string; batchNumber?: string; source?: string; concentrationMgPerMl?: number }): string {
     const id = globalThis.crypto?.randomUUID?.() ?? String(Date.now());
     const vial: Vial = {
       id,
@@ -126,6 +126,7 @@ class hrtStore {
       otherIngredients: input.otherIngredients,
       batchNumber: input.batchNumber,
       source: input.source,
+      concentrationMgPerMl: input.concentrationMgPerMl,
       createdAt: Date.now(),
       subVials: []
     };
@@ -336,6 +337,18 @@ class hrtStore {
     processSchedule(this.data.antiandrogen, "antiandrogen");
     processSchedule(this.data.progesterone, "progesterone");
   }
+  getFirstDoseDate(): number | null {
+    const hist = this.data.dosageHistory ?? [];
+    if (hist.length === 0) return null;
+    return Math.min(...hist.map((d) => d.date));
+  }
+  getDaysSinceFirstDose(): number | null {
+    const first = this.getFirstDoseDate();
+    if (first === null) return null;
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    return Math.floor((Date.now() - first) / DAY_MS);
+  }
+
   constructor() {
     // $effect has been moved to init() to avoid effect_orphan error.
   }
