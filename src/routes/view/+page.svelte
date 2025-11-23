@@ -354,6 +354,8 @@
                     unit: cfg.unit,
                     vialId: cfg.vialId,           // add
                     subVialId: cfg.subVialId,     // add
+                    syringeKind: (cfg as any).syringeKind,   // add
+                    needleLength: (cfg as any).needleLength, // add
                 } as any;
                 hrtData.addDosageRecord(rec);
                 if (typeof cfg.frequency === 'number' && isFinite(cfg.frequency) && cfg.frequency > 0) {
@@ -369,6 +371,7 @@
                     type: cfg.type,
                     dose: cfg.dose,
                     unit: cfg.unit,
+                    pillQuantity: 1, // default
                 } as any;
                 hrtData.addDosageRecord(rec);
                 break;
@@ -394,6 +397,7 @@
                     dose: cfg.dose,
                     unit: cfg.unit,
                     route: cfg.route,
+                    pillQuantity: 1, // default
                 } as any;
                 hrtData.addDosageRecord(rec);
                 break;
@@ -1503,6 +1507,12 @@
                                         >
                                         <span>{t.type}</span>
                                         <span>{t.dose} {t.unit || "mg"}</span>
+                                        {#if t.medicationType === "oralEstradiol" && (t as any).pillQuantity}
+                                            <span>· {(t as any).pillQuantity} {((t as any).pillQuantity === 1) ? 'pill' : 'pills'}</span>
+                                        {/if}
+                                        {#if t.medicationType === "progesterone" && (t as any).pillQuantity}
+                                            <span>· {(t as any).pillQuantity} {((t as any).pillQuantity === 1) ? 'pill' : 'pills'}</span>
+                                        {/if}
                                     </div>
                                     {#if t.medicationType === "injectableEstradiol" && t.injectionSite}
                                         <div class="text-sm mt-1 text-gray-600 dark:text-gray-400">
@@ -1524,6 +1534,11 @@
                                             {:else}
                                                 —
                                             {/if}
+                                        </div>
+                                    {/if}
+                                    {#if t.medicationType === "injectableEstradiol" && ((t as any).syringeKind || (t as any).needleLength)}
+                                        <div class="text-sm mt-1 text-gray-600 dark:text-gray-400">
+                                            Syringe: {(t as any).syringeKind || '—'}{#if (t as any).needleLength} · Needle: {(t as any).needleLength}{/if}
                                         </div>
                                     {/if}
                                     {#if t.note}
