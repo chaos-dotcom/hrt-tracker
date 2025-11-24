@@ -6,7 +6,7 @@
   // Adapter is loaded dynamically in onMount for side-effects
 
   let getPKFunctions: ((cf?: number) => any) | null = null;
-  let pkReady = false;
+  let pkReady = $state(false);
   import { hrtData } from '$lib/storage.svelte';
 
   // PROPS
@@ -29,12 +29,12 @@
   });
 
   // DATA
-  let chartData: any = { labels: [], datasets: [] };
+  let chartData = $state({ labels: [] as Date[], datasets: [] as any[] });
   let options: any = {}; // Make options dynamic
 
   // Chart.js instance
   let chart: any = null;
-  let canvasEl: HTMLCanvasElement | null = null;
+  let canvasEl = $state(null as HTMLCanvasElement | null);
 
   let viewMin: number | null = null;
   let viewMax: number | null = null;
