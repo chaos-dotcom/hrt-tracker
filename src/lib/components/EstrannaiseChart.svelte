@@ -287,9 +287,9 @@
 </script>
 
 <div class="flex gap-2 items-center mb-2">
-  <button type="button" on:click={resetView} class="px-2 py-1 border rounded">Reset view (dbl‑click chart)</button>
-  <button type="button" on:click={setLast30Days} class="px-2 py-1 border rounded">Last 30 days</button>
-  <button type="button" on:click={fitAll} class="px-2 py-1 border rounded">Fit all</button>
+  <button type="button" onclick={resetView} class="px-2 py-1 border rounded">Reset view (dbl‑click chart)</button>
+  <button type="button" onclick={setLast30Days} class="px-2 py-1 border rounded">Last 30 days</button>
+  <button type="button" onclick={fitAll} class="px-2 py-1 border rounded">Fit all</button>
 </div>
 
 <div class="chart-container" style="height: 400px; position: relative;">

@@ -286,8 +286,8 @@
 		role="dialog"
 		aria-modal="true"
 		aria-labelledby="edit-modal-title"
-		on:click|stopPropagation
-		on:keydown|stopPropagation
+		onclick={(e) => e.stopPropagation()}
+		onkeydown={(e) => e.stopPropagation()}
 	>
 		<h2 id="edit-modal-title" class="mb-4 text-2xl font-bold">Edit Entry</h2>
 
