@@ -1,6 +1,5 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { Line } from 'svelte-chartjs';
   import {
     Chart as ChartJS,
     Title,
@@ -10,7 +9,8 @@
     CategoryScale,
     LinearScale,
     PointElement,
-    TimeScale
+    TimeScale,
+    Decimation
   } from 'chart.js';
   import zoomPlugin from 'chartjs-plugin-zoom';
   import 'chartjs-adapter-date-fns';
@@ -33,7 +33,8 @@
   let options: any = {}; // Make options dynamic
 
   // Chart.js instance
-  let chart: ChartJS;
+  let chart: ChartJS | null = null;
+  let canvasEl: HTMLCanvasElement | null = null;
 
   let viewMin: number | null = null;
   let viewMax: number | null = null;
@@ -173,6 +174,11 @@
             }
           }
         },
+        decimation: {
+          enabled: true,
+          algorithm: 'lttb',
+          samples: 1000
+        },
         zoom: {
           zoom: {
             wheel: { enabled: true, speed: 0.1 },
@@ -184,6 +190,10 @@
               borderWidth: 1,
               backgroundColor: 'rgba(239,68,68,0.15)'
             },
+            mode: 'x' as const
+          },
+          pan: {
+            enabled: true,
             mode: 'x' as const
           },
           limits: {
@@ -218,22 +228,45 @@
       LinearScale,
       PointElement,
       TimeScale,
-      zoomPlugin
+      zoomPlugin,
+      Decimation
     );
+    generateChartConfig();
+    if (canvasEl) {
+      chart = new ChartJS(canvasEl, {
+        type: 'line',
+        data: chartData,
+        options
+      });
+    }
   });
 
   $: {
-    if (chart && chart.canvas) {
+    if (canvasEl) {
       if (detachDbl) detachDbl();
       const handler = () => resetView();
-      chart.canvas.addEventListener('dblclick', handler);
-      detachDbl = () => chart.canvas.removeEventListener('dblclick', handler);
+      canvasEl.addEventListener('dblclick', handler);
+      detachDbl = () => canvasEl.removeEventListener('dblclick', handler);
     }
   }
-  onDestroy(() => { if (detachDbl) detachDbl(); });
+  onDestroy(() => {
+    if (detachDbl) detachDbl();
+    chart?.destroy();
+  });
 
   // Regenerate chart config whenever injections change
-  $: { injections; viewMin; viewMax; generateChartConfig(); }
+  $: {
+    injections; viewMin; viewMax;
+    generateChartConfig();
+    if (chart) {
+      chart.options = options as any;
+      chart.data.labels = chartData.labels as any;
+      chart.data.datasets = chartData.datasets as any;
+      chart.update('none');
+    } else if (canvasEl) {
+      chart = new ChartJS(canvasEl, { type: 'line', data: chartData, options });
+    }
+  }
 </script>
 
 <div class="flex gap-2 items-center mb-2">
@@ -244,7 +277,7 @@
 
 <div class="chart-container" style="height: 400px; position: relative;">
   {#if chartData.labels.length > 0}
-    <Line {chartData} {options} bind:chart />
+    <canvas bind:this={canvasEl} />
   {:else}
     <p>No injection data to display.</p>
   {/if}
