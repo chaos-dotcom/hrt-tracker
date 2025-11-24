@@ -27,6 +27,8 @@
 
   let viewMin: number | null = null;
   let viewMax: number | null = null;
+  let lastDataMin = $state<number | null>(null);
+  let lastDataMax = $state<number | null>(null);
 
   let pollId: any = null;
 
@@ -59,10 +61,9 @@
     }
   }
   function fitAll() {
-    const labels = chartData?.labels as Date[] | undefined;
-    if (labels && labels.length > 1) {
-      viewMin = labels[0].getTime();
-      viewMax = labels[labels.length - 1].getTime();
+    if (lastDataMin != null && lastDataMax != null) {
+      viewMin = lastDataMin;
+      viewMax = lastDataMax;
       chart?.resetZoom();
       chart?.update('none');
     }
@@ -117,11 +118,11 @@
       totalDays = (lastSimTime - firstInjectionTime) / (1000 * 3600 * 24);
     }
 
-    const labels: Date[] = [];
-    const dataPoints: number[] = [];
+    const points: { x: number; y: number }[] = [];
     const MAX_POINTS = 2000;
     const spanDays = Math.max(totalDays, 0.1);
     const step = Math.max(spanDays / MAX_POINTS, 0.05);
+    let maxY = 0;
 
     for (let day = 0; day <= spanDays; day += step) {
       const currentTime = firstInjectionTime + day * 1000 * 3600 * 24;
@@ -139,21 +140,25 @@
         totalE2 += pkFunction(timeSinceInjectionDays, injection.dose);
       }
 
-      labels.push(new Date(currentTime));
-      dataPoints.push(totalE2);
+      points.push({ x: currentTime, y: totalE2 });
+      if (totalE2 > maxY) maxY = totalE2;
     }
 
+    lastDataMin = points.length ? points[0].x : null;
+    lastDataMax = points.length ? points[points.length - 1].x : null;
+
     chartData = {
-      labels,
+      labels: [] as any, // not used when providing {x,y} points
       datasets: [
         {
           label: 'Simulated Estradiol (pg/mL)',
-          data: dataPoints,
+          data: points,
           borderColor: '#ef4444',
           backgroundColor: '#ef4444',
           pointRadius: 0,
           borderWidth: 2,
-          tension: 0.1
+          tension: 0.1,
+          parsing: true
         }
       ]
     };
@@ -165,8 +170,8 @@
       if (viewMin == null) viewMin = defaultMin;
       if (viewMax == null) viewMax = defaultMax;
     }
-    const dataMin = labels[0].getTime();
-    const dataMax = labels[labels.length - 1].getTime();
+    const dataMin = points[0]?.x ?? Date.now();
+    const dataMax = points[points.length - 1]?.x ?? addDaysMs(Date.now(), 1);
     // If current view does not overlap the data, auto-fit to data range
     if (viewMin == null || viewMax == null || viewMax < dataMin || viewMin > dataMax) {
       viewMin = dataMin;
@@ -197,7 +202,8 @@
             display: true,
             text: 'Estradiol (pg/mL)'
           },
-          beginAtZero: true
+          beginAtZero: true,
+          suggestedMax: Math.max(1, maxY * 1.2)
         }
       },
       plugins: {
@@ -242,8 +248,8 @@
           },
           limits: {
             x: {
-              min: labels[0].getTime(),
-              max: labels[labels.length - 1].getTime(),
+              min: dataMin,
+              max: dataMax,
               minRange: 6 * 3600 * 1000 // 6 hours
             }
           },
@@ -350,7 +356,6 @@
 
     if (chart) {
       chart.options = options as any;
-      chart.data.labels = chartData.labels as any;
       chart.data.datasets = chartData.datasets as any;
       chart.update('none');
     } else if (canvasEl && Chart) {
@@ -366,7 +371,7 @@
 </div>
 
 <div class="chart-container w-full relative" style="height: 400px; min-height: 400px; width: 100%;">
-  <canvas bind:this={canvasEl} style="width: 100%; height: 100%; display: block;"></canvas>
+  <canvas bind:this={canvasEl} style="width: 100%; height: 100%; display: block; border: 1px solid rgba(239,68,68,0.4);"></canvas>
   {#if !pkReady}
     <div class="absolute inset-0 flex items-center justify-center text-sm opacity-70 pointer-events-none">
       Loading simulation…
