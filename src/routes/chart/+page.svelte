@@ -1,7 +1,7 @@
 <script lang="ts">
   import EstrannaiseChart from '$lib/components/EstrannaiseChart.svelte';
   import { hrtData } from '$lib/storage.svelte';
-  import type { DosageHistoryEntry, InjectableEstradiols } from '$lib/types';
+  import type { DosageHistoryEntry } from '$lib/types';
 
   let injections = $state([] as { timestamp: number; dose: number; type: string }[]);
 
@@ -11,7 +11,7 @@
       .filter(
         (e): e is Extract<
           DosageHistoryEntry,
-          { medicationType: 'injectableEstradiol' } & { dose: number; date: number; type: InjectableEstradiols }
+          { medicationType: 'injectableEstradiol' } & { dose: number; date: number; type: string }
         > =>
           e.medicationType === 'injectableEstradiol' &&
           typeof e.dose === 'number' &&
@@ -21,7 +21,7 @@
       .map((e) => ({
         timestamp: e.date,
         dose: e.dose,
-        type: e.type as any as InjectableEstradiols
+        type: String(e.type)
       }));
   });
 </script>

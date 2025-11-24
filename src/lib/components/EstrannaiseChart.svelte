@@ -7,7 +7,7 @@
 
   let getPKFunctions: ((cf?: number) => any) | null = null;
   let pkReady = false;
-  import { InjectableEstradiols } from '$lib/types';
+  import { hrtData } from '$lib/storage.svelte';
 
   // PROPS
   // Expects an array of injection events.
@@ -17,6 +17,20 @@
     dose: number;
     type: string;
   }[] = [];
+
+  let derivedInjections = $state([] as { timestamp: number; dose: number; type: string }[]);
+  $effect(() => {
+    const hist = hrtData.data?.dosageHistory ?? [];
+    derivedInjections = hist
+      .filter((e: any) =>
+        e &&
+        e.medicationType === 'injectableEstradiol' &&
+        typeof e.dose === 'number' &&
+        typeof e.date === 'number' &&
+        typeof e.type === 'string'
+      )
+      .map((e: any) => ({ timestamp: e.date, dose: e.dose, type: e.type }));
+  });
 
   // DATA
   let chartData: any = { labels: [], datasets: [] };
@@ -57,12 +71,12 @@
   }
 
   // This maps your application's estradiol types to the model names used by Estrannaise.
-  const estradiolModelMap: Partial<Record<InjectableEstradiols, string>> = {
-    [InjectableEstradiols.Valerate]: 'EV im',
-    [InjectableEstradiols.Enanthate]: 'EEn im',
-    [InjectableEstradiols.Cypionate]: 'EC im',
-    [InjectableEstradiols.Undecylate]: 'EUn im',
-    [InjectableEstradiols.Benzoate]: 'EB im'
+  const estradiolModelMap: Record<string, string> = {
+    'Estradiol Valerate': 'EV im',
+    'Estradiol Enanthate': 'EEn im',
+    'Estradiol Cypionate': 'EC im',
+    'Estradiol Undecylate': 'EUn im',
+    'Estradiol Benzoate': 'EB im'
     // Note: PolyestradiolPhosphate is not supported by the Estrannaise model file.
   };
 
@@ -83,14 +97,15 @@
     }
     const pkFunctions = getPKFunctions(); // Using default conversion factor (outputs pg/mL)
 
-    if (!injections || injections.length === 0) {
+    const src = injections?.length ? injections : derivedInjections;
+    if (!src || src.length === 0) {
       chartData = { labels: [], datasets: [] };
       // Reset options when there's no data
       options = { plugins: { zoom: { pan: { enabled: false }, zoom: { wheel: { enabled: false } } } } };
       return;
     }
 
-    const sortedInjections = [...injections].sort((a, b) => a.timestamp - b.timestamp);
+    const sortedInjections = [...src].sort((a, b) => a.timestamp - b.timestamp);
     const firstInjectionTime = sortedInjections[0].timestamp;
     const lastSimTime = addDaysMs(Date.now(), 14); // Simulate 14 days into the future
     const totalDays = (lastSimTime - firstInjectionTime) / (1000 * 3600 * 24);
@@ -108,7 +123,7 @@
       for (const injection of sortedInjections) {
         if (injection.timestamp > currentTime) continue;
 
-        const model = estradiolModelMap[injection.type as any] ?? toModelKey(String(injection.type));
+        const model = estradiolModelMap[String(injection.type)] ?? toModelKey(String(injection.type));
         if (!model || !pkFunctions[model]) continue;
 
         const timeSinceInjectionDays = (currentTime - injection.timestamp) / (1000 * 3600 * 24);
@@ -283,7 +298,7 @@
 
   // Regenerate chart config whenever injections change
   $: {
-    injections; viewMin; viewMax; pkReady;
+    injections; derivedInjections; viewMin; viewMax; pkReady;
     generateChartConfig();
     if (chart) {
       chart.options = options as any;
