@@ -5,15 +5,25 @@
 
   let injections: { timestamp: number; dose: number; type: InjectableEstradiols }[] = [];
 
-  $: {
-    const hist = hrtData?.data?.dosageHistory ?? [];
+  $effect(() => {
+    const hist = hrtData.data?.dosageHistory ?? [];
     injections = hist
       .filter(
-        (e): e is Extract<DosageHistoryEntry, { medicationType: 'injectableEstradiol' }> =>
-          e.medicationType === 'injectableEstradiol' && typeof e.dose === 'number' && typeof e.date === 'number'
+        (e): e is Extract<
+          DosageHistoryEntry,
+          { medicationType: 'injectableEstradiol' } & { dose: number; date: number; type: InjectableEstradiols }
+        > =>
+          e.medicationType === 'injectableEstradiol' &&
+          typeof e.dose === 'number' &&
+          typeof e.date === 'number' &&
+          typeof e.type === 'string'
       )
-      .map(e => ({ timestamp: e.date, dose: e.dose, type: e.type }));
-  }
+      .map((e) => ({
+        timestamp: e.date,
+        dose: e.dose,
+        type: e.type as any as InjectableEstradiols
+      }));
+  });
 </script>
 
 <svelte:head><title>Estradiol Simulation</title></svelte:head>
