@@ -1,19 +1,9 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import {
-    Chart as ChartJS,
-    Title,
-    Tooltip,
-    Legend,
-    LineElement,
-    CategoryScale,
-    LinearScale,
-    PointElement,
-    TimeScale,
-    Decimation
-  } from 'chart.js';
-  import zoomPlugin from 'chartjs-plugin-zoom';
-  import 'chartjs-adapter-date-fns';
+  // Defer Chart.js and plugins to the client to avoid SSR import issues
+  let Chart: any = null;
+  let zoomPlugin: any = null;
+  // Adapter is loaded dynamically in onMount for side-effects
   import { subDays, addDays } from 'date-fns';
 
   import { PKFunctions } from '../../../vendor/estrannaise/src/models.js';
@@ -33,7 +23,7 @@
   let options: any = {}; // Make options dynamic
 
   // Chart.js instance
-  let chart: ChartJS | null = null;
+  let chart: any = null;
   let canvasEl: HTMLCanvasElement | null = null;
 
   let viewMin: number | null = null;
@@ -218,22 +208,30 @@
     };
   }
 
-  onMount(() => {
-    ChartJS.register(
-      Title,
-      Tooltip,
-      Legend,
-      LineElement,
-      CategoryScale,
-      LinearScale,
-      PointElement,
-      TimeScale,
+  onMount(async () => {
+    const chartjs = await import('chart.js');
+    const zoomMod = await import('chartjs-plugin-zoom');
+    await import('chartjs-adapter-date-fns'); // side-effect registration for time scale
+
+    Chart = chartjs.Chart;
+    zoomPlugin = zoomMod.default;
+
+    Chart.register(
+      chartjs.Title,
+      chartjs.Tooltip,
+      chartjs.Legend,
+      chartjs.LineElement,
+      chartjs.CategoryScale,
+      chartjs.LinearScale,
+      chartjs.PointElement,
+      chartjs.TimeScale,
       zoomPlugin,
-      Decimation
+      chartjs.Decimation
     );
+
     generateChartConfig();
     if (canvasEl) {
-      chart = new ChartJS(canvasEl, {
+      chart = new Chart(canvasEl, {
         type: 'line',
         data: chartData,
         options
@@ -263,8 +261,8 @@
       chart.data.labels = chartData.labels as any;
       chart.data.datasets = chartData.datasets as any;
       chart.update('none');
-    } else if (canvasEl) {
-      chart = new ChartJS(canvasEl, { type: 'line', data: chartData, options });
+    } else if (canvasEl && Chart) {
+      chart = new Chart(canvasEl, { type: 'line', data: chartData, options });
     }
   }
 </script>
