@@ -12,11 +12,7 @@
   // PROPS
   // Expects an array of injection events.
   // Each event should have a timestamp (Unix ms), dose (in mg), and type.
-  export let injections: {
-    timestamp: number;
-    dose: number;
-    type: string;
-  }[] = [];
+  let { injections = [] } = $props<{ injections?: { timestamp: number; dose: number; type: string }[] }>();
 
   let derivedInjections = $state([] as { timestamp: number; dose: number; type: string }[]);
   $effect(() => {
