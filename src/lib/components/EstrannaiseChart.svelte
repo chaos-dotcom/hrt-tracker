@@ -15,7 +15,7 @@
   export let injections: {
     timestamp: number;
     dose: number;
-    type: InjectableEstradiols;
+    type: string;
   }[] = [];
 
   // DATA
@@ -66,6 +66,16 @@
     // Note: PolyestradiolPhosphate is not supported by the Estrannaise model file.
   };
 
+  function toModelKey(name: string): string | undefined {
+    const n = (name || '').toLowerCase();
+    if (n.includes('valerate')) return 'EV im';
+    if (n.includes('enanthate')) return 'EEn im';
+    if (n.includes('cyp')) return 'EC im';
+    if (n.includes('undec')) return 'EUn im';
+    if (n.includes('benzo')) return 'EB im';
+    return undefined;
+  }
+
   function generateChartConfig() {
     if (!getPKFunctions) {
       // models not loaded yet; wait for pkReady
@@ -98,7 +108,7 @@
       for (const injection of sortedInjections) {
         if (injection.timestamp > currentTime) continue;
 
-        const model = estradiolModelMap[injection.type];
+        const model = estradiolModelMap[injection.type as any] ?? toModelKey(String(injection.type));
         if (!model || !pkFunctions[model]) continue;
 
         const timeSinceInjectionDays = (currentTime - injection.timestamp) / (1000 * 3600 * 24);
@@ -292,9 +302,11 @@
   <button type="button" onclick={fitAll} class="px-2 py-1 border rounded">Fit all</button>
 </div>
 
-<div class="chart-container" style="height: 400px; position: relative;">
-  {#if chartData.labels.length > 0}
-    <canvas bind:this={canvasEl}></canvas>
+<div class="chart-container w-full" style="height: 400px; min-height: 400px; width: 100%; position: relative;">
+  {#if pkReady && chartData.labels.length > 0}
+    <canvas bind:this={canvasEl} style="width: 100%; height: 100%; display: block;"></canvas>
+  {:else if !pkReady}
+    <p>Loading simulation…</p>
   {:else}
     <p>No injection data to display.</p>
   {/if}
