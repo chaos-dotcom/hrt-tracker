@@ -5,7 +5,8 @@
   let zoomPlugin: any = null;
   // Adapter is loaded dynamically in onMount for side-effects
 
-  import { PKFunctions } from '../../../vendor/estrannaise/src/models.js';
+  let getPKFunctions: ((cf?: number) => any) | null = null;
+  let pkReady = false;
   import { InjectableEstradiols } from '$lib/types';
 
   // PROPS
@@ -66,7 +67,11 @@
   };
 
   function generateChartConfig() {
-    const pkFunctions = PKFunctions(); // Using default conversion factor (outputs pg/mL)
+    if (!getPKFunctions) {
+      // models not loaded yet; wait for pkReady
+      return;
+    }
+    const pkFunctions = getPKFunctions(); // Using default conversion factor (outputs pg/mL)
 
     if (!injections || injections.length === 0) {
       chartData = { labels: [], datasets: [] };
@@ -222,6 +227,11 @@
     const zoomMod = await import('chartjs-plugin-zoom');
     await import('chartjs-adapter-date-fns'); // side-effect registration for time scale
 
+    // Load Estrannaise models on client only
+    const mod = await import('../../../vendor/estrannaise/src/models.js');
+    getPKFunctions = mod.PKFunctions;
+    pkReady = true;
+
     Chart = chartjs.Chart;
     zoomPlugin = zoomMod.default;
 
@@ -263,14 +273,14 @@
 
   // Regenerate chart config whenever injections change
   $: {
-    injections; viewMin; viewMax;
+    injections; viewMin; viewMax; pkReady;
     generateChartConfig();
     if (chart) {
       chart.options = options as any;
       chart.data.labels = chartData.labels as any;
       chart.data.datasets = chartData.datasets as any;
       chart.update('none');
-    } else if (canvasEl && Chart) {
+    } else if (canvasEl && Chart && pkReady) {
       chart = new Chart(canvasEl, { type: 'line', data: chartData, options });
     }
   }
