@@ -1,4 +1,4 @@
-import Spline from 'cubic-spline';
+import Spline from './spline-shim.js';
 
 import {
     PKParameters,

@@ -28,7 +28,6 @@
 		"chart.js": "^4.4.0",
 		"chartjs-adapter-date-fns": "^3.0.0",
 		"chartjs-plugin-zoom": "^2.0.1",
-		"cubic-spline": "^2.0.0",
 		"date-fns": "^3.6.0",
 		"tailwindcss": "^4.1.5",
 		"yaml": "^2.8.1"
