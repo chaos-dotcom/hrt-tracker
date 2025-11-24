@@ -4,7 +4,6 @@
   let Chart: any = null;
   let zoomPlugin: any = null;
   // Adapter is loaded dynamically in onMount for side-effects
-  import { subDays, addDays } from 'date-fns';
 
   import { PKFunctions } from '../../../vendor/estrannaise/src/models.js';
   import { InjectableEstradiols } from '$lib/types';
@@ -30,10 +29,17 @@
   let viewMax: number | null = null;
   let detachDbl: (() => void) | null = null;
 
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const addDaysMs = (ms: number, days: number) => ms + days * DAY_MS;
+  const subDaysMs = (ms: number, days: number) => ms - days * DAY_MS;
+
   function setLast30Days() {
-    viewMin = subDays(new Date(), 30).getTime();
-    viewMax = addDays(new Date(), 2).getTime();
-    chart?.update('none');
+    {
+      const now = Date.now();
+      viewMin = subDaysMs(now, 30);
+      viewMax = addDaysMs(now, 2);
+      chart?.update('none');
+    }
   }
   function fitAll() {
     const labels = chartData?.labels as Date[] | undefined;
@@ -71,7 +77,7 @@
 
     const sortedInjections = [...injections].sort((a, b) => a.timestamp - b.timestamp);
     const firstInjectionTime = sortedInjections[0].timestamp;
-    const lastSimTime = addDays(new Date(), 14).getTime(); // Simulate 14 days into the future
+    const lastSimTime = addDaysMs(Date.now(), 14); // Simulate 14 days into the future
     const totalDays = (lastSimTime - firstInjectionTime) / (1000 * 3600 * 24);
 
     const labels: Date[] = [];
@@ -114,10 +120,13 @@
       ]
     };
 
-    const defaultMin = subDays(new Date(), 30).getTime();
-    const defaultMax = addDays(new Date(), 2).getTime();
-    if (viewMin == null) viewMin = defaultMin;
-    if (viewMax == null) viewMax = defaultMax;
+    {
+      const now = Date.now();
+      const defaultMin = subDaysMs(now, 30);
+      const defaultMax = addDaysMs(now, 2);
+      if (viewMin == null) viewMin = defaultMin;
+      if (viewMax == null) viewMax = defaultMax;
+    }
 
     options = {
       responsive: true,
@@ -275,7 +284,7 @@
 
 <div class="chart-container" style="height: 400px; position: relative;">
   {#if chartData.labels.length > 0}
-    <canvas bind:this={canvasEl} />
+    <canvas bind:this={canvasEl}></canvas>
   {:else}
     <p>No injection data to display.</p>
   {/if}

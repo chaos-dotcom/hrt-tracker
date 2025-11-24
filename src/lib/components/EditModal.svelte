@@ -232,7 +232,7 @@
 
 	let uploadBusy = $state(false);
 
-	let fileInputEl: HTMLInputElement | null = null;
+	let fileInputEl = $state(null as HTMLInputElement | null);
 
 	function openPhotoPicker() {
 		if (uploadBusy) return;
@@ -276,13 +276,20 @@
 
 <div
 	class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50"
+	role="button"
+	tabindex="0"
 	onclick={close}
+	onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); close(); } }}
 >
 	<div
 		class="bg-latte-rose-pine-base dark:bg-rose-pine-base max-w-md w-full rounded-lg p-6 shadow-xl"
-		onclick={(e) => e.stopPropagation()}
+		role="dialog"
+		aria-modal="true"
+		aria-labelledby="edit-modal-title"
+		on:click|stopPropagation
+		on:keydown|stopPropagation
 	>
-		<h2 class="mb-4 text-2xl font-bold">Edit Entry</h2>
+		<h2 id="edit-modal-title" class="mb-4 text-2xl font-bold">Edit Entry</h2>
 
 		<div class="mb-4">
 			<label for="edit-date" class="mb-2 block text-sm font-medium">Date / Time</label>
@@ -474,7 +481,7 @@
 					/>
 				</div>
 				<div class="mb-4">
-					<label class="block text-sm mb-1">Photos (optional)</label>
+					<label class="block text-sm mb-1" for="modalPhotos">Photos (optional)</label>
 					{#if (dosageItem as any).photos?.length}
 						<div class="flex flex-wrap gap-3 mb-2">
 							{#each (dosageItem as any).photos as p (typeof p === 'string' ? p : p.file)}
@@ -558,7 +565,7 @@
 				</div>
 			</div>
 			<div class="mb-4">
-				<label class="block text-sm font-medium mb-2">Body Measurements</label>
+				<p class="block text-sm font-medium mb-2">Body Measurements</p>
 				<div class="flex justify-end mb-2">
 					<select class="border py-1 px-2 rounded text-sm" bind:value={bodyMeasurementUnit}>
 						{#each lengthUnitOptions as option}
