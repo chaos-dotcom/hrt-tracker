@@ -30,6 +30,8 @@
 
   let pollId: any = null;
 
+  let readyHandler: ((e?: any) => void) | null = null;
+
   function recomputeDerived() {
     const hist = hrtData.data?.dosageHistory ?? [];
     const next = hist
@@ -303,7 +305,11 @@
         chart = new Chart(canvasEl, { type: 'line', data: chartData, options });
       }
     };
+    readyHandler = onReady;
     window.addEventListener('hrt-data-ready', onReady);
+    // Initialize immediately once imports are done
+    onReady();
+
     pollId = setInterval(() => {
       const before = derivedInjections.length;
       recomputeDerived();
@@ -331,7 +337,7 @@
   });
   onDestroy(() => {
     if (pollId) clearInterval(pollId);
-    window.removeEventListener('hrt-data-ready', () => {});
+    if (readyHandler) window.removeEventListener('hrt-data-ready', readyHandler);
     chart?.destroy();
   });
 
