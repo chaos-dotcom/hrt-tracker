@@ -102,15 +102,21 @@
 
     const sortedInjections = [...src].sort((a, b) => a.timestamp - b.timestamp);
     const firstInjectionTime = sortedInjections[0].timestamp;
-    const lastSimTime = addDaysMs(Date.now(), 14); // Simulate 14 days into the future
-    const totalDays = (lastSimTime - firstInjectionTime) / (1000 * 3600 * 24);
+    let lastSimTime = addDaysMs(Date.now(), 14); // Simulate 14 days into the future
+    let totalDays = (lastSimTime - firstInjectionTime) / (1000 * 3600 * 24);
+    if (totalDays <= 0) {
+      // if first injection is in the future beyond now+14d, simulate 14d from the first injection
+      lastSimTime = addDaysMs(firstInjectionTime, 14);
+      totalDays = (lastSimTime - firstInjectionTime) / (1000 * 3600 * 24);
+    }
 
     const labels: Date[] = [];
     const dataPoints: number[] = [];
     const MAX_POINTS = 2000;
-    const step = Math.max(totalDays / MAX_POINTS, 0.05);
+    const spanDays = Math.max(totalDays, 0.1);
+    const step = Math.max(spanDays / MAX_POINTS, 0.05);
 
-    for (let day = 0; day <= totalDays; day += step) {
+    for (let day = 0; day <= spanDays; day += step) {
       const currentTime = firstInjectionTime + day * 1000 * 3600 * 24;
       let totalE2 = 0;
 
@@ -243,38 +249,32 @@
   }
 
   onMount(async () => {
-    const chartjs = await import('chart.js');
-    const zoomMod = await import('chartjs-plugin-zoom');
-    await import('chartjs-adapter-date-fns'); // side-effect registration for time scale
+    try {
+      const chartjs = await import('chart.js');
+      const zoomMod = await import('chartjs-plugin-zoom');
+      await import('chartjs-adapter-date-fns'); // side-effect registration for time scale
 
-    // Load Estrannaise models on client only
-    const mod = await import('@estrannaise/models.js');
-    getPKFunctions = mod.PKFunctions;
-    pkReady = true;
+      // Load Estrannaise models on client only
+      const mod = await import('@estrannaise/models.js');
+      getPKFunctions = mod.PKFunctions;
 
-    Chart = chartjs.Chart;
-    zoomPlugin = zoomMod.default;
+      Chart = chartjs.Chart;
+      zoomPlugin = zoomMod.default;
 
-    Chart.register(
-      chartjs.Title,
-      chartjs.Tooltip,
-      chartjs.Legend,
-      chartjs.LineElement,
-      chartjs.CategoryScale,
-      chartjs.LinearScale,
-      chartjs.PointElement,
-      chartjs.TimeScale,
-      zoomPlugin,
-      chartjs.Decimation
-    );
-
-    generateChartConfig();
-    if (canvasEl) {
-      chart = new Chart(canvasEl, {
-        type: 'line',
-        data: chartData,
-        options
-      });
+      Chart.register(
+        chartjs.Title,
+        chartjs.Tooltip,
+        chartjs.Legend,
+        chartjs.LineElement,
+        chartjs.CategoryScale,
+        chartjs.LinearScale,
+        chartjs.PointElement,
+        chartjs.TimeScale,
+        zoomPlugin,
+        chartjs.Decimation
+      );
+    } finally {
+      pkReady = true; // ensure UI leaves loading state even if something failed
     }
   });
 
@@ -300,7 +300,7 @@
       chart.data.labels = chartData.labels as any;
       chart.data.datasets = chartData.datasets as any;
       chart.update('none');
-    } else if (canvasEl && Chart && pkReady) {
+    } else if (canvasEl && Chart) {
       chart = new Chart(canvasEl, { type: 'line', data: chartData, options });
     }
   });
@@ -312,12 +312,11 @@
   <button type="button" onclick={fitAll} class="px-2 py-1 border rounded">Fit all</button>
 </div>
 
-<div class="chart-container w-full" style="height: 400px; min-height: 400px; width: 100%; position: relative;">
-  {#if pkReady && chartData.labels.length > 0}
-    <canvas bind:this={canvasEl} style="width: 100%; height: 100%; display: block;"></canvas>
-  {:else if !pkReady}
-    <p>Loading simulation…</p>
-  {:else}
-    <p>No injection data to display.</p>
+<div class="chart-container w-full relative" style="height: 400px; min-height: 400px; width: 100%;">
+  <canvas bind:this={canvasEl} style="width: 100%; height: 100%; display: block;"></canvas>
+  {#if !pkReady}
+    <div class="absolute inset-0 flex items-center justify-center text-sm opacity-70 pointer-events-none">
+      Loading simulation…
+    </div>
   {/if}
 </div>
