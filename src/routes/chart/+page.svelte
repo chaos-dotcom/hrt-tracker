@@ -3,7 +3,7 @@
   import { hrtData } from '$lib/storage.svelte';
   import type { DosageHistoryEntry, InjectableEstradiols } from '$lib/types';
 
-  let injections: { timestamp: number; dose: number; type: InjectableEstradiols }[] = [];
+  let injections = $state([] as { timestamp: number; dose: number; type: InjectableEstradiols }[]);
 
   $effect(() => {
     const hist = hrtData.data?.dosageHistory ?? [];
