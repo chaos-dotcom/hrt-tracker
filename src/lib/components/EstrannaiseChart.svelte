@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { Line } from 'svelte-chartjs';
   import {
     Chart as ChartJS,
@@ -16,7 +16,7 @@
   import 'chartjs-adapter-date-fns';
   import { subDays, addDays } from 'date-fns';
 
-  import { PKFunctions } from '../../../../vendor/estrannaise/src/models.js';
+  import { PKFunctions } from '../../../vendor/estrannaise/src/models.js';
   import { InjectableEstradiols } from '$lib/types';
 
   // PROPS
@@ -34,6 +34,29 @@
 
   // Chart.js instance
   let chart: ChartJS;
+
+  let viewMin: number | null = null;
+  let viewMax: number | null = null;
+  let detachDbl: (() => void) | null = null;
+
+  function setLast30Days() {
+    viewMin = subDays(new Date(), 30).getTime();
+    viewMax = addDays(new Date(), 2).getTime();
+    chart?.update('none');
+  }
+  function fitAll() {
+    const labels = chartData?.labels as Date[] | undefined;
+    if (labels && labels.length > 1) {
+      viewMin = labels[0].getTime();
+      viewMax = labels[labels.length - 1].getTime();
+      chart?.resetZoom();
+      chart?.update('none');
+    }
+  }
+  function resetView() {
+    setLast30Days();
+    chart?.resetZoom();
+  }
 
   // This maps your application's estradiol types to the model names used by Estrannaise.
   const estradiolModelMap: Partial<Record<InjectableEstradiols, string>> = {
@@ -62,7 +85,8 @@
 
     const labels: Date[] = [];
     const dataPoints: number[] = [];
-    const step = 0.1; // Chart resolution in days
+    const MAX_POINTS = 2000;
+    const step = Math.max(totalDays / MAX_POINTS, 0.05);
 
     for (let day = 0; day <= totalDays; day += step) {
       const currentTime = firstInjectionTime + day * 1000 * 3600 * 24;
@@ -99,9 +123,16 @@
       ]
     };
 
+    const defaultMin = subDays(new Date(), 30).getTime();
+    const defaultMax = addDays(new Date(), 2).getTime();
+    if (viewMin == null) viewMin = defaultMin;
+    if (viewMax == null) viewMax = defaultMax;
+
     options = {
       responsive: true,
       maintainAspectRatio: false,
+      interaction: { mode: 'index' as const, intersect: false },
+      animation: { duration: 0 },
       scales: {
         x: {
           type: 'time' as const,
@@ -113,8 +144,8 @@
             text: 'Date'
           },
           // Default view: last 30 days to 2 days in the future
-          min: subDays(new Date(), 30).getTime(),
-          max: addDays(new Date(), 2).getTime()
+          min: viewMin,
+          max: viewMax
         },
         y: {
           title: {
@@ -143,18 +174,34 @@
           }
         },
         zoom: {
-          pan: {
-            enabled: true,
+          zoom: {
+            wheel: { enabled: true, speed: 0.1 },
+            pinch: { enabled: true },
+            drag: {
+              enabled: true,
+              modifierKey: 'shift',
+              borderColor: '#ef4444',
+              borderWidth: 1,
+              backgroundColor: 'rgba(239,68,68,0.15)'
+            },
             mode: 'x' as const
           },
-          zoom: {
-            wheel: {
-              enabled: true
-            },
-            pinch: {
-              enabled: true
-            },
-            mode: 'x' as const
+          limits: {
+            x: {
+              min: labels[0].getTime(),
+              max: labels[labels.length - 1].getTime(),
+              minRange: 6 * 3600 * 1000 // 6 hours
+            }
+          },
+          onZoomComplete({ chart: c }) {
+            const xs = c.scales.x;
+            viewMin = xs.min;
+            viewMax = xs.max;
+          },
+          onPanComplete({ chart: c }) {
+            const xs = c.scales.x;
+            viewMin = xs.min;
+            viewMax = xs.max;
           }
         }
       }
@@ -175,9 +222,25 @@
     );
   });
 
+  $: {
+    if (chart && chart.canvas) {
+      if (detachDbl) detachDbl();
+      const handler = () => resetView();
+      chart.canvas.addEventListener('dblclick', handler);
+      detachDbl = () => chart.canvas.removeEventListener('dblclick', handler);
+    }
+  }
+  onDestroy(() => { if (detachDbl) detachDbl(); });
+
   // Regenerate chart config whenever injections change
-  $: generateChartConfig();
+  $: { injections; viewMin; viewMax; generateChartConfig(); }
 </script>
+
+<div class="flex gap-2 items-center mb-2">
+  <button type="button" on:click={resetView} class="px-2 py-1 border rounded">Reset view (dbl‑click chart)</button>
+  <button type="button" on:click={setLast30Days} class="px-2 py-1 border rounded">Last 30 days</button>
+  <button type="button" on:click={fitAll} class="px-2 py-1 border rounded">Fit all</button>
+</div>
 
 <div class="chart-container" style="height: 400px; position: relative;">
   {#if chartData.labels.length > 0}
