@@ -38,7 +38,6 @@
 
   let viewMin: number | null = null;
   let viewMax: number | null = null;
-  let detachDbl: (() => void) | null = null;
 
   const DAY_MS = 24 * 60 * 60 * 1000;
   const addDaysMs = (ms: number, days: number) => ms + days * DAY_MS;
@@ -279,23 +278,23 @@
     }
   });
 
-  $: {
-    if (canvasEl) {
-      if (detachDbl) detachDbl();
-      const handler = () => resetView();
-      canvasEl.addEventListener('dblclick', handler);
-      detachDbl = () => canvasEl.removeEventListener('dblclick', handler);
-    }
-  }
+  $effect(() => {
+    if (!canvasEl) return;
+    const handler = () => resetView();
+    canvasEl.addEventListener('dblclick', handler);
+    return () => canvasEl?.removeEventListener('dblclick', handler);
+  });
   onDestroy(() => {
-    if (detachDbl) detachDbl();
     chart?.destroy();
   });
 
   // Regenerate chart config whenever injections change
-  $: {
-    injections; derivedInjections; viewMin; viewMax; pkReady;
+  $effect(() => {
+    // dependencies
+    void injections; void derivedInjections; void viewMin; void viewMax; void pkReady; void canvasEl; void Chart;
+
     generateChartConfig();
+
     if (chart) {
       chart.options = options as any;
       chart.data.labels = chartData.labels as any;
@@ -304,7 +303,7 @@
     } else if (canvasEl && Chart && pkReady) {
       chart = new Chart(canvasEl, { type: 'line', data: chartData, options });
     }
-  }
+  });
 </script>
 
 <div class="flex gap-2 items-center mb-2">
