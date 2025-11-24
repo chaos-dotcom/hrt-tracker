@@ -286,6 +286,7 @@
 		role="dialog"
 		aria-modal="true"
 		aria-labelledby="edit-modal-title"
+		tabindex="-1"
 		onclick={(e) => e.stopPropagation()}
 		onkeydown={(e) => e.stopPropagation()}
 	>

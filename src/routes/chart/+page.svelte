@@ -1,12 +1,12 @@
 <script lang="ts">
   import EstrannaiseChart from '$lib/components/EstrannaiseChart.svelte';
-  import { hrt } from '$lib/storage.svelte';
+  import { hrtData } from '$lib/storage.svelte';
   import type { DosageHistoryEntry, InjectableEstradiols } from '$lib/types';
 
   let injections: { timestamp: number; dose: number; type: InjectableEstradiols }[] = [];
 
   $: {
-    const hist = hrt?.data?.dosageHistory ?? [];
+    const hist = hrtData?.data?.dosageHistory ?? [];
     injections = hist
       .filter(
         (e): e is Extract<DosageHistoryEntry, { medicationType: 'injectableEstradiol' }> =>
