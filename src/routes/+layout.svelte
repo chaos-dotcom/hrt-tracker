@@ -7,6 +7,7 @@
 
 	if (browser) {
 		hrtData.init(data.initialHrtData);
+		setTimeout(() => window.dispatchEvent(new CustomEvent('hrt-data-ready')), 0);
 	}
 </script>
 

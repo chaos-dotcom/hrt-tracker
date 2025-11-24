@@ -15,18 +15,7 @@
   let { injections = [] } = $props<{ injections?: { timestamp: number; dose: number; type: string }[] }>();
 
   let derivedInjections = $state([] as { timestamp: number; dose: number; type: string }[]);
-  $effect(() => {
-    const hist = hrtData.data?.dosageHistory ?? [];
-    derivedInjections = hist
-      .filter((e: any) =>
-        e &&
-        e.medicationType === 'injectableEstradiol' &&
-        typeof e.dose === 'number' &&
-        typeof e.date === 'number' &&
-        typeof e.type === 'string'
-      )
-      .map((e: any) => ({ timestamp: e.date, dose: e.dose, type: e.type }));
-  });
+  
 
   // DATA
   let chartData = $state({ labels: [] as Date[], datasets: [] as any[] });
@@ -38,6 +27,22 @@
 
   let viewMin: number | null = null;
   let viewMax: number | null = null;
+
+  let pollId: any = null;
+
+  function recomputeDerived() {
+    const hist = hrtData.data?.dosageHistory ?? [];
+    const next = hist
+      .filter((e: any) =>
+        e &&
+        e.medicationType === 'injectableEstradiol' &&
+        typeof e.dose === 'number' &&
+        typeof e.date === 'number' &&
+        typeof e.type === 'string'
+      )
+      .map((e: any) => ({ timestamp: e.date, dose: e.dose, type: e.type }));
+    derivedInjections = next;
+  }
 
   const DAY_MS = 24 * 60 * 60 * 1000;
   const addDaysMs = (ms: number, days: number) => ms + days * DAY_MS;
@@ -158,6 +163,13 @@
       if (viewMin == null) viewMin = defaultMin;
       if (viewMax == null) viewMax = defaultMax;
     }
+    const dataMin = labels[0].getTime();
+    const dataMax = labels[labels.length - 1].getTime();
+    // If current view does not overlap the data, auto-fit to data range
+    if (viewMin == null || viewMax == null || viewMax < dataMin || viewMin > dataMax) {
+      viewMin = dataMin;
+      viewMax = dataMax;
+    }
 
     options = {
       responsive: true,
@@ -276,6 +288,39 @@
     } finally {
       pkReady = true; // ensure UI leaves loading state even if something failed
     }
+
+    // kick initial compute and short poll to catch async init
+    recomputeDerived();
+    const onReady = () => {
+      recomputeDerived();
+      generateChartConfig();
+      if (chart) {
+        chart.options = options as any;
+        chart.data.labels = chartData.labels as any;
+        chart.data.datasets = chartData.datasets as any;
+        chart.update('none');
+      } else if (canvasEl && Chart) {
+        chart = new Chart(canvasEl, { type: 'line', data: chartData, options });
+      }
+    };
+    window.addEventListener('hrt-data-ready', onReady);
+    pollId = setInterval(() => {
+      const before = derivedInjections.length;
+      recomputeDerived();
+      if (derivedInjections.length !== before) {
+        generateChartConfig();
+        if (chart) {
+          chart.options = options as any;
+          chart.data.labels = chartData.labels as any;
+          chart.data.datasets = chartData.datasets as any;
+          chart.update('none');
+        } else if (canvasEl && Chart) {
+          chart = new Chart(canvasEl, { type: 'line', data: chartData, options });
+        }
+        clearInterval(pollId);
+        pollId = null;
+      }
+    }, 400);
   });
 
   $effect(() => {
@@ -285,6 +330,8 @@
     return () => canvasEl?.removeEventListener('dblclick', handler);
   });
   onDestroy(() => {
+    if (pollId) clearInterval(pollId);
+    window.removeEventListener('hrt-data-ready', () => {});
     chart?.destroy();
   });
 
