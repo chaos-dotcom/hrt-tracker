@@ -228,7 +228,7 @@
     await import('chartjs-adapter-date-fns'); // side-effect registration for time scale
 
     // Load Estrannaise models on client only
-    const mod = await import('../../../vendor/estrannaise/src/models.js');
+    const mod = await import('@estrannaise/models.js');
     getPKFunctions = mod.PKFunctions;
     pkReady = true;
 
