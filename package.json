@@ -30,7 +30,6 @@
 		"chartjs-plugin-zoom": "^2.0.1",
 		"date-fns": "^3.6.0",
 		"plotly.js-dist-min": "^2.34.0",
-		"svelte-plotly.js": "^1.4.0",
 		"tailwindcss": "^4.1.5",
 		"yaml": "^2.8.1"
 	}

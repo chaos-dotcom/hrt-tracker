@@ -1,6 +1,5 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import Plotly from 'svelte-plotly.js';
   import PlotlyLib from 'plotly.js-dist-min';
 
   let getPKFunctions: ((cf?: number) => any) | null = null;
@@ -31,6 +30,10 @@
   let viewMax: number | null = null;
   let lastDataMin = $state<number | null>(null);
   let lastDataMax = $state<number | null>(null);
+
+  let plotEl = $state(null as HTMLDivElement | null);
+  let hasPlot = $state(false);
+  let relayoutHandler: ((d: any) => void) | null = null;
 
   let pollId: any = null;
 
@@ -78,10 +81,9 @@
       };
     }
   }
-  function handleRelayout(e: CustomEvent<any>) {
-    const d: any = e.detail || {};
-    const r0 = d['xaxis.range[0]'] ?? d?.xaxis?.range?.[0];
-    const r1 = d['xaxis.range[1]'] ?? d?.xaxis?.range?.[1];
+  function handleRelayoutEvent(d: any) {
+    const r0 = d?.['xaxis.range[0]'] ?? d?.xaxis?.range?.[0];
+    const r1 = d?.['xaxis.range[1]'] ?? d?.xaxis?.range?.[1];
     if (r0 && r1) {
       const min = new Date(r0).getTime();
       const max = new Date(r1).getTime();
@@ -217,6 +219,25 @@
     };
   }
 
+  $effect(() => {
+    void dataTraces; void layout; void plotEl; void hasPlot;
+
+    if (!plotEl) return;
+
+    (async () => {
+      if (!hasPlot) {
+        await PlotlyLib.newPlot(plotEl, dataTraces, layout, config);
+        hasPlot = true;
+        // attach relayout listener
+        relayoutHandler = (d: any) => handleRelayoutEvent(d);
+        // @ts-ignore (Plotly augments the DOM node with .on)
+        plotEl.on && plotEl.on('plotly_relayout', relayoutHandler);
+      } else {
+        await PlotlyLib.react(plotEl, dataTraces, layout, config);
+      }
+    })();
+  });
+
   onMount(async () => {
     try {
       const mod = await import('@estrannaise/models.js');
@@ -249,6 +270,11 @@
   onDestroy(() => {
     if (pollId) clearInterval(pollId);
     if (readyHandler) window.removeEventListener('hrt-data-ready', readyHandler);
+    if (plotEl) {
+      // @ts-ignore
+      if (relayoutHandler && (plotEl as any).removeListener) (plotEl as any).removeListener('plotly_relayout', relayoutHandler);
+      try { PlotlyLib.purge(plotEl); } catch {}
+    }
   });
 
   // Regenerate chart config whenever injections change
@@ -267,13 +293,5 @@
 </div>
 
 <div class="chart-container w-full relative" style="height: 400px; min-height: 400px; width: 100%;">
-  <Plotly
-    plotly={PlotlyLib}
-    data={dataTraces}
-    layout={layout}
-    config={config}
-    useResizeHandler
-    on:plotly_relayout={handleRelayout}
-    style="width: 100%; height: 100%;"
-  />
+    <div bind:this={plotEl} style="width: 100%; height: 100%;"></div>
 </div>
