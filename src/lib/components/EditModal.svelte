@@ -83,6 +83,11 @@
 			? ((item as any).needleLength || '')
 			: ''
 	);
+	let needleGaugeEdit = $state(
+		isDosage && (item as DosageHistoryEntry).medicationType === 'injectableEstradiol'
+			? ((item as any).needleGauge || '')
+			: ''
+	);
 	const syringeKindOptions = enumToDropdownOptions(SyringeKinds);
 
 	// Pill quantity for oral estradiol and progesterone
@@ -170,6 +175,7 @@
 				(dosageItem as any).subVialId = selectedSubVialId || undefined;   // add
 				(dosageItem as any).syringeKind = syringeKindEdit || undefined;       // add
 				(dosageItem as any).needleLength = (needleLengthEdit || '').trim() || undefined; // add
+				(dosageItem as any).needleGauge = (needleGaugeEdit || '').trim() || undefined;
 			}
 			if (dosageItem.medicationType === 'progesterone' || dosageItem.medicationType === 'oralEstradiol') {
 				(dosageItem as any).pillQuantity = Number.isFinite(+pillQtyEdit) && +pillQtyEdit > 0 ? +pillQtyEdit : undefined;
@@ -455,6 +461,16 @@
 						class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight"
 						placeholder='e.g., 4mm or 1"'
 						bind:value={needleLengthEdit}
+					/>
+				</div>
+				<div class="mb-4">
+					<label for="modalNeedleGauge" class="block text-sm mb-1">Needle gauge (optional)</label>
+					<input
+						id="modalNeedleGauge"
+						type="text"
+						class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight"
+						placeholder="e.g., 32g or 30G"
+						bind:value={needleGaugeEdit}
 					/>
 				</div>
 				<div class="mb-4">

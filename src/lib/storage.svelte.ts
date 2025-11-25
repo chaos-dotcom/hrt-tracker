@@ -15,6 +15,7 @@ const defaultData: HRTData = {
     icsSecret: '',
     enableBloodTestSchedule: false,
     bloodTestIntervalMonths: 3,
+    statsBreakdownBySyringeKind: false, // ADDED
   },
 };
 

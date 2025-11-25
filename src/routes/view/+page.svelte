@@ -1,6 +1,4 @@
 <script lang="ts">
-    export const ssr = false;
-
     import { hrtData } from "$lib/storage.svelte";
     import {
         Antiandrogens,
@@ -1540,6 +1538,11 @@
                                     {#if t.medicationType === "injectableEstradiol" && ((t as any).syringeKind || (t as any).needleLength)}
                                         <div class="text-sm mt-1 text-gray-600 dark:text-gray-400">
                                             Syringe: {(t as any).syringeKind || '—'}{#if (t as any).needleLength} · Needle: {(t as any).needleLength}{/if}
+                                        </div>
+                                    {/if}
+                                    {#if t.medicationType === "injectableEstradiol" && (t as any).needleGauge}
+                                        <div class="text-sm mt-1 text-gray-600 dark:text-gray-400">
+                                            Gauge: {(t as any).needleGauge}
                                         </div>
                                     {/if}
                                     {#if t.note}
