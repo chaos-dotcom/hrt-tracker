@@ -1,9 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  // Defer Chart.js and plugins to the client to avoid SSR import issues
-  let Chart: any = null;
-  let zoomPlugin: any = null;
-  // Adapter is loaded dynamically in onMount for side-effects
+  import Plotly from 'svelte-plotly.js';
+  import PlotlyLib from 'plotly.js-dist-min';
 
   let getPKFunctions: ((cf?: number) => any) | null = null;
   let pkReady = $state(false);
@@ -17,13 +15,17 @@
   let derivedInjections = $state([] as { timestamp: number; dose: number; type: string }[]);
   
 
-  // DATA
-  let chartData = $state({ labels: [] as Date[], datasets: [] as any[] });
-  let options: any = {}; // Make options dynamic
-
-  // Chart.js instance
-  let chart: any = null;
-  let canvasEl = $state(null as HTMLCanvasElement | null);
+  // Plotly state
+  let dataTraces = $state([] as any[]);
+  let layout = $state({} as any);
+  const config = {
+    responsive: true,
+    displayModeBar: true,
+    displaylogo: false,
+    scrollZoom: true,
+    doubleClick: 'reset',
+    modeBarButtonsToRemove: ['toImage']
+  };
 
   let viewMin: number | null = null;
   let viewMax: number | null = null;
@@ -53,24 +55,41 @@
   const subDaysMs = (ms: number, days: number) => ms - days * DAY_MS;
 
   function setLast30Days() {
-    {
-      const now = Date.now();
-      viewMin = subDaysMs(now, 30);
-      viewMax = addDaysMs(now, 2);
-      chart?.update('none');
-    }
+    const now = Date.now();
+    viewMin = subDaysMs(now, 30);
+    viewMax = addDaysMs(now, 2);
+    updateXRangeFromView();
   }
   function fitAll() {
     if (lastDataMin != null && lastDataMax != null) {
       viewMin = lastDataMin;
       viewMax = lastDataMax;
-      chart?.resetZoom();
-      chart?.update('none');
+      updateXRangeFromView();
     }
   }
   function resetView() {
     setLast30Days();
-    chart?.resetZoom();
+  }
+  function updateXRangeFromView() {
+    if (viewMin != null && viewMax != null) {
+      layout = {
+        ...layout,
+        xaxis: { ...(layout.xaxis || {}), type: 'date', range: [new Date(viewMin), new Date(viewMax)] }
+      };
+    }
+  }
+  function handleRelayout(e: CustomEvent<any>) {
+    const d: any = e.detail || {};
+    const r0 = d['xaxis.range[0]'] ?? d?.xaxis?.range?.[0];
+    const r1 = d['xaxis.range[1]'] ?? d?.xaxis?.range?.[1];
+    if (r0 && r1) {
+      const min = new Date(r0).getTime();
+      const max = new Date(r1).getTime();
+      if (Number.isFinite(min) && Number.isFinite(max)) {
+        viewMin = min;
+        viewMax = max;
+      }
+    }
   }
 
   // This maps your application's estradiol types to the model names used by Estrannaise.
@@ -102,9 +121,8 @@
 
     const src = injections?.length ? injections : derivedInjections;
     if (!src || src.length === 0) {
-      chartData = { labels: [], datasets: [] };
-      // Reset options when there's no data
-      options = { plugins: { zoom: { pan: { enabled: false }, zoom: { wheel: { enabled: false } } } } };
+      dataTraces = [];
+      layout = layout || {};
       return;
     }
 
@@ -147,21 +165,11 @@
     lastDataMin = points.length ? points[0].x : null;
     lastDataMax = points.length ? points[points.length - 1].x : null;
 
-    chartData = {
-      labels: [] as any, // not used when providing {x,y} points
-      datasets: [
-        {
-          label: 'Simulated Estradiol (pg/mL)',
-          data: points,
-          borderColor: '#ef4444',
-          backgroundColor: '#ef4444',
-          pointRadius: 0,
-          borderWidth: 2,
-          tension: 0.1,
-          parsing: true
-        }
-      ]
-    };
+    const x = points.map(p => new Date(p.x));
+    const y = points.map(p => p.y);
+
+    lastDataMin = points.length ? points[0].x : null;
+    lastDataMax = points.length ? points[points.length - 1].x : null;
 
     {
       const now = Date.now();
@@ -169,151 +177,62 @@
       const defaultMax = addDaysMs(now, 2);
       if (viewMin == null) viewMin = defaultMin;
       if (viewMax == null) viewMax = defaultMax;
-    }
-    const dataMin = points[0]?.x ?? Date.now();
-    const dataMax = points[points.length - 1]?.x ?? addDaysMs(Date.now(), 1);
-    // If current view does not overlap the data, auto-fit to data range
-    if (viewMin == null || viewMax == null || viewMax < dataMin || viewMin > dataMax) {
-      viewMin = dataMin;
-      viewMax = dataMax;
+      const dataMin = points[0]?.x ?? now;
+      const dataMax = points[points.length - 1]?.x ?? addDaysMs(now, 1);
+      if (viewMax < dataMin || viewMin > dataMax) {
+        viewMin = dataMin;
+        viewMax = dataMax;
+      }
     }
 
-    options = {
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: { mode: 'index' as const, intersect: false },
-      animation: { duration: 0 },
-      scales: {
-        x: {
-          type: 'time' as const,
-          time: {
-            unit: 'day' as const
-          },
-          title: {
-            display: true,
-            text: 'Date'
-          },
-          // Default view: last 30 days to 2 days in the future
-          min: viewMin,
-          max: viewMax
-        },
-        y: {
-          title: {
-            display: true,
-            text: 'Estradiol (pg/mL)'
-          },
-          beginAtZero: true,
-          suggestedMax: Math.max(1, maxY * 1.2)
-        }
-      },
-      plugins: {
-        legend: {
-          display: true
-        },
-        tooltip: {
-          mode: 'index' as const,
-          intersect: false,
-          callbacks: {
-            title: function (tooltipItems: any[]) {
-              if (!tooltipItems.length) return '';
-              const date = new Date(tooltipItems[0].parsed.x);
-              const daysSinceStart = ((date.getTime() - firstInjectionTime) / (1000 * 3600 * 24)).toFixed(
-                1
-              );
-              return `${date.toLocaleString()} (Day ${daysSinceStart})`;
-            }
-          }
-        },
-        decimation: {
-          enabled: true,
-          algorithm: 'lttb',
-          samples: 1000
-        },
-        zoom: {
-          zoom: {
-            wheel: { enabled: true, speed: 0.1 },
-            pinch: { enabled: true },
-            drag: {
-              enabled: true,
-              modifierKey: 'shift',
-              borderColor: '#ef4444',
-              borderWidth: 1,
-              backgroundColor: 'rgba(239,68,68,0.15)'
-            },
-            mode: 'x' as const
-          },
-          pan: {
-            enabled: true,
-            mode: 'x' as const
-          },
-          limits: {
-            x: {
-              min: dataMin,
-              max: dataMax,
-              minRange: 6 * 3600 * 1000 // 6 hours
-            }
-          },
-          onZoomComplete({ chart: c }) {
-            const xs = c.scales.x;
-            viewMin = xs.min;
-            viewMax = xs.max;
-          },
-          onPanComplete({ chart: c }) {
-            const xs = c.scales.x;
-            viewMin = xs.min;
-            viewMax = xs.max;
-          }
-        }
+    dataTraces = [
+      {
+        type: points.length > 5000 ? 'scattergl' : 'scatter',
+        mode: 'lines',
+        name: 'Simulated Estradiol (pg/mL)',
+        x,
+        y,
+        line: { color: '#ef4444', width: 2 },
+        hovertemplate: '%{x|%b %d, %Y %H:%M} (Day %{customdata:.1f})<br>E2: %{y:.0f} pg/mL<extra></extra>',
+        customdata: x.map((d: Date) => (d.getTime() - firstInjectionTime) / DAY_MS)
       }
+    ];
+
+    layout = {
+      autosize: true,
+      margin: { t: 20, r: 10, b: 40, l: 60 },
+      paper_bgcolor: 'transparent',
+      plot_bgcolor: 'transparent',
+      xaxis: {
+        type: 'date',
+        title: 'Date',
+        range: [new Date(viewMin!), new Date(viewMax!)]
+      },
+      yaxis: {
+        title: 'Estradiol (pg/mL)',
+        rangemode: 'tozero',
+        autorange: maxY === 0 ? true : undefined
+      },
+      showlegend: false
     };
   }
 
   onMount(async () => {
     try {
-      const chartjs = await import('chart.js');
-      const zoomMod = await import('chartjs-plugin-zoom');
-      await import('chartjs-adapter-date-fns'); // side-effect registration for time scale
-
-      // Load Estrannaise models on client only
       const mod = await import('@estrannaise/models.js');
       getPKFunctions = mod.PKFunctions;
-
-      Chart = chartjs.Chart;
-      zoomPlugin = zoomMod.default;
-
-      Chart.register(
-        chartjs.Title,
-        chartjs.Tooltip,
-        chartjs.Legend,
-        chartjs.LineElement,
-        chartjs.CategoryScale,
-        chartjs.LinearScale,
-        chartjs.PointElement,
-        chartjs.TimeScale,
-        zoomPlugin,
-        chartjs.Decimation
-      );
     } finally {
-      pkReady = true; // ensure UI leaves loading state even if something failed
+      pkReady = true;
     }
 
-    // kick initial compute and short poll to catch async init
+    // kick initial compute and build plot; also listen for hrt-data-ready and short poll
     recomputeDerived();
     const onReady = () => {
       recomputeDerived();
       generateChartConfig();
-      if (chart) {
-        chart.options = options as any;
-        chart.data.labels = chartData.labels as any;
-        chart.data.datasets = chartData.datasets as any;
-        chart.update('none');
-      } else if (canvasEl && Chart) {
-        chart = new Chart(canvasEl, { type: 'line', data: chartData, options });
-      }
     };
     readyHandler = onReady;
     window.addEventListener('hrt-data-ready', onReady);
-    // Initialize immediately once imports are done
     onReady();
 
     pollId = setInterval(() => {
@@ -321,46 +240,23 @@
       recomputeDerived();
       if (derivedInjections.length !== before) {
         generateChartConfig();
-        if (chart) {
-          chart.options = options as any;
-          chart.data.labels = chartData.labels as any;
-          chart.data.datasets = chartData.datasets as any;
-          chart.update('none');
-        } else if (canvasEl && Chart) {
-          chart = new Chart(canvasEl, { type: 'line', data: chartData, options });
-        }
         clearInterval(pollId);
         pollId = null;
       }
     }, 400);
   });
 
-  $effect(() => {
-    if (!canvasEl) return;
-    const handler = () => resetView();
-    canvasEl.addEventListener('dblclick', handler);
-    return () => canvasEl?.removeEventListener('dblclick', handler);
-  });
   onDestroy(() => {
     if (pollId) clearInterval(pollId);
     if (readyHandler) window.removeEventListener('hrt-data-ready', readyHandler);
-    chart?.destroy();
   });
 
   // Regenerate chart config whenever injections change
   $effect(() => {
     // dependencies
-    void injections; void derivedInjections; void viewMin; void viewMax; void pkReady; void canvasEl; void Chart;
+    void injections; void derivedInjections; void viewMin; void viewMax; void pkReady;
 
     generateChartConfig();
-
-    if (chart) {
-      chart.options = options as any;
-      chart.data.datasets = chartData.datasets as any;
-      chart.update('none');
-    } else if (canvasEl && Chart) {
-      chart = new Chart(canvasEl, { type: 'line', data: chartData, options });
-    }
   });
 </script>
 
@@ -371,10 +267,13 @@
 </div>
 
 <div class="chart-container w-full relative" style="height: 400px; min-height: 400px; width: 100%;">
-  <canvas bind:this={canvasEl} style="width: 100%; height: 100%; display: block; border: 1px solid rgba(239,68,68,0.4);"></canvas>
-  {#if !pkReady}
-    <div class="absolute inset-0 flex items-center justify-center text-sm opacity-70 pointer-events-none">
-      Loading simulation…
-    </div>
-  {/if}
+  <Plotly
+    plotly={PlotlyLib}
+    data={dataTraces}
+    layout={layout}
+    config={config}
+    useResizeHandler
+    on:plotly_relayout={handleRelayout}
+    style="width: 100%; height: 100%;"
+  />
 </div>
