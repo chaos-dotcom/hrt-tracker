@@ -69,6 +69,7 @@
     let eInjectionSite: InjectionSites | "" = $state("");
     let syringeKind: SyringeKinds | '' = $state('');
     let needleLength = $state('');
+    let needleGauge = $state('');
 
     // Selected vial/sub‑vial (for injections)
     let selectedVialId = $state('');
@@ -118,6 +119,7 @@
             selectedSubVialId = injSched.subVialId || '';    // ADDED
             syringeKind = (injSched as any).syringeKind || '';
             needleLength = (injSched as any).needleLength || '';
+            needleGauge = (injSched as any).needleGauge || '';
         } else if (oralSched) {
             estrogenMethod = "oral";
             oralEType = oralSched.type;
@@ -129,6 +131,7 @@
             selectedSubVialId = '';       // ADDED
             syringeKind = '';
             needleLength = '';
+            needleGauge = '';
         }
 
         // AA
@@ -185,6 +188,7 @@
                 subVialId: selectedSubVialId || undefined,   // ADDED
                 syringeKind: syringeKind || undefined,         // ADDED
                 needleLength: needleLength.trim() || undefined, // ADDED
+                needleGauge: needleGauge.trim() || undefined,
                 nextDoseDate: eNextDoseDate ? new Date(eNextDoseDate).getTime() : undefined,
             };
             hrtData.data.oralEstradiol = undefined;
@@ -248,6 +252,7 @@
                     subVialId: selectedSubVialId || undefined, // ADDED
                     syringeKind: syringeKind || undefined,         // ADDED
                     needleLength: needleLength.trim() || undefined, // ADDED
+                    needleGauge: needleGauge.trim() || undefined,
                 };
             } else {
                 estrogenRecord = {
@@ -485,6 +490,10 @@
                             <label class="block text-sm font-medium mb-2" for="eNeedleLen">needle length (optional)</label>
                             <input id="eNeedleLen" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" placeholder='e.g., 4mm or 1"' bind:value={needleLength} />
                         </div>
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium mb-2" for="eNeedleGauge">needle gauge (optional)</label>
+                            <input id="eNeedleGauge" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" placeholder="e.g., 32g or 30G" bind:value={needleGauge} />
+                        </div>
                         {/if}
                         {#if estrogenMethod === 'oral'}
                         <div class="mb-4">
@@ -547,6 +556,10 @@
                     <div class="mb-4">
                         <label class="block text-sm font-medium mb-2" for="schedNeedleLen">needle length (optional)</label>
                         <input id="schedNeedleLen" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" placeholder='e.g., 4mm or 1"' bind:value={needleLength} />
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-2" for="schedNeedleGauge">needle gauge (optional)</label>
+                        <input id="schedNeedleGauge" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" placeholder="e.g., 32g or 30G" bind:value={needleGauge} />
                     </div>
                 {/if}
 
