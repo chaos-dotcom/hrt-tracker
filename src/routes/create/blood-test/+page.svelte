@@ -80,7 +80,7 @@
             href="/backup">view all tests</a
         >
     </div>
-    <form onsubmit={handleSubmit} class="shadow-md rounded pt-6 pb-8 mb-4">
+    <form on:submit={handleSubmit} class="shadow-md rounded pt-6 pb-8 mb-4">
         <div class="mb-4">
             <label
                 class="block text-latte-rose-pine-text dark:text-rose-pine-text text-sm font-medium mb-2"
