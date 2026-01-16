@@ -13,7 +13,6 @@
     } from "$lib/types";
     import * as Plot from "@observablehq/plot";
     import EditModal from "$lib/components/EditModal.svelte";
-    import { e2multidose3C, type EstrannaiseModel } from "$lib/estrannaise-model";
 
     // Diary / Notes are stored in HRTData via hrtData.data.notes
 
@@ -201,93 +200,15 @@
         return `https://estrannai.se/#${stateString}_${customDoseString}${suffix}`;
     }
 
-    function getFudgeFactorSeries() {
-        const tests = hrtData.data.bloodTests as BloodTest[] | undefined;
-        return [...(tests ?? [])]
-            .filter((t) => typeof (t as any).fudgeFactor === "number" && isFinite((t as any).fudgeFactor as number))
-            .sort((a, b) => a.date - b.date)
-            .map((t) => ({ date: t.date, value: Number(((t as any).fudgeFactor as number).toFixed(3)) }));
-    }
-
-    function normalizeEstradiolUnits(value: number, unit: HormoneUnits) {
+    function convertEstradiolToDisplayUnit(value: number, unit: HormoneUnits, displayUnit: HormoneUnits) {
+        if (displayUnit === HormoneUnits.E2_pmol_L) {
+            return unit === HormoneUnits.E2_pmol_L ? value : value * 3.6713;
+        }
         return unit === HormoneUnits.E2_pmol_L ? value / 3.6713 : value;
     }
 
-    function pickFudgeFactor(series: { date: number; value: number }[], targetDate: number) {
-        let chosen = 1;
-        for (const entry of series) {
-            if (entry.date <= targetDate) {
-                chosen = entry.value;
-            } else {
-                break;
-            }
-        }
-        return chosen;
-    }
-
-    function mapEstradiolModel(type: InjectableEstradiols): EstrannaiseModel | null {
-        switch (type) {
-            case InjectableEstradiols.Benzoate:
-                return "EB im";
-            case InjectableEstradiols.Valerate:
-                return "EV im";
-            case InjectableEstradiols.Enanthate:
-                return "EEn im";
-            case InjectableEstradiols.Cypionate:
-                return "EC im";
-            case InjectableEstradiols.Undecylate:
-                return "EUn im";
-            default:
-                return null;
-        }
-    }
-
-    function buildEstrannaiseSeries() {
-        const history = hrtData.data.dosageHistory
-            .filter(
-                (d): d is Extract<DosageHistoryEntry, { medicationType: "injectableEstradiol" }> =>
-                    d.medicationType === "injectableEstradiol",
-            )
-            .sort((a, b) => a.date - b.date);
-
-        if (history.length === 0) return [] as { date: Date; xDays?: number; value: number }[];
-
-        const startDate = history[0].date;
-        const endDate = Date.now();
-        const series = getFudgeFactorSeries();
-        const points: { date: Date; xDays?: number; value: number }[] = [];
-
-        const stepMs = 6 * 60 * 60 * 1000; // 6h resolution
-        for (let t = startDate; t <= endDate; t += stepMs) {
-            const doses = history.filter((d) => d.date <= t);
-            if (doses.length === 0) continue;
-
-            const doseAmounts = doses.map((d) => d.dose);
-            const times = doses.map((d) => (d.date - startDate) / (1000 * 60 * 60 * 24));
-            const models = doses
-                .map((d) => mapEstradiolModel(d.type))
-                .filter((m): m is EstrannaiseModel => Boolean(m));
-            if (models.length === 0) continue;
-
-            const ff = pickFudgeFactor(series, t);
-            const conversionFactor = normalizeEstradiolUnits(1, HormoneUnits.E2_pg_mL);
-            const value = e2multidose3C(
-                (t - startDate) / (1000 * 60 * 60 * 24),
-                doseAmounts,
-                times,
-                models,
-                ff * conversionFactor,
-                false,
-            );
-
-            points.push({
-                date: new Date(t),
-                xDays: firstDoseDate !== null ? (t - firstDoseDate) / (1000 * 60 * 60 * 24) : undefined,
-                value,
-            });
-        }
-
-        return points;
+    function estradiolConversionFactor(displayUnit: HormoneUnits) {
+        return displayUnit === HormoneUnits.E2_pmol_L ? 3.6713 : 1;
     }
 
     let fudgeFactor = $derived(getLatestFudgeFactor());
@@ -519,7 +440,7 @@
 
     // Chart related code
     let chartDiv: HTMLElement | undefined;
-    let timeRangeInDays = $state(90); // Default to showing last 90 days
+    let timeRangeInDays = $state(365); // Default to showing last 365 days
     let showMedications = $state(true); // Filter for medication data
 
     // Hormone visibility toggles
@@ -531,12 +452,13 @@
     let showProlactin = $state(false);
     let showSHBG = $state(false);
     let showFAI = $state(false);
-    let showEstrannaise = $state(true);
 
     // Process data for charting
     function processDataForChart() {
         const now = Date.now();
         const startTime = now - timeRangeInDays * 24 * 60 * 60 * 1000;
+        const displayEstradiolUnit =
+            (hrtData.data.settings as any)?.displayEstradiolUnit || HormoneUnits.E2_pmol_L;
 
         // Filter blood tests based on time range and filter setting
         const filteredBloodTests = hrtData.data.bloodTests
@@ -554,9 +476,13 @@
                 // Normalized values for plotting
                 const estradiolLevelPlot =
                     test.estradiolLevel !== undefined
-                        ? estradiolUnitRaw === HormoneUnits.E2_pmol_L
-                            ? Number((test.estradiolLevel / 3.671).toFixed(2)) // pmol/L -> pg/mL
-                            : test.estradiolLevel
+                        ? Number(
+                              convertEstradiolToDisplayUnit(
+                                  test.estradiolLevel,
+                                  estradiolUnitRaw,
+                                  displayEstradiolUnit,
+                              ).toFixed(2),
+                          )
                         : undefined;
 
                 const testLevelPlot =
@@ -615,8 +541,7 @@
                     prolactinUnit: prolactinUnitRaw,
                     shbgUnit: shbgUnitRaw,
 
-                    // Normalized values for plotting (standard units)
-                    // E2: pg/mL, T: ng/dL, Prog: ng/mL, FSH/LH: mIU/mL, PRL: ng/mL, SHBG: nmol/L
+                    // Normalized values for plotting (display units)
                     estradiolLevelPlot,
                     testLevelPlot,
                     progesteroneLevelPlot,
@@ -680,6 +605,7 @@
         return () => window.removeEventListener("resize", redrawChart);
     });
 
+
     // Function to render the chart
     function renderChart() {
         if (!chartDiv) return;
@@ -687,7 +613,6 @@
         chartDiv.firstChild?.remove(); // Remove old chart
 
         const { bloodTests, dosages } = processDataForChart();
-        const estrannaiseSeries = showEstrannaise ? buildEstrannaiseSeries() : [];
 
         const useDaysAxis = xAxisMode === "days" && firstDoseDate !== null;
         const xKey: "date" | "xDays" = useDaysAxis ? "xDays" : "date";
@@ -703,17 +628,14 @@
         if (showT) leftKeys.push("testLevelPlot");
         if (showSHBG) leftKeys.push("shbgLevelPlot");
 
-            const extractValues = (keys: string[]) =>
+        const extractValues = (keys: string[]) =>
             keys.flatMap((k) =>
                 bloodTests
                     .map((d: any) => d[k])
-                    .filter((v: any) => typeof v === "number" && isFinite(v) && v > 0),
+                    .filter((v: any) => typeof v === "number" && isFinite(v)),
             ) as number[];
 
-        const leftVals = extractValues(leftKeys).concat(
-            estrannaiseSeries.map((p) => p.value).filter((v) => typeof v === "number" && isFinite(v) && v > 0),
-        );
-
+        const leftVals = extractValues(leftKeys);
 
         let yLeftMin = leftVals.length ? Math.min(...leftVals) : 0;
         let yLeftMax = leftVals.length ? Math.max(...leftVals) : 1;
@@ -725,7 +647,6 @@
             yLeftMin = Math.max(0, yLeftMin - pad);
             yLeftMax = yLeftMax + pad;
         }
-
 
         // Only create chart if we have data
         if (bloodTests.length === 0 && dosages.length === 0) {
@@ -834,16 +755,84 @@
             ];
         };
 
+        const createDosageMarks = (data: any[], xKey: "date" | "xDays") => {
+            const marks: any[] = [];
+
+            if (data.some((d) => d.type === "injectableEstradiol")) {
+                marks.push(
+                    Plot.dot(
+                        data.filter((d) => d.type === "injectableEstradiol"),
+                        {
+                            x: xKey,
+                            y: (d: any) => Math.min(d.dose * 20, 300),
+                            fill: "#0072B2",
+                            symbol: "circle",
+                            r: 7,
+                            title: (d: any) =>
+                                `Injection: ${d.name}, ${d.dose} ${d.unit || "mg"} (${formatDateForTooltip(d.date)})`,
+                        },
+                    ),
+                );
+            }
+
+            if (data.some((d) => d.type === "oralEstradiol")) {
+                marks.push(
+                    Plot.dot(
+                        data.filter((d) => d.type === "oralEstradiol"),
+                        {
+                            x: xKey,
+                            y: (d: any) => Math.min(d.dose * 10, 200),
+                            fill: "seagreen",
+                            symbol: "triangle",
+                            r: 7,
+                            title: (d: any) =>
+                                `Oral E: ${d.name}, ${d.dose} ${d.unit || "mg"} (${formatDateForTooltip(d.date)})`,
+                        },
+                    ),
+                );
+            }
+
+            if (data.some((d) => d.type === "antiandrogen")) {
+                marks.push(
+                    Plot.dot(
+                        data.filter((d) => d.type === "antiandrogen"),
+                        {
+                            x: xKey,
+                            y: (d: any) => Math.min(d.dose * 10, 200),
+                            fill: "darkorange",
+                            symbol: "diamond",
+                            r: 7,
+                            title: (d: any) =>
+                                `AA: ${d.name}, ${d.dose} ${d.unit || "mg"} (${formatDateForTooltip(d.date)})`,
+                        },
+                    ),
+                );
+            }
+
+            if (data.some((d) => d.type === "progesterone")) {
+                marks.push(
+                    Plot.dot(
+                        data.filter((d) => d.type === "progesterone"),
+                        {
+                            x: xKey,
+                            y: (d: any) => Math.min(d.dose, 400),
+                            fill: "gold",
+                            symbol: "hexagon",
+                            r: 7,
+                            title: (d: any) =>
+                                `Progesterone: ${d.name}, ${d.dose} ${d.unit || "mg"} (${formatDateForTooltip(d.date)})`,
+                        },
+                    ),
+                );
+            }
+
+            return marks;
+        };
+
         // Get container width for responsive sizing
         const containerWidth = chartDiv.clientWidth || window.innerWidth - 50;
         const chart = Plot.plot({
             title: "Hormone Levels and Dosages Over Time",
-            width: Math.max(300, containerWidth - 20), // Ensure minimum width but adapt to container
-            height: Math.min(500, Math.max(300, containerWidth * 0.5)), // Responsive height
-            marginLeft: 60,
-            marginRight: 60,
-            marginBottom: 60,
-            grid: true,
             x: useDaysAxis
                 ? {
                       label: "Days since first dose",
@@ -853,6 +842,12 @@
                       label: "Date",
                       type: "utc",
                   },
+            width: Math.max(300, containerWidth - 20), // Ensure minimum width but adapt to container
+            height: Math.min(500, Math.max(300, containerWidth * 0.5)), // Responsive height
+            marginLeft: 60,
+            marginRight: 60,
+            marginBottom: 60,
+            grid: true,
             y: {
                 label: "Levels",
                 grid: true,
@@ -869,7 +864,7 @@
                           "estradiolLevelPlot",
                           "estradiolLevel",
                           "estradiolUnit",
-                          "pg/mL",
+                          (hrtData.data.settings as any)?.displayEstradiolUnit || "pmol/L",
                           "steelblue",
                           "Estradiol",
                           xKey,
@@ -948,22 +943,9 @@
                       )
                     : []),
                 ...(showFAI ? createFAIMarks(bloodTests, xKey) : []),
-                ...(estrannaiseSeries.length
-                    ? [
-                          Plot.line(estrannaiseSeries, {
-                              x: xKey,
-                              y: "value",
-                              stroke: "#0072B2",
-                              strokeWidth: 2,
-                              curve: "linear",
-                              title: (d: any) =>
-                                  `Estrannaise model: ${Number(d.value).toFixed(1)} pg/mL`,
-                          }),
-                      ]
-                    : []),
+                ...(showMedications ? createDosageMarks(dosages, xKey) : []),
             ],
         });
-
 
         chartDiv.append(chart);
     }
@@ -972,10 +954,11 @@
         // Rerender chart when inputs or data change
         timeRangeInDays;
         showMedications;
-        showE2; showT; showProg; showFSH; showLH; showProlactin; showSHBG; showFAI; showEstrannaise;
+        showE2; showT; showProg; showFSH; showLH; showProlactin; showSHBG; showFAI;
         xAxisMode; firstDoseDate;
         hrtData.data.bloodTests;
         hrtData.data.dosageHistory;
+        hrtData.data.settings;
         renderChart();
     });
 
@@ -1223,14 +1206,6 @@
             class:dark:text-rose-pine-base={showFAI}
             onclick={() => (showFAI = !showFAI)}>FAI</button
         >
-        <button
-            class="px-3 py-1 text-sm transition-colors rounded"
-            class:bg-latte-rose-pine-iris={showEstrannaise}
-            class:dark:bg-rose-pine-iris={showEstrannaise}
-            class:text-latte-rose-pine-base={showEstrannaise}
-            class:dark:text-rose-pine-base={showEstrannaise}
-            onclick={() => (showEstrannaise = !showEstrannaise)}>Estrannaise</button
-        >
     </div>
     <div class="mb-4 flex flex-wrap gap-3">
         <span class="self-center text-sm">Show Dosages:</span>
@@ -1258,10 +1233,11 @@
             <p>* Dosage values are scaled for visibility on the chart.</p>
             <p>* Hover over data points for details.</p>
             {#if hrtData.data.bloodTests.length > 0}
-                <p>* Hormone measurements are normalized to standard units for charting; hover shows recorded units.</p>
+                <p>* Hormone measurements are normalized to display units for charting; hover shows recorded units.</p>
             {/if}
         </div>
     </div>
+
 
     <div
         class="border rounded-lg p-4 bg-white dark:bg-rose-pine-surface shadow-md w-full mb-4"

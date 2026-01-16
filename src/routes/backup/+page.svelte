@@ -1,19 +1,28 @@
 <script lang="ts">
 	export const ssr = false;
 	import { hrtData } from '$lib/storage.svelte';
+	import { HormoneUnits } from '$lib/types';
 
 	// Ensure settings object exists
 	if (!hrtData.data.settings) {
 		hrtData.data.settings = {
 			enableAutoBackfill: true,
 			icsSecret: '',
-		};
+		} as any;
+		(hrtData.data.settings as any).displayEstradiolUnit = HormoneUnits.E2_pmol_L;
+		(hrtData.data.settings as any).statsBreakdownBySyringeKind = false;
 	} else {
 		if (hrtData.data.settings.icsSecret === undefined) hrtData.data.settings.icsSecret = '';
 		if (hrtData.data.settings.enableBloodTestSchedule === undefined) hrtData.data.settings.enableBloodTestSchedule = false;
 		if (hrtData.data.settings.bloodTestIntervalMonths === undefined) hrtData.data.settings.bloodTestIntervalMonths = 3;
+		if ((hrtData.data.settings as any).displayEstradiolUnit === undefined) {
+			(hrtData.data.settings as any).displayEstradiolUnit = HormoneUnits.E2_pmol_L;
+		}
+		if ((hrtData.data.settings as any).statsBreakdownBySyringeKind === undefined) {
+			(hrtData.data.settings as any).statsBreakdownBySyringeKind = false;
+		}
 	}
-	const s = hrtData.data.settings;
+	const s = hrtData.data.settings as any;
 
 	let saveMessage = $state('');
 	async function saveAll() {
@@ -136,6 +145,14 @@
 				<span class="text-sm">Blood test interval (months)</span>
 				<input type="number" min="1" placeholder="e.g. 3" class="border rounded px-2 py-1 w-full" bind:value={s.bloodTestIntervalMonths} />
 				<p class="text-xs opacity-75 mt-1">Used to place future blood test reminders in the calendar when enabled.</p>
+			</label>
+			<label class="block">
+				<span class="text-sm">Estradiol display unit</span>
+				<select class="border rounded px-2 py-1 w-full" bind:value={(s as any).displayEstradiolUnit}>
+					<option value={HormoneUnits.E2_pmol_L}>pmol/L</option>
+					<option value={HormoneUnits.E2_pg_mL}>pg/mL</option>
+				</select>
+				<p class="text-xs opacity-75 mt-1">Controls the default E2 units shown in charts.</p>
 			</label>
 		</div>
 		<div class="flex items-center gap-3">

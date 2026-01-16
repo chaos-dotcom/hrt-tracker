@@ -624,7 +624,7 @@
 			</div>
 			<div class="flex gap-5 mt-4">
 				<div class="w-full">
-					<label for="estrannaiseNumber" class="block text-sm mb-1">Estrannaise predicted E2 (pg/mL)</label>
+					<label for="estrannaiseNumber" class="block text-sm mb-1">Estrannaise predicted E2 (pmol/L)</label>
 					<input
 						id="estrannaiseNumber"
 						type="number"

@@ -205,6 +205,7 @@ export interface Settings {
   enableBloodTestSchedule?: boolean;
   bloodTestIntervalMonths?: number;
   statsBreakdownBySyringeKind?: boolean; // ADDED
+  displayEstradiolUnit?: HormoneUnits; // ADDED
 }
 export interface HRTData {
   injectableEstradiol?: {
