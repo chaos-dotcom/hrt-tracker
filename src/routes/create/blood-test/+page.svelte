@@ -44,6 +44,14 @@
         submitForm();
     }
     function submitForm() {
+        const measuredE2 =
+            eUnit === HormoneUnits.E2_pmol_L
+                ? eLevel / 3.671
+                : eLevel;
+        const computedFudgeFactor =
+            isFinite(measuredE2) && isFinite(estrannaiseNumber) && estrannaiseNumber > 0
+                ? measuredE2 / estrannaiseNumber
+                : undefined;
         const newBloodTest: BloodTest = {
             date: new Date(testDateTime).getTime(),
             estradiolLevel: eLevel,
@@ -62,6 +70,10 @@
             shbgUnit: shbgUnit,
             freeAndrogenIndex: freeAndrogenIndex,
             estrannaiseNumber: estrannaiseNumber,
+            fudgeFactor:
+                typeof computedFudgeFactor === 'number'
+                    ? Number(computedFudgeFactor.toFixed(3))
+                    : undefined,
             notes: notes,
         };
         hrtData.addBloodTest(newBloodTest);
