@@ -58,6 +58,7 @@
 	let freeAndrogenIndex = $state(isDosage ? undefined : (item as BloodTest).freeAndrogenIndex);
 	let estrannaiseNumber = $state(isDosage ? undefined : (item as BloodTest).estrannaiseNumber);
 	let notes = $state(isDosage ? undefined : (item as BloodTest).notes);
+	let fudgeFactor = $state(isDosage ? undefined : (item as BloodTest).fudgeFactor);
 
 	// DosageHistoryEntry fields
 	let dose = $state(isDosage ? (item as DosageHistoryEntry).dose : undefined);
@@ -95,6 +96,11 @@
 		isDosage && ((item as DosageHistoryEntry).medicationType === 'oralEstradiol' || (item as DosageHistoryEntry).medicationType === 'progesterone')
 			? (Number((item as any).pillQuantity) || 1)
 			: 1
+	);
+	let doseNumber = $derived(Number(dose ?? 0));
+	let pillQtyNumber = $derived(Number(pillQtyEdit ?? 0));
+	let totalPillDose = $derived(
+		Number.isFinite(doseNumber) && Number.isFinite(pillQtyNumber) ? doseNumber * pillQtyNumber : 0
 	);
 
 	// Added: vial and sub‑vial selection for injectable dosage items
@@ -212,6 +218,19 @@
 			bloodTestItem.freeAndrogenIndex = freeAndrogenIndex;
 			bloodTestItem.estrannaiseNumber = estrannaiseNumber;
 			bloodTestItem.notes = notes;
+			const measuredE2 =
+				bloodTestItem.estradiolUnit === HormoneUnits.E2_pmol_L
+					? (bloodTestItem.estradiolLevel ?? 0) / 3.671
+					: bloodTestItem.estradiolLevel ?? 0;
+			const computedFudgeFactor =
+				isFinite(measuredE2) && isFinite(estrannaiseNumber ?? 0) && (estrannaiseNumber ?? 0) > 0
+					? measuredE2 / (estrannaiseNumber ?? 0)
+					: undefined;
+			bloodTestItem.fudgeFactor =
+				typeof computedFudgeFactor === 'number'
+					? Number(computedFudgeFactor.toFixed(3))
+					: undefined;
+			fudgeFactor = bloodTestItem.fudgeFactor;
 		}
 
 		close();
@@ -275,11 +294,11 @@
 </script>
 
 <div
-	class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50"
+	class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 overflow-y-auto p-4"
 	onclick={close}
 >
 	<div
-		class="bg-latte-rose-pine-base dark:bg-rose-pine-base max-w-md w-full rounded-lg p-6 shadow-xl"
+		class="bg-latte-rose-pine-base dark:bg-rose-pine-base max-w-md w-full rounded-lg p-6 shadow-xl max-h-[90vh] overflow-y-auto"
 		onclick={(e) => e.stopPropagation()}
 	>
 		<h2 class="mb-4 text-2xl font-bold">Edit Entry</h2>
@@ -340,7 +359,7 @@
 					<label for="pillQtyProg" class="block text-sm mb-1">Pill quantity</label>
 					<input id="pillQtyProg" type="number" min="1" step="1" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={pillQtyEdit} />
 					<div class="mt-1 text-xs opacity-70">
-						Total = {(+dose || 0)} mg/pill × {(+pillQtyEdit || 0)} = <strong>{Number.isFinite(+dose) && Number.isFinite(+pillQtyEdit) ? (+dose) * (+pillQtyEdit) : 0}</strong> mg
+						Total = {doseNumber} mg/pill × {pillQtyNumber} = <strong>{totalPillDose}</strong> mg
 					</div>
 				</div>
 			{:else}
@@ -373,7 +392,7 @@
 						<label for="pillQtyOral" class="block text-sm mb-1">Pill quantity</label>
 						<input id="pillQtyOral" type="number" min="1" step="1" class="shadow appearance-none border rounded w-full py-2 px-3 leading-tight" bind:value={pillQtyEdit} />
 						<div class="mt-1 text-xs opacity-70">
-							Total = {(+dose || 0)} mg/pill × {(+pillQtyEdit || 0)} = <strong>{Number.isFinite(+dose) && Number.isFinite(+pillQtyEdit) ? (+dose) * (+pillQtyEdit) : 0}</strong> mg
+						Total = {doseNumber} mg/pill × {pillQtyNumber} = <strong>{totalPillDose}</strong> mg
 						</div>
 					</div>
 				{/if}

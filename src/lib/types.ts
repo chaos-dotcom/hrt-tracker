@@ -163,6 +163,7 @@ export interface BloodTest {
   shbgUnit?: HormoneUnits;
   freeAndrogenIndex?: number;
   estrannaiseNumber?: number;
+  fudgeFactor?: number;
   notes?: string;
   // i have to keep track of oral or injection so we gotta add those as types
   estrogenType?: EstrogenType;
