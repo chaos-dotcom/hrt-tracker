@@ -30,6 +30,11 @@
 					>Stats</a
 				>
 				<a
+					href="/estrannaise"
+					class="text-latte-rose-pine-iris transition-colors hover:text-rose-pine-love dark:text-rose-pine-iris"
+					>Estrannaise</a
+				>
+				<a
 					href="/create/blood-test"
 					class="text-latte-rose-pine-iris transition-colors hover:text-rose-pine-love dark:text-rose-pine-iris"
 					>Add Blood Test</a

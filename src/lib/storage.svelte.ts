@@ -1,4 +1,5 @@
 import { browser } from "$app/environment";
+import { HormoneUnits } from "./types";
 import type { HRTData, DosageHistoryEntry, BloodTest, Measurement, UnixTime, DiaryEntry, Vial, SubVial } from "./types";
 
 const defaultData: HRTData = {
@@ -16,6 +17,7 @@ const defaultData: HRTData = {
     enableBloodTestSchedule: false,
     bloodTestIntervalMonths: 3,
     statsBreakdownBySyringeKind: false, // ADDED
+    displayEstradiolUnit: HormoneUnits.E2_pmol_L,
   },
 };
 
@@ -24,7 +26,30 @@ class hrtStore {
   #initialized = false;
   #debounceTimeout: ReturnType<typeof setTimeout> | undefined;
 
-  init(initialData: HRTData) {
+    migrateBloodTestsFudgeFactor() {
+      const tests = this.data.bloodTests ?? [];
+      if (tests.length === 0) return;
+
+      let migrated = false;
+      for (const test of tests) {
+        const t = test as any;
+        if (typeof t.fudgeFactor !== "number" && t.estradiolLevel !== undefined && t.estrannaiseNumber !== undefined && t.estrannaiseNumber > 0) {
+          const measuredE2 =
+            t.estradiolUnit === HormoneUnits.E2_pmol_L
+              ? t.estradiolLevel / 3.671
+              : t.estradiolLevel;
+          if (isFinite(measuredE2)) {
+            t.fudgeFactor = Number((measuredE2 / t.estrannaiseNumber).toFixed(3));
+            migrated = true;
+          }
+        }
+      }
+      if (migrated) {
+        this.saveNow().catch(() => {});
+      }
+    }
+
+    init(initialData: HRTData) {
     if (this.#initialized || !browser) return;
     this.data = initialData ? { ...defaultData, ...initialData } : { ...defaultData };
 
@@ -75,6 +100,7 @@ class hrtStore {
       // ignore migration errors
     }
 
+    this.migrateBloodTestsFudgeFactor();
     this.backfillScheduledDoses();
     this.#initialized = true;
 
