@@ -173,7 +173,6 @@
     let forecastWeeks = $state(8);
     let forecastDoseOverride = $state("");
     let forecastFrequencyOverride = $state("");
-    let forecastStepFudgeOverride = $state("1");
 
     const DAY_MS = 24 * 60 * 60 * 1000;
     $effect(() => {
@@ -199,7 +198,7 @@
 
     $effect(() => {
         if (!estrannaiseChartDiv) return;
-        xAxisMode; firstDoseDate; forecastEnabled; forecastWeeks; forecastDoseOverride; forecastFrequencyOverride; forecastStepFudgeOverride;
+        xAxisMode; firstDoseDate; forecastEnabled; forecastWeeks; forecastDoseOverride; forecastFrequencyOverride;
         hrtData.data.bloodTests;
         hrtData.data.dosageHistory;
         hrtData.data.injectableEstradiol;
@@ -215,10 +214,9 @@
         const forecastEnd = forecastStart + forecastHorizonMs;
         const overrideDose = Number(forecastDoseOverride);
         const overrideFrequency = Number(forecastFrequencyOverride);
-        const overrideStepFudge = Number(forecastStepFudgeOverride);
         const forecastDose = Number.isFinite(overrideDose) && overrideDose > 0 ? overrideDose : schedule?.dose;
         const forecastFrequency = Number.isFinite(overrideFrequency) && overrideFrequency > 0 ? overrideFrequency : schedule?.frequency;
-        const forecastStepFudge = Number.isFinite(overrideStepFudge) && overrideStepFudge > 0 ? overrideStepFudge : 1;
+        const forecastStepFudge = 1;
         const lastInjectable = hrtData.data.dosageHistory
             .filter((d): d is Extract<DosageHistoryEntry, { medicationType: "injectableEstradiol" }> =>
                 d.medicationType === "injectableEstradiol",
@@ -576,17 +574,6 @@
                 bind:value={forecastFrequencyOverride}
             />
         </div>
-        <div class="flex items-center gap-2">
-            <label class="text-sm">Step fudge</label>
-            <input
-                type="number"
-                min="0.1"
-                step="0.1"
-                class="w-20 px-2 py-1 text-sm rounded bg-latte-rose-pine-surface dark:bg-rose-pine-surface"
-                placeholder="1.0"
-                bind:value={forecastStepFudgeOverride}
-            />
-        </div>
     </div>
 
     <div class="border rounded-lg p-4 bg-white dark:bg-rose-pine-surface shadow-md w-full">
@@ -596,7 +583,6 @@
             <p>* Pink dashed line steps to each test's fudge factor.</p>
             <p>* Orange points show measured E2 in display units.</p>
             <p>* Shaded region is forecasted schedule window.</p>
-            <p>* Forecast step fudge scales pink future line.</p>
         </div>
     </div>
 
