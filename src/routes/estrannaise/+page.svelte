@@ -107,6 +107,8 @@
         const series = getFudgeFactorSeries();
         const blendedPoints: { date: Date; xDays?: number; value: number }[] = [];
         const stepPoints: { date: Date; xDays?: number; value: number }[] = [];
+        const fallbackStepFudge = series.length ? series[series.length - 1] : { date: startDate, value: 1 };
+        const baseStepFudgeEntry = series.length > 1 ? series[series.length - 2] : fallbackStepFudge;
         const displayUnit =
             (hrtData.data.settings as any)?.displayEstradiolUnit || HormoneUnits.E2_pmol_L;
         const conversionFactor = estradiolConversionFactor(displayUnit);
@@ -124,7 +126,10 @@
             if (models.length === 0) continue;
 
             const blendedFudge = blendFudgeFactor(series, t);
-            const stepFudge = stepFudgeFactor(series, t);
+            const baseStepFudge = t >= baseStepFudgeEntry.date
+                ? baseStepFudgeEntry.value
+                : stepFudgeFactor(series, t);
+            const stepFudge = baseStepFudge;
             const dayValue = (t - startDate) / (1000 * 60 * 60 * 24);
             const blendedValue = e2multidose3C(
                 dayValue,
@@ -168,6 +173,7 @@
     let forecastWeeks = $state(8);
     let forecastDoseOverride = $state("");
     let forecastFrequencyOverride = $state("");
+    let forecastStepFudgeOverride = $state("1");
 
     const DAY_MS = 24 * 60 * 60 * 1000;
     $effect(() => {
@@ -193,7 +199,7 @@
 
     $effect(() => {
         if (!estrannaiseChartDiv) return;
-        xAxisMode; firstDoseDate; forecastEnabled; forecastWeeks; forecastDoseOverride; forecastFrequencyOverride;
+        xAxisMode; firstDoseDate; forecastEnabled; forecastWeeks; forecastDoseOverride; forecastFrequencyOverride; forecastStepFudgeOverride;
         hrtData.data.bloodTests;
         hrtData.data.dosageHistory;
         hrtData.data.injectableEstradiol;
@@ -209,8 +215,10 @@
         const forecastEnd = forecastStart + forecastHorizonMs;
         const overrideDose = Number(forecastDoseOverride);
         const overrideFrequency = Number(forecastFrequencyOverride);
+        const overrideStepFudge = Number(forecastStepFudgeOverride);
         const forecastDose = Number.isFinite(overrideDose) && overrideDose > 0 ? overrideDose : schedule?.dose;
         const forecastFrequency = Number.isFinite(overrideFrequency) && overrideFrequency > 0 ? overrideFrequency : schedule?.frequency;
+        const forecastStepFudge = Number.isFinite(overrideStepFudge) && overrideStepFudge > 0 ? overrideStepFudge : 1;
         const lastInjectable = hrtData.data.dosageHistory
             .filter((d): d is Extract<DosageHistoryEntry, { medicationType: "injectableEstradiol" }> =>
                 d.medicationType === "injectableEstradiol",
@@ -239,8 +247,11 @@
             }
         }
 
-        const series = buildEstrannaiseSeries(firstDoseDate, forecastDoses, forecastEnabled ? forecastEnd : undefined);
-        const useDaysAxis = xAxisMode === "days" && firstDoseDate !== null;
+        const series = buildEstrannaiseSeries(
+            firstDoseDate,
+            forecastDoses,
+            forecastEnabled ? forecastEnd : undefined,
+        );        const useDaysAxis = xAxisMode === "days" && firstDoseDate !== null;
         const displayUnit =
             (hrtData.data.settings as any)?.displayEstradiolUnit || HormoneUnits.E2_pmol_L;
         const bloodTests = hrtData.data.bloodTests
@@ -350,10 +361,21 @@
         const blendedForecast = forecastEnabled
             ? validBlended.filter((p) => p.date.getTime() >= splitPoint)
             : [];
-        const stepHistorical = validStep.filter((p) => p.date.getTime() < splitPoint);
+        const fudgeSeries = getFudgeFactorSeries();
+        const stepBaselineDate = fudgeSeries.length > 1
+            ? fudgeSeries[fudgeSeries.length - 2]?.date
+            : fudgeSeries.at(-1)?.date ?? forecastStart;
+        const stepSplitPoint = forecastEnabled ? stepBaselineDate : Number.POSITIVE_INFINITY;
+        const stepHistorical = validStep.filter((p) => p.date.getTime() < stepSplitPoint);
         const stepForecast = forecastEnabled
-            ? validStep.filter((p) => p.date.getTime() >= splitPoint)
+            ? validStep
+                  .filter((p) => p.date.getTime() >= stepSplitPoint)
+                  .map((p) => ({
+                      ...p,
+                      value: p.value * forecastStepFudge,
+                  }))
             : [];
+
 
         const toSegments = (points: Array<{ x: number | Date; value: number }>) =>
             points.slice(1).map((point, index) => ({
@@ -413,7 +435,6 @@
                               y2: "y2",
                               stroke: "#2E86AB",
                               strokeWidth: 2,
-                              strokeDasharray: "4,4",
                           }),
                       ]
                     : []),
@@ -555,6 +576,17 @@
                 bind:value={forecastFrequencyOverride}
             />
         </div>
+        <div class="flex items-center gap-2">
+            <label class="text-sm">Step fudge</label>
+            <input
+                type="number"
+                min="0.1"
+                step="0.1"
+                class="w-20 px-2 py-1 text-sm rounded bg-latte-rose-pine-surface dark:bg-rose-pine-surface"
+                placeholder="1.0"
+                bind:value={forecastStepFudgeOverride}
+            />
+        </div>
     </div>
 
     <div class="border rounded-lg p-4 bg-white dark:bg-rose-pine-surface shadow-md w-full">
@@ -564,6 +596,7 @@
             <p>* Pink dashed line steps to each test's fudge factor.</p>
             <p>* Orange points show measured E2 in display units.</p>
             <p>* Shaded region is forecasted schedule window.</p>
+            <p>* Forecast step fudge scales pink future line.</p>
         </div>
     </div>
 
