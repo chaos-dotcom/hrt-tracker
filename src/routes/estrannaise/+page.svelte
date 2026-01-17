@@ -213,7 +213,6 @@
         const displayUnit =
             (hrtData.data.settings as any)?.displayEstradiolUnit || HormoneUnits.E2_pmol_L;
 
-        const hasNoFudgeData = getFudgeFactorSeries().length === 1 && getFudgeFactorSeries()[0]?.value === 1.0;
         if (!series.blended.length && !series.step.length && !bloodTests.length) {
             container.innerHTML = `
                 <div class="p-4 text-sm">
@@ -230,13 +229,31 @@
         }
 
         const containerWidth = container.clientWidth || window.innerWidth - 50;
+        const blendedSeries = series.blended.filter((p) => {
+            if (typeof p.value !== "number" || !isFinite(p.value) || p.value <= 0) return false;
+            if (xKey === "xDays") return typeof p.xDays === "number" && isFinite(p.xDays);
+            return p.date instanceof Date && !isNaN(p.date.getTime());
+        });
+        const stepSeries = series.step.filter((p) => {
+            if (typeof p.value !== "number" || !isFinite(p.value) || p.value <= 0) return false;
+            if (xKey === "xDays") return typeof p.xDays === "number" && isFinite(p.xDays);
+            return p.date instanceof Date && !isNaN(p.date.getTime());
+        });
+        const bloodSeries = bloodTests.filter((b) => {
+            if (typeof b.value !== "number" || !isFinite(b.value) || b.value <= 0) return false;
+            if (xKey === "xDays") return typeof b.xDays === "number" && isFinite(b.xDays);
+            return b.date instanceof Date && !isNaN(b.date.getTime());
+        });
         const values = [
-            ...series.blended.map((p) => p.value),
-            ...series.step.map((p) => p.value),
-            ...bloodTests.map((b) => b.value),
-        ].filter((v) => typeof v === "number" && isFinite(v) && v > 0);
+            ...blendedSeries.map((p) => p.value),
+            ...stepSeries.map((p) => p.value),
+            ...bloodSeries.map((b) => b.value),
+        ];
         let yMin = values.length ? Math.min(...values) : 0;
         let yMax = values.length ? Math.max(...values) : 1;
+        if (!values.length && (series.blended.length || series.step.length || bloodTests.length)) {
+            console.warn("[Estrannaise] All values filtered out; check for non-positive or invalid values");
+        }
         if (yMin === yMax) {
             yMin = Math.max(0, yMin - 1);
             yMax += 1;
@@ -244,6 +261,56 @@
             const pad = 0.08 * (yMax - yMin);
             yMin = Math.max(0, yMin - pad);
             yMax += pad;
+        }
+
+        const xAccessor = useDaysAxis
+            ? (d: { xDays?: number }) => d.xDays ?? NaN
+            : (d: { date: Date }) => d.date.getTime();
+
+        const lineMarks = [
+            ...(blendedSeries.length
+                ? [
+                      Plot.line(blendedSeries, {
+                          x: xAccessor,
+                          y: "value",
+                          stroke: "#2E86AB",
+                          strokeWidth: 3,
+                          curve: "monotone-x",
+                          title: "Blended fudge factor",
+                      }),
+                      Plot.dot(blendedSeries, {
+                          x: xAccessor,
+                          y: "value",
+                          fill: "#2E86AB",
+                          r: 2,
+                          opacity: 0.5,
+                      }),
+                  ]
+                : []),
+            ...(stepSeries.length
+                ? [
+                      Plot.line(stepSeries, {
+                          x: xAccessor,
+                          y: "value",
+                          stroke: "#A23B72",
+                          strokeWidth: 3,
+                          strokeDasharray: "6,4",
+                          curve: "step-after",
+                          title: "Step fudge factor",
+                      }),
+                      Plot.dot(stepSeries, {
+                          x: xAccessor,
+                          y: "value",
+                          fill: "#A23B72",
+                          r: 2,
+                          opacity: 0.5,
+                      }),
+                  ]
+                : []),
+        ];
+
+        if (!lineMarks.length) {
+            console.warn("[Estrannaise] No valid line data to render");
         }
 
         const chart = Plot.plot({
@@ -269,50 +336,28 @@
                 domain: [yMin, yMax],
             },
             marks: [
-                ...(series.blended.length
-                    ? [
-                          Plot.line(series.blended, {
-                              x: xKey,
-                              y: "value",
-                              stroke: "#0072B2",
-                              strokeWidth: 2,
-                              title: "Blended fudge factor",
-                          }),
-                      ]
-                    : []),
-                ...(series.step.length
-                    ? [
-                          Plot.line(series.step, {
-                              x: xKey,
-                              y: "value",
-                              stroke: "#8C5FB2",
-                              strokeWidth: 2,
-                              strokeDasharray: "6,4",
-                              title: "Step fudge factor",
-                          }),
-                      ]
-                    : []),
+                ...lineMarks,
                 ...(bloodTests.length
                     ? [
-                          Plot.ruleX(bloodTests, {
-                              x: xKey,
+                          Plot.ruleX(bloodSeries, {
+                              x: xAccessor,
                               stroke: "orange",
                               strokeDasharray: "4,4",
                               strokeWidth: 1.5,
                               opacity: 0.8,
                           }),
-                          Plot.dot(bloodTests, {
-                              x: xKey,
+                          Plot.dot(bloodSeries, {
+                              x: xAccessor,
                               y: "value",
                               fill: "orange",
                               r: 4,
                               title: (d: { xDays?: number; date: Date; value: number }) => {
                                   const dayPrefix =
-                                      xKey === "xDays" && typeof d.xDays === "number"
+                                      useDaysAxis && typeof d.xDays === "number"
                                           ? `Day ${d.xDays.toFixed(1)} – `
                                           : "";
                                   const dateLabel =
-                                      d.date && typeof d.date.toLocaleDateString === "function"
+                                      !useDaysAxis && d.date && typeof d.date.toLocaleDateString === "function"
                                           ? d.date.toLocaleDateString()
                                           : "";
                                   return `Blood test: ${Number(d.value).toFixed(1)} ${displayUnit} (${dayPrefix}${dateLabel})`;
@@ -322,6 +367,29 @@
                     : []),
             ],
         });
+        const svg = chart.querySelector("svg");
+        const paths = Array.from(svg?.querySelectorAll("path") ?? []);
+        const pathSummaries = paths.map((path) => ({
+            dLength: path.getAttribute("d")?.length ?? 0,
+            stroke: path.getAttribute("stroke"),
+            strokeWidth: path.getAttribute("stroke-width"),
+        }));
+        const longPaths = pathSummaries.filter((p) => p.dLength > 50);
+        console.log("[Estrannaise] Path summary:", {
+            total: pathSummaries.length,
+            long: longPaths.length,
+            strokes: longPaths.map((p) => p.stroke),
+        });
+        (window as any).__estrannaiseDebug = {
+            blended: blendedSeries,
+            step: stepSeries,
+            bloodTests: bloodSeries,
+            xKey,
+            yMin,
+            yMax,
+            pathSummaries,
+        };
+        console.log("[Estrannaise] debug paths with stroke:", pathSummaries.filter((p) => p.stroke));
 
         container.firstChild?.remove();
         container.append(chart);
