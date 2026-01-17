@@ -474,21 +474,6 @@
             ],
         });
 
-        const svg = chart.querySelector("svg");
-        const paths = Array.from(svg?.querySelectorAll("path") ?? []);
-        const maxPathLength = paths.reduce((max, path) => {
-            const length = path.getAttribute("d")?.length ?? 0;
-            return Math.max(max, length);
-        }, 0);
-        console.log("[Estrannaise] max path length:", maxPathLength);
-        (window as any).__estrannaiseDebug = {
-            blendedCount: series.blended.length,
-            stepCount: series.step.length,
-            validBlendedCount: validBlended.length,
-            validStepCount: validStep.length,
-            maxPathLength,
-        };
-
         container.firstChild?.remove();
         container.append(chart);
     }
