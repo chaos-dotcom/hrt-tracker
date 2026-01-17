@@ -80,7 +80,11 @@
         return null;
     }
 
-    function buildEstrannaiseSeries(firstDoseDate: number | null) {
+    function buildEstrannaiseSeries(
+        firstDoseDate: number | null,
+        extraDoses: Extract<DosageHistoryEntry, { medicationType: "injectableEstradiol" }>[] = [],
+        forecastEndDate?: number,
+    ) {
         const history = hrtData.data.dosageHistory
             .filter(
                 (d): d is Extract<DosageHistoryEntry, { medicationType: "injectableEstradiol" }> =>
@@ -88,15 +92,18 @@
             )
             .sort((a, b) => a.date - b.date);
 
-        if (history.length === 0) {
+        if (history.length === 0 && extraDoses.length === 0) {
             return {
                 blended: [] as { date: Date; xDays?: number; value: number }[],
                 step: [] as { date: Date; xDays?: number; value: number }[],
             };
         }
 
-        const startDate = history[0].date;
-        const endDate = Date.now();
+        const combinedHistory = [...history, ...extraDoses].sort((a, b) => a.date - b.date);
+        const startDate = combinedHistory[0].date;
+        const lastDoseDate = combinedHistory[combinedHistory.length - 1].date;
+        const baseEndDate = Math.max(Date.now(), lastDoseDate + 30 * 24 * 60 * 60 * 1000);
+        const endDate = forecastEndDate ? Math.max(baseEndDate, forecastEndDate) : baseEndDate;
         const series = getFudgeFactorSeries();
         const blendedPoints: { date: Date; xDays?: number; value: number }[] = [];
         const stepPoints: { date: Date; xDays?: number; value: number }[] = [];
@@ -106,7 +113,7 @@
 
         const stepMs = 6 * 60 * 60 * 1000; // 6h resolution
         for (let t = startDate; t <= endDate; t += stepMs) {
-            const doses = history.filter((d) => d.date <= t);
+            const doses = combinedHistory.filter((d) => d.date <= t);
             if (doses.length === 0) continue;
 
             const doseAmounts = doses.map((d) => d.dose);
@@ -157,6 +164,11 @@
     let firstDoseDate: number | null = $state(null);
     let xAxisMode = $state<"date" | "days">("date");
 
+    let forecastEnabled = $state(true);
+    let forecastWeeks = $state(8);
+    let forecastDoseOverride = $state("");
+    let forecastFrequencyOverride = $state("");
+
     const DAY_MS = 24 * 60 * 60 * 1000;
     $effect(() => {
         const dosageHistory = hrtData.data.dosageHistory;
@@ -181,37 +193,74 @@
 
     $effect(() => {
         if (!estrannaiseChartDiv) return;
-        xAxisMode; firstDoseDate;
+        xAxisMode; firstDoseDate; forecastEnabled; forecastWeeks; forecastDoseOverride; forecastFrequencyOverride;
         hrtData.data.bloodTests;
         hrtData.data.dosageHistory;
+        hrtData.data.injectableEstradiol;
         hrtData.data.settings;
         renderEstrannaiseChart(estrannaiseChartDiv);
     });
 
     function renderEstrannaiseChart(container: HTMLElement) {
-        const series = buildEstrannaiseSeries(firstDoseDate);
+        const schedule = hrtData.data.injectableEstradiol;
+        const forecastWeeksNum = Math.max(4, Math.min(8, Number(forecastWeeks) || 8));
+        const forecastHorizonMs = forecastWeeksNum * 7 * DAY_MS;
+        const forecastStart = Date.now();
+        const forecastEnd = forecastStart + forecastHorizonMs;
+        const overrideDose = Number(forecastDoseOverride);
+        const overrideFrequency = Number(forecastFrequencyOverride);
+        const forecastDose = Number.isFinite(overrideDose) && overrideDose > 0 ? overrideDose : schedule?.dose;
+        const forecastFrequency = Number.isFinite(overrideFrequency) && overrideFrequency > 0 ? overrideFrequency : schedule?.frequency;
+        const lastInjectable = hrtData.data.dosageHistory
+            .filter((d): d is Extract<DosageHistoryEntry, { medicationType: "injectableEstradiol" }> =>
+                d.medicationType === "injectableEstradiol",
+            )
+            .at(-1);
+        const forecastType = schedule?.type || lastInjectable?.type;
+        const forecastUnit = schedule?.unit || HormoneUnits.mg;
+        const forecastStartDate = Math.max(forecastStart, schedule?.nextDoseDate ?? forecastStart);
+
+        const forecastDoses: Extract<DosageHistoryEntry, { medicationType: "injectableEstradiol" }>[] = [];
+        if (
+            forecastEnabled &&
+            forecastDose &&
+            forecastFrequency &&
+            forecastType &&
+            Number.isFinite(forecastStartDate)
+        ) {
+            for (let t = forecastStartDate; t <= forecastEnd; t += forecastFrequency * DAY_MS) {
+                forecastDoses.push({
+                    date: t,
+                    dose: forecastDose,
+                    unit: forecastUnit,
+                    type: forecastType,
+                    medicationType: "injectableEstradiol",
+                });
+            }
+        }
+
+        const series = buildEstrannaiseSeries(firstDoseDate, forecastDoses, forecastEnabled ? forecastEnd : undefined);
+        const useDaysAxis = xAxisMode === "days" && firstDoseDate !== null;
+        const displayUnit =
+            (hrtData.data.settings as any)?.displayEstradiolUnit || HormoneUnits.E2_pmol_L;
         const bloodTests = hrtData.data.bloodTests
             .filter((t) => t.estradiolLevel !== undefined)
             .map((t) => {
                 const rawUnit = t.estradiolUnit || HormoneUnits.E2_pg_mL;
-                const displayUnit =
-                    (hrtData.data.settings as any)?.displayEstradiolUnit || HormoneUnits.E2_pmol_L;
                 const value = convertEstradiolToDisplayUnit(
                     t.estradiolLevel as number,
                     rawUnit,
                     displayUnit,
                 );
+                const date = new Date(t.date);
                 return {
-                    date: new Date(t.date),
-                    xDays: firstDoseDate !== null ? (t.date - firstDoseDate) / (1000 * 60 * 60 * 24) : undefined,
+                    date,
+                    x: useDaysAxis && firstDoseDate !== null
+                        ? (t.date - firstDoseDate) / (1000 * 60 * 60 * 24)
+                        : date,
                     value,
                 };
             });
-
-        const useDaysAxis = xAxisMode === "days" && firstDoseDate !== null;
-        const xKey: "date" | "xDays" = useDaysAxis ? "xDays" : "date";
-        const displayUnit =
-            (hrtData.data.settings as any)?.displayEstradiolUnit || HormoneUnits.E2_pmol_L;
 
         if (!series.blended.length && !series.step.length && !bloodTests.length) {
             container.innerHTML = `
@@ -229,89 +278,95 @@
         }
 
         const containerWidth = container.clientWidth || window.innerWidth - 50;
-        const blendedSeries = series.blended.filter((p) => {
-            if (typeof p.value !== "number" || !isFinite(p.value) || p.value <= 0) return false;
-            if (xKey === "xDays") return typeof p.xDays === "number" && isFinite(p.xDays);
-            return p.date instanceof Date && !isNaN(p.date.getTime());
-        });
-        const stepSeries = series.step.filter((p) => {
-            if (typeof p.value !== "number" || !isFinite(p.value) || p.value <= 0) return false;
-            if (xKey === "xDays") return typeof p.xDays === "number" && isFinite(p.xDays);
-            return p.date instanceof Date && !isNaN(p.date.getTime());
-        });
-        const bloodSeries = bloodTests.filter((b) => {
-            if (typeof b.value !== "number" || !isFinite(b.value) || b.value <= 0) return false;
-            if (xKey === "xDays") return typeof b.xDays === "number" && isFinite(b.xDays);
-            return b.date instanceof Date && !isNaN(b.date.getTime());
-        });
+        const isValidPoint = (p: { value: number; x?: number | Date }) => {
+            if (typeof p.value !== "number" || !isFinite(p.value)) return false;
+            if (useDaysAxis) {
+                return typeof p.x === "number" && isFinite(p.x);
+            }
+            return p.x instanceof Date && !isNaN(p.x.getTime());
+        };
+        const validBlended = series.blended
+            .map((p) => ({
+                ...p,
+                x: useDaysAxis && firstDoseDate !== null
+                    ? (p.date.getTime() - firstDoseDate) / (1000 * 60 * 60 * 24)
+                    : p.date,
+            }))
+            .filter(isValidPoint);
+        const validStep = series.step
+            .map((p) => ({
+                ...p,
+                x: useDaysAxis && firstDoseDate !== null
+                    ? (p.date.getTime() - firstDoseDate) / (1000 * 60 * 60 * 24)
+                    : p.date,
+            }))
+            .filter(isValidPoint);
+        const validBloodTests = bloodTests
+            .map((b) => ({
+                ...b,
+                x: useDaysAxis && firstDoseDate !== null
+                    ? (b.date.getTime() - firstDoseDate) / (1000 * 60 * 60 * 24)
+                    : b.date,
+            }))
+            .filter(isValidPoint);
+
         const values = [
-            ...blendedSeries.map((p) => p.value),
-            ...stepSeries.map((p) => p.value),
-            ...bloodSeries.map((b) => b.value),
+            ...validBlended.map((p) => p.value),
+            ...validStep.map((p) => p.value),
+            ...validBloodTests.map((b) => b.value),
         ];
         let yMin = values.length ? Math.min(...values) : 0;
         let yMax = values.length ? Math.max(...values) : 1;
-        if (!values.length && (series.blended.length || series.step.length || bloodTests.length)) {
-            console.warn("[Estrannaise] All values filtered out; check for non-positive or invalid values");
-        }
         if (yMin === yMax) {
-            yMin = Math.max(0, yMin - 1);
+            yMin = yMin - 1;
             yMax += 1;
         } else {
             const pad = 0.08 * (yMax - yMin);
-            yMin = Math.max(0, yMin - pad);
+            yMin = yMin - pad;
             yMax += pad;
         }
 
-        const xAccessor = useDaysAxis
-            ? (d: { xDays?: number }) => d.xDays ?? NaN
-            : (d: { date: Date }) => d.date.getTime();
+        const forecastBand = forecastEnabled && (!useDaysAxis || firstDoseDate !== null)
+            ? Plot.rect([
+                  {
+                      x1: useDaysAxis ? (forecastStart - firstDoseDate!) / DAY_MS : new Date(forecastStart),
+                      x2: useDaysAxis ? (forecastEnd - firstDoseDate!) / DAY_MS : new Date(forecastEnd),
+                      y1: yMin,
+                      y2: yMax,
+                  },
+              ], {
+                  x1: "x1",
+                  x2: "x2",
+                  y1: "y1",
+                  y2: "y2",
+                  fill: "#f6c177",
+                  fillOpacity: 0.12,
+                  stroke: "none",
+              })
+            : null;
 
-        const lineMarks = [
-            ...(blendedSeries.length
-                ? [
-                      Plot.line(blendedSeries, {
-                          x: xAccessor,
-                          y: "value",
-                          stroke: "#2E86AB",
-                          strokeWidth: 3,
-                          curve: "monotone-x",
-                          title: "Blended fudge factor",
-                      }),
-                      Plot.dot(blendedSeries, {
-                          x: xAccessor,
-                          y: "value",
-                          fill: "#2E86AB",
-                          r: 2,
-                          opacity: 0.5,
-                      }),
-                  ]
-                : []),
-            ...(stepSeries.length
-                ? [
-                      Plot.line(stepSeries, {
-                          x: xAccessor,
-                          y: "value",
-                          stroke: "#A23B72",
-                          strokeWidth: 3,
-                          strokeDasharray: "6,4",
-                          curve: "step-after",
-                          title: "Step fudge factor",
-                      }),
-                      Plot.dot(stepSeries, {
-                          x: xAccessor,
-                          y: "value",
-                          fill: "#A23B72",
-                          r: 2,
-                          opacity: 0.5,
-                      }),
-                  ]
-                : []),
-        ];
+        const splitPoint = forecastEnabled ? forecastStart : Number.POSITIVE_INFINITY;
+        const blendedHistorical = validBlended.filter((p) => p.date.getTime() < splitPoint);
+        const blendedForecast = forecastEnabled
+            ? validBlended.filter((p) => p.date.getTime() >= splitPoint)
+            : [];
+        const stepHistorical = validStep.filter((p) => p.date.getTime() < splitPoint);
+        const stepForecast = forecastEnabled
+            ? validStep.filter((p) => p.date.getTime() >= splitPoint)
+            : [];
 
-        if (!lineMarks.length) {
-            console.warn("[Estrannaise] No valid line data to render");
-        }
+        const toSegments = (points: Array<{ x: number | Date; value: number }>) =>
+            points.slice(1).map((point, index) => ({
+                x1: points[index].x,
+                y1: points[index].value,
+                x2: point.x,
+                y2: point.value,
+            }));
+
+        const blendedHistoricalSegments = toSegments(blendedHistorical);
+        const blendedForecastSegments = toSegments(blendedForecast);
+        const stepHistoricalSegments = toSegments(stepHistorical);
+        const stepForecastSegments = toSegments(stepForecast);
 
         const chart = Plot.plot({
             title: "Estrannaise Model (blended vs. step)",
@@ -336,29 +391,80 @@
                 domain: [yMin, yMax],
             },
             marks: [
-                ...lineMarks,
-                ...(bloodTests.length
+                ...(forecastBand ? [forecastBand] : []),
+                ...(blendedHistoricalSegments.length
                     ? [
-                          Plot.ruleX(bloodSeries, {
-                              x: xAccessor,
+                          Plot.link(blendedHistoricalSegments, {
+                              x1: "x1",
+                              y1: "y1",
+                              x2: "x2",
+                              y2: "y2",
+                              stroke: "#2E86AB",
+                              strokeWidth: 2,
+                          }),
+                      ]
+                    : []),
+                ...(blendedForecastSegments.length
+                    ? [
+                          Plot.link(blendedForecastSegments, {
+                              x1: "x1",
+                              y1: "y1",
+                              x2: "x2",
+                              y2: "y2",
+                              stroke: "#2E86AB",
+                              strokeWidth: 2,
+                              strokeDasharray: "4,4",
+                          }),
+                      ]
+                    : []),
+                ...(stepHistoricalSegments.length
+                    ? [
+                          Plot.link(stepHistoricalSegments, {
+                              x1: "x1",
+                              y1: "y1",
+                              x2: "x2",
+                              y2: "y2",
+                              stroke: "#A23B72",
+                              strokeWidth: 2,
+                              strokeDasharray: "6,4",
+                          }),
+                      ]
+                    : []),
+                ...(stepForecastSegments.length
+                    ? [
+                          Plot.link(stepForecastSegments, {
+                              x1: "x1",
+                              y1: "y1",
+                              x2: "x2",
+                              y2: "y2",
+                              stroke: "#A23B72",
+                              strokeWidth: 2,
+                              strokeDasharray: "2,6",
+                          }),
+                      ]
+                    : []),
+                ...(validBloodTests.length
+                    ? [
+                          Plot.ruleX(validBloodTests, {
+                              x: "x",
                               stroke: "orange",
                               strokeDasharray: "4,4",
                               strokeWidth: 1.5,
                               opacity: 0.8,
                           }),
-                          Plot.dot(bloodSeries, {
-                              x: xAccessor,
+                          Plot.dot(validBloodTests, {
+                              x: "x",
                               y: "value",
                               fill: "orange",
                               r: 4,
-                              title: (d: { xDays?: number; date: Date; value: number }) => {
+                              title: (d: { x: number | Date; value: number }) => {
                                   const dayPrefix =
-                                      useDaysAxis && typeof d.xDays === "number"
-                                          ? `Day ${d.xDays.toFixed(1)} – `
+                                      useDaysAxis && typeof d.x === "number"
+                                          ? `Day ${d.x.toFixed(1)} – `
                                           : "";
                                   const dateLabel =
-                                      !useDaysAxis && d.date && typeof d.date.toLocaleDateString === "function"
-                                          ? d.date.toLocaleDateString()
+                                      !useDaysAxis && d.x instanceof Date
+                                          ? d.x.toLocaleDateString()
                                           : "";
                                   return `Blood test: ${Number(d.value).toFixed(1)} ${displayUnit} (${dayPrefix}${dateLabel})`;
                               },
@@ -367,29 +473,21 @@
                     : []),
             ],
         });
+
         const svg = chart.querySelector("svg");
         const paths = Array.from(svg?.querySelectorAll("path") ?? []);
-        const pathSummaries = paths.map((path) => ({
-            dLength: path.getAttribute("d")?.length ?? 0,
-            stroke: path.getAttribute("stroke"),
-            strokeWidth: path.getAttribute("stroke-width"),
-        }));
-        const longPaths = pathSummaries.filter((p) => p.dLength > 50);
-        console.log("[Estrannaise] Path summary:", {
-            total: pathSummaries.length,
-            long: longPaths.length,
-            strokes: longPaths.map((p) => p.stroke),
-        });
+        const maxPathLength = paths.reduce((max, path) => {
+            const length = path.getAttribute("d")?.length ?? 0;
+            return Math.max(max, length);
+        }, 0);
+        console.log("[Estrannaise] max path length:", maxPathLength);
         (window as any).__estrannaiseDebug = {
-            blended: blendedSeries,
-            step: stepSeries,
-            bloodTests: bloodSeries,
-            xKey,
-            yMin,
-            yMax,
-            pathSummaries,
+            blendedCount: series.blended.length,
+            stepCount: series.step.length,
+            validBlendedCount: validBlended.length,
+            validStepCount: validStep.length,
+            maxPathLength,
         };
-        console.log("[Estrannaise] debug paths with stroke:", pathSummaries.filter((p) => p.stroke));
 
         container.firstChild?.remove();
         container.append(chart);
@@ -415,7 +513,7 @@
     repeated-dose simulator.
 </p>
 <div class="flex flex-col p-4 w-full max-w-[100vw] gap-4">
-    <div class="mb-2 flex flex-wrap gap-2">
+    <div class="mb-2 flex flex-wrap gap-2 items-center">
         <span class="self-center text-sm">X-Axis:</span>
         <button
             class="px-3 py-1 text-sm transition-colors bg-latte-rose-pine-surface dark:bg-rose-pine-surface text-latte-rose-pine-text dark:text-rose-pine-text rounded dark:hover:bg-rose-pine-overlay hover:bg-latte-rose-pine-overlay"
@@ -428,7 +526,7 @@
             Date
         </button>
         <button
-            class="px-3 py-1 text-sm transition-colors bg-latte-rose-pine-surface dark:bg-rose-pine-surface text-latte-rose-pine-text dark:text-rose-pine-text rounded dark:hover:bg-rose-pine-overlay hover:bg-latte-rose-pine-overlay disabled:opacity-50 disabled:cursor-not-allowed"
+            class="px-3 py-1 text-sm transition-colors bg-latte-rose-pine-surface dark:bg-rose-pine-surface text-latte-rose-pine-text dark:text-rose-pine-text rounded dark:hover:bg-latte-rose-pine-overlay hover:bg-latte-rose-pine-overlay disabled:opacity-50 disabled:cursor-not-allowed"
             class:bg-latte-rose-pine-iris={xAxisMode === "days"}
             class:dark:bg-rose-pine-iris={xAxisMode === "days"}
             class:text-latte-rose-pine-base={xAxisMode === "days"}
@@ -438,14 +536,49 @@
         >
             Days since first dose
         </button>
+        <div class="flex items-center gap-2 ml-2">
+            <label class="text-sm">Forecast</label>
+            <input type="checkbox" bind:checked={forecastEnabled} />
+        </div>
+        <div class="flex items-center gap-2">
+            <label class="text-sm">Weeks</label>
+            <select bind:value={forecastWeeks} class="px-2 py-1 text-sm rounded bg-latte-rose-pine-surface dark:bg-rose-pine-surface">
+                <option value="4">4</option>
+                <option value="6">6</option>
+                <option value="8">8</option>
+            </select>
+        </div>
+        <div class="flex items-center gap-2">
+            <label class="text-sm">Dose</label>
+            <input
+                type="number"
+                min="0"
+                step="0.1"
+                class="w-20 px-2 py-1 text-sm rounded bg-latte-rose-pine-surface dark:bg-rose-pine-surface"
+                placeholder="auto"
+                bind:value={forecastDoseOverride}
+            />
+        </div>
+        <div class="flex items-center gap-2">
+            <label class="text-sm">Every (days)</label>
+            <input
+                type="number"
+                min="1"
+                step="1"
+                class="w-20 px-2 py-1 text-sm rounded bg-latte-rose-pine-surface dark:bg-rose-pine-surface"
+                placeholder="auto"
+                bind:value={forecastFrequencyOverride}
+            />
+        </div>
     </div>
 
     <div class="border rounded-lg p-4 bg-white dark:bg-rose-pine-surface shadow-md w-full">
         <div bind:this={estrannaiseChartDiv} class="w-full min-w-0 overflow-x-auto" role="img"></div>
         <div class="mt-4 text-sm text-gray-500 dark:text-gray-400 italic">
             <p>* Blue line blends fudge factor between blood tests.</p>
-            <p>* Purple dashed line steps to each test's fudge factor.</p>
+            <p>* Pink dashed line steps to each test's fudge factor.</p>
             <p>* Orange points show measured E2 in display units.</p>
+            <p>* Shaded region is forecasted schedule window.</p>
         </div>
     </div>
 
