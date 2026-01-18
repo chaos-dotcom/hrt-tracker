@@ -1,0 +1,17 @@
+[workspace]
+# Keep CSR for now; SSR can be enabled later.
+
+[site]
+# Generated output directory for the web build.
+site-root = "target/site"
+site-pkg-dir = "pkg"
+
+[build]
+# Name of the web crate.
+bin-package = "hrt-web"
+
+[watch]
+# Optional: run the server during watch.
+
+[env]
+# Placeholder for shared env vars.

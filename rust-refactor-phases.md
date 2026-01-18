@@ -2,6 +2,7 @@
 
 ## Phase 0 — Compatibility Contract
 - Lock API surface: `/api/data`, `/api/settings`, `/api/ics`, `/api/ics/{secret}`, `/api/convert`, `/api/dosage-photo/{entryId}`, `/api/dosage-photo/{entryId}/{filename}`.
+- Lock UI routes: `/`, `/create/dosage`, `/create/blood-test`, `/create/measurement`, `/view`, `/stats`, `/backup`, `/calc`, `/vials`, `/vials/create`, `/vials/{id}`, `/estrannaise`.
 - Lock data locations and formats:
   - `data/hrt-data.json` (JSON; exclude `settings` on write).
   - `data/hrt-settings.yaml` (YAML).
@@ -10,7 +11,17 @@
   - ICS content type/headers and query params.
   - Image response content types.
   - Error/status code behavior for missing/invalid files.
-- Capture existing route list and map to Rust UI routes.
+  - `/api/data` GET/POST parity (strip `settings`, atomic write, `{}` on missing/invalid).
+  - `/api/settings` GET/POST parity (YAML read/write, `{}` on missing).
+  - `/api/convert` parity (conversion math + error handling).
+  - `/api/dosage-photo` parity (upload behavior + GET/DELETE semantics).
+- Lock state rules:
+  - Blood test fudge-factor migration.
+  - Auto-backfill scheduled doses.
+  - Snap-to-next injection boundary logic.
+- Non-goals for Phase 0:
+  - No DB migration or file format changes.
+  - No route renames or behavioral changes.
 
 ## Phase 1 — Workspace + Build Skeleton
 - Create Rust workspace: `crates/shared`, `crates/server`, `crates/web`.
