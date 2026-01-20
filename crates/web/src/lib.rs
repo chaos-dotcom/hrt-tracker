@@ -29,7 +29,7 @@ pub fn App() -> impl IntoView {
                     <header class="top-bar">
                         <div class="brand">
                             <span class="brand-title">"HRT Tracker"</span>
-                            <span class="brand-sub">"Dose, labs, and trends"</span>
+                            <span class="brand-sub">"Get Absolutely Estrogen'd Idiot"</span>
                         </div>
                         <nav class="nav-links">
                             <A href="/" active_class="active">"Dashboard"</A>
@@ -62,36 +62,6 @@ pub fn App() -> impl IntoView {
                     </main>
                 </div>
             </StoreProvider>
-            <main>
-                <nav>
-                    <ul>
-                        <li><A href="/">"Dashboard"</A></li>
-                        <li><A href="/create/dosage">"New Dose"</A></li>
-                        <li><A href="/create/blood-test">"New Blood Test"</A></li>
-                        <li><A href="/create/measurement">"New Measurement"</A></li>
-                        <li><A href="/view">"View"</A></li>
-                        <li><A href="/stats">"Stats"</A></li>
-                        <li><A href="/backup">"Backup"</A></li>
-                        <li><A href="/calc">"Calculator"</A></li>
-                        <li><A href="/vials">"Vials"</A></li>
-                        <li><A href="/estrannaise">"Estrannaise"</A></li>
-                    </ul>
-                </nav>
-                <Routes>
-                    <Route path="/" view=Dashboard />
-                    <Route path="/create/dosage" view=CreateDosage />
-                    <Route path="/create/blood-test" view=CreateBloodTest />
-                    <Route path="/create/measurement" view=CreateMeasurement />
-                    <Route path="/view" view=ViewPage />
-                    <Route path="/stats" view=StatsPage />
-                    <Route path="/backup" view=BackupPage />
-                    <Route path="/calc" view=CalcPage />
-                    <Route path="/vials" view=VialsPage />
-                    <Route path="/vials/create" view=VialsCreatePage />
-                    <Route path="/vials/:id" view=VialsDetailPage />
-                    <Route path="/estrannaise" view=EstrannaisePage />
-                </Routes>
-            </main>
         </Router>
     }
 }
@@ -125,7 +95,6 @@ fn page_layout(title: &'static str, body: View) -> impl IntoView {
         }
     };
 
-fn page_shell(title: &'static str) -> impl IntoView {
     view! {
         <section>
             <header>
@@ -147,8 +116,6 @@ fn page_shell(title: &'static str) -> impl IntoView {
                 <p class="error">{move || error.get().unwrap_or_default()}</p>
             </Show>
             {body}
-            <h1>{title}</h1>
-            <p>"Placeholder for Rust UI rewrite."</p>
         </section>
     }
 }
@@ -324,7 +291,6 @@ fn Dashboard() -> impl IntoView {
         }
         .into_view(),
     )
-    page_shell("Dashboard")
 }
 
 #[component]
@@ -447,7 +413,6 @@ fn CreateDosage() -> impl IntoView {
         }
         .into_view(),
     )
-    page_shell("Create Dosage")
 }
 
 #[component]
@@ -565,7 +530,6 @@ fn CreateBloodTest() -> impl IntoView {
         }
         .into_view(),
     )
-    page_shell("Create Blood Test")
 }
 
 #[component]
@@ -676,7 +640,6 @@ fn CreateMeasurement() -> impl IntoView {
         }
         .into_view(),
     )
-    page_shell("Create Measurement")
 }
 
 #[component]
@@ -1397,7 +1360,6 @@ fn ViewPage() -> impl IntoView {
         }
         .into_view(),
     )
-    page_shell("View")
 }
 
 #[component]
@@ -1535,7 +1497,6 @@ fn StatsPage() -> impl IntoView {
         }
         .into_view(),
     )
-    page_shell("Stats")
 }
 
 #[component]
@@ -1570,7 +1531,6 @@ fn BackupPage() -> impl IntoView {
         }
         .into_view(),
     )
-    page_shell("Backup")
 }
 
 #[component]
@@ -1639,7 +1599,6 @@ fn CalcPage() -> impl IntoView {
         }
         .into_view(),
     )
-    page_shell("Calculator")
 }
 
 #[component]
@@ -1706,7 +1665,6 @@ fn VialsPage() -> impl IntoView {
         }
         .into_view(),
     )
-    page_shell("Vials")
 }
 
 #[component]
@@ -1800,7 +1758,6 @@ fn VialsCreatePage() -> impl IntoView {
         }
         .into_view(),
     )
-    page_shell("Create Vial")
 }
 
 #[component]
@@ -1816,152 +1773,30 @@ fn VialsDetailPage() -> impl IntoView {
     let sub_label = create_rw_signal("".to_string());
     let sub_notes = create_rw_signal("".to_string());
 
-    let render_vial = move |entry: hrt_shared::types::Vial| {
-        let created = Local
-            .timestamp_millis_opt(entry.createdAt)
-            .single()
-            .map(|d| d.format("%Y-%m-%d").to_string())
-            .unwrap_or_else(|| "".to_string());
-        let use_by = entry
-            .useBy
-            .and_then(|value| {
-                Local.timestamp_millis_opt(value)
-                    .single()
-                    .map(|d| d.format("%Y-%m-%d").to_string())
-            })
-            .unwrap_or_else(|| "-".to_string());
-        let spent_label = if entry.isSpent.unwrap_or(false) {
-            "Spent"
-        } else {
-            "Active"
-        };
-        let entry_id = entry.id.clone();
-        let store_toggle = vial_store.clone();
-        let store_subvial = vial_store.clone();
-        let is_spent = entry.isSpent.unwrap_or(false);
-        let title = entry.batchNumber.clone().unwrap_or_else(|| "Vial".to_string());
-        let ester = entry.esterKind.clone().unwrap_or_else(|| "-".to_string());
-        let concentration = entry
-            .concentrationMgPerMl
-            .map(|v| format!("{:.2} mg/mL", v))
-            .unwrap_or_else(|| "-".to_string());
-        let sub_vials = create_rw_signal(entry.subVials);
-
-        view! {
-            <section>
-                <h2>{title}</h2>
-                <p>{"Ester: "}{ester}</p>
-                <p>{"Concentration: "}{concentration}</p>
-                <p>{"Created: "}{created}</p>
-                <p>{"Use by: "}{use_by}</p>
-                <p>{"Status: "}{spent_label}</p>
-
-                <div class="primary-actions">
-                    <button
-                        type="button"
-                        on:click=move |_| {
-                            store_toggle.data.update(|d| {
-                                if let Some(target) = d.vials.iter_mut().find(|v| v.id == entry_id) {
-                                    let next = !target.isSpent.unwrap_or(false);
-                                    target.isSpent = Some(next);
-                                    target.spentAt = if next { Some(js_sys::Date::now() as i64) } else { None };
-                                }
-                            });
-                            store_toggle.is_dirty.set(true);
-                            store_toggle.save();
-                        }
-                    >
-                        {if is_spent { "Mark Active" } else { "Mark Spent" }}
-                    </button>
-                </div>
-
-                <form class="subvial-form" on:submit={
-                    let store_subvial = store_subvial.clone();
-                    let entry_id = entry_id.clone();
-                    let sub_vials = sub_vials.clone();
-                    move |ev| {
-                        ev.prevent_default();
-                        let label = sub_label.get();
-                        let notes = sub_notes.get();
-                        if label.trim().is_empty() {
-                            return;
-                        }
-                        let mut next_list = sub_vials.get();
-                        store_subvial.data.update(|d| {
-                            if let Some(target) = d.vials.iter_mut().find(|v| v.id == entry_id) {
-                                let stamp = js_sys::Date::now() as i64;
-                                let new_sub = hrt_shared::types::SubVial {
-                                    id: format!("sub-{}-{}", entry_id, stamp),
-                                    personalNumber: label.trim().to_string(),
-                                    createdAt: stamp,
-                                    notes: if notes.trim().is_empty() { None } else { Some(notes.clone()) },
-                                };
-                                target.subVials.push(new_sub.clone());
-                                next_list.push(new_sub);
-                            }
-                        });
-                        sub_vials.set(next_list);
-                        store_subvial.is_dirty.set(true);
-                        store_subvial.save();
-                        sub_label.set("".to_string());
-                        sub_notes.set("".to_string());
-                    }
-                }>
-                    <label>"New Sub-Vial Label"</label>
-                    <input
-                        type="text"
-                        placeholder="SUB-1"
-                        on:input=move |ev| sub_label.set(event_target_value(&ev))
-                        prop:value=move || sub_label.get()
-                    />
-                    <label>"Notes"</label>
-                    <input
-                        type="text"
-                        placeholder="Optional"
-                        on:input=move |ev| sub_notes.set(event_target_value(&ev))
-                        prop:value=move || sub_notes.get()
-                    />
-                    <button type="submit">"Add Sub-Vial"</button>
-                </form>
-
-                <Show
-                    when=move || !sub_vials.get().is_empty()
-                    fallback=move || view! { <div class="empty-state">"No sub-vials yet."</div> }
-                >
-                    <table class="table">
-                        <thead>
-                            <tr>
-                                <th>"Label"</th>
-                                <th>"Created"</th>
-                                <th>"Notes"</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <For
-                                each=move || sub_vials.get()
-                                key=|sub| sub.id.clone()
-                                children=move |sub| {
-                                    let created = Local
-                                        .timestamp_millis_opt(sub.createdAt)
-                                        .single()
-                                        .map(|d| d.format("%Y-%m-%d").to_string())
-                                        .unwrap_or_else(|| "".to_string());
-                                    view! {
-                                        <tr>
-                                            <td>{sub.personalNumber}</td>
-                                            <td>{created}</td>
-                                            <td>{sub.notes.unwrap_or_default()}</td>
-                                        </tr>
-                                    }
-                                }
-                            />
-                        </tbody>
-                    </table>
-                </Show>
-            </section>
-        }
-        .into_view()
-    };
+    let render_vial = {
+        let vial_store = vial_store.clone();
+        let sub_label = sub_label.clone();
+        let sub_notes = sub_notes.clone();
+        move |entry: hrt_shared::types::Vial| {
+            let created = Local
+                .timestamp_millis_opt(entry.createdAt)
+                .single()
+                .map(|d| d.format("%Y-%m-%d").to_string())
+                .unwrap_or_else(|| "".to_string());
+            let use_by = entry
+                .useBy
+                .and_then(|value| {
+                    Local
+                        .timestamp_millis_opt(value)
+                        .single()
+                        .map(|d| d.format("%Y-%m-%d").to_string())
+                })
+                .unwrap_or_else(|| "-".to_string());
+            let spent_label = if entry.isSpent.unwrap_or(false) {
+                "Spent"
+            } else {
+                "Active"
+            };
             let entry_id = entry.id.clone();
             let store_toggle = vial_store.clone();
             let store_subvial = vial_store.clone();
@@ -2091,7 +1926,7 @@ fn VialsDetailPage() -> impl IntoView {
                 </section>
             }
             .into_view()
-        })
+        }
     };
 
     page_layout(
@@ -2101,19 +1936,14 @@ fn VialsDetailPage() -> impl IntoView {
                 when=move || vial().is_some()
                 fallback=move || view! { <div class="empty-state">"Vial not found."</div> }
             >
-                {move || vial().map(render_vial).unwrap_or_else(|| view! {}.into_view())}
+                {move || {
+                    let render = render_vial.clone();
+                    vial().map(render).unwrap_or_else(|| view! {}.into_view())
+                }}
             </Show>
         }
         .into_view(),
     )
-    let id = move || params.with(|p| p.get("id").cloned().unwrap_or_else(|| "?".into()));
-    view! {
-        <section>
-            <h1>"Vial Detail"</h1>
-            <p>"Vial id: "{id}</p>
-            <p>"Placeholder for Rust UI rewrite."</p>
-        </section>
-    }
 }
 
 #[component]
@@ -2151,7 +1981,6 @@ fn EstrannaisePage() -> impl IntoView {
         }
         .into_view(),
     )
-    page_shell("Estrannaise")
 }
 
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen(start))]
