@@ -100,7 +100,7 @@ fn page_layout(title: &'static str, body: View) -> impl IntoView {
         } else if is_dirty.get() {
             "Unsaved changes".to_string()
         } else {
-            "Ready".to_string()
+            "".to_string()
         }
     };
 
@@ -109,7 +109,9 @@ fn page_layout(title: &'static str, body: View) -> impl IntoView {
             <header>
                 <div class="page-title">
                     <h1>{title}</h1>
-                    <span class="status-chip">{status_text}</span>
+                    <Show when=move || !status_text().is_empty()>
+                        <span class="status-chip">{status_text}</span>
+                    </Show>
                 </div>
                 <button
                     on:click=move |_| store.save()
@@ -353,125 +355,8 @@ fn CreateDosage() -> impl IntoView {
         data.dosageHistory =
             serde_json::from_value(serde_json::Value::Array(history)).unwrap_or_default();
         store.data.set(data);
-        store.is_dirty.set(true);
-        store.save();
-        dose_value.set("".to_string());
-        note_value.set("".to_string());
-        medication_name.set("".to_string());
-        date_value.set("".to_string());
-    };
+        store.mark_dirty();
 
-    page_layout(
-        "Create Dosage",
-        view! {
-            <form on:submit=on_submit>
-                <label>"Date"</label>
-                <input
-                    type="date"
-                    on:input=move |ev| date_value.set(event_target_value(&ev))
-                    prop:value=move || date_value.get()
-                />
-
-                <label>"Medication Type"</label>
-                <select
-                    on:change=move |ev| dosage_type.set(event_target_value(&ev))
-                    prop:value=move || dosage_type.get()
-                >
-                    <option value="injectableEstradiol">"Injectable Estradiol"</option>
-                    <option value="oralEstradiol">"Oral Estradiol"</option>
-                    <option value="antiandrogen">"Antiandrogen"</option>
-                    <option value="progesterone">"Progesterone"</option>
-                </select>
-
-                <label>"Medication Name"</label>
-                <input
-                    type="text"
-                    placeholder="Estradiol Valerate"
-                    on:input=move |ev| medication_name.set(event_target_value(&ev))
-                    prop:value=move || medication_name.get()
-                />
-
-                <label>"Dose"</label>
-                <input
-                    type="number"
-                    step="0.01"
-                    on:input=move |ev| dose_value.set(event_target_value(&ev))
-                    prop:value=move || dose_value.get()
-                />
-
-                <label>"Unit"</label>
-                <input
-                    type="text"
-                    on:input=move |ev| unit_value.set(event_target_value(&ev))
-                    prop:value=move || unit_value.get()
-                />
-
-                <label>"Notes"</label>
-                <textarea
-                    rows="3"
-                    on:input=move |ev| note_value.set(event_target_value(&ev))
-                    prop:value=move || note_value.get()
-                ></textarea>
-
-                <button type="submit">"Add Dose"</button>
-                <Show when=move || error.get().is_some()>
-                    <p class="error">{move || error.get().unwrap_or_default()}</p>
-                </Show>
-                <p class="muted">"This is a temporary form until the full Rust UI is rebuilt."</p>
-            </form>
-        }
-        .into_view(),
-    )
-}
-
-#[component]
-fn CreateBloodTest() -> impl IntoView {
-    let store = use_store();
-    let estradiol_value = create_rw_signal("".to_string());
-    let estradiol_unit = create_rw_signal("pg/mL".to_string());
-    let test_value = create_rw_signal("".to_string());
-    let test_unit = create_rw_signal("ng/dL".to_string());
-    let notes = create_rw_signal("".to_string());
-    let date_value = create_rw_signal("".to_string());
-    let error = create_rw_signal(None::<String>);
-    let show_error = move || error.get().unwrap_or_default();
-
-    let on_submit = move |ev: leptos::ev::SubmitEvent| {
-        ev.prevent_default();
-        error.set(None);
-        let date = parse_date_or_now(&date_value.get());
-        let estradiol_level = estradiol_value.get().trim().parse::<f64>().ok();
-        let test_level = test_value.get().trim().parse::<f64>().ok();
-
-        if estradiol_level.is_none() && test_level.is_none() {
-            error.set(Some("Provide at least one hormone value.".to_string()));
-            return;
-        }
-
-        let entry = serde_json::json!({
-            "date": date,
-            "estradiolLevel": estradiol_level,
-            "estradiolUnit": estradiol_unit.get(),
-            "testLevel": test_level,
-            "testUnit": test_unit.get(),
-            "notes": if notes.get().trim().is_empty() {
-                serde_json::Value::Null
-            } else {
-                serde_json::Value::String(notes.get())
-            }
-        });
-
-        let mut data = store.data.get();
-        let mut list = serde_json::to_value(&data.bloodTests)
-            .ok()
-            .and_then(|v| v.as_array().cloned())
-            .unwrap_or_default();
-        list.push(entry);
-        data.bloodTests =
-            serde_json::from_value(serde_json::Value::Array(list)).unwrap_or_default();
-        store.data.set(data);
-        store.is_dirty.set(true);
-        store.save();
         estradiol_value.set("".to_string());
         test_value.set("".to_string());
         notes.set("".to_string());
@@ -583,718 +468,8 @@ fn CreateMeasurement() -> impl IntoView {
         data.measurements =
             serde_json::from_value(serde_json::Value::Array(list)).unwrap_or_default();
         store.data.set(data);
-        store.is_dirty.set(true);
-        store.save();
-        weight.set("".to_string());
-        waist.set("".to_string());
-        hip.set("".to_string());
-        date_value.set("".to_string());
-    };
+                                    store.mark_dirty();
 
-    page_layout(
-        "Create Measurement",
-        view! {
-            <form on:submit=on_submit>
-                <label>"Date"</label>
-                <input
-                    type="date"
-                    on:input=move |ev| date_value.set(event_target_value(&ev))
-                    prop:value=move || date_value.get()
-                />
-
-                <label>"Weight"</label>
-                <div class="inline">
-                    <input
-                        type="number"
-                        step="0.01"
-                        on:input=move |ev| weight.set(event_target_value(&ev))
-                        prop:value=move || weight.get()
-                    />
-                    <input
-                        type="text"
-                        on:input=move |ev| weight_unit.set(event_target_value(&ev))
-                        prop:value=move || weight_unit.get()
-                    />
-                </div>
-
-                <label>"Waist"</label>
-                <input
-                    type="number"
-                    step="0.1"
-                    on:input=move |ev| waist.set(event_target_value(&ev))
-                    prop:value=move || waist.get()
-                />
-
-                <label>"Hip"</label>
-                <input
-                    type="number"
-                    step="0.1"
-                    on:input=move |ev| hip.set(event_target_value(&ev))
-                    prop:value=move || hip.get()
-                />
-
-                <label>"Measurement Unit"</label>
-                <input
-                    type="text"
-                    on:input=move |ev| unit.set(event_target_value(&ev))
-                    prop:value=move || unit.get()
-                />
-
-                <button type="submit">"Add Measurement"</button>
-                <Show when=move || error.get().is_some()>
-                    <p class="error">{move || error.get().unwrap_or_default()}</p>
-                </Show>
-                <p class="muted">"This is a temporary form until the full Rust UI is rebuilt."</p>
-            </form>
-        }
-        .into_view(),
-    )
-}
-
-#[component]
-fn ViewPage() -> impl IntoView {
-    let store = use_store();
-    let data = store.data;
-    let rows = move || data.get().dosageHistory.clone();
-    let blood_rows = move || data.get().bloodTests.clone();
-    let measurement_rows = move || data.get().measurements.clone();
-    let editing_key = create_rw_signal(None::<String>);
-    let editing_date = create_rw_signal(String::new());
-    let editing_dose = create_rw_signal(String::new());
-    let editing_note = create_rw_signal(String::new());
-    let confirm_delete = create_rw_signal(None::<String>);
-    let confirm_title = create_rw_signal(String::new());
-    let confirm_action = create_rw_signal(None::<Rc<dyn Fn()>>);
-
-    let edit_blood_date = create_rw_signal(None::<i64>);
-    let edit_blood_date_text = create_rw_signal(String::new());
-    let edit_blood_e2 = create_rw_signal(String::new());
-    let edit_blood_e2_unit = create_rw_signal(String::new());
-    let edit_blood_t = create_rw_signal(String::new());
-    let edit_blood_t_unit = create_rw_signal(String::new());
-    let edit_blood_notes = create_rw_signal(String::new());
-
-    let edit_measurement_date = create_rw_signal(None::<i64>);
-    let edit_measurement_date_text = create_rw_signal(String::new());
-    let edit_measurement_weight = create_rw_signal(String::new());
-    let edit_measurement_waist = create_rw_signal(String::new());
-    let edit_measurement_hip = create_rw_signal(String::new());
-    let edit_measurement_unit = create_rw_signal(String::new());
-
-    let x_axis_mode = create_rw_signal("date".to_string());
-    let time_range_days = create_rw_signal(365_i64);
-    let show_medications = create_rw_signal(true);
-    let show_e2 = create_rw_signal(true);
-    let show_t = create_rw_signal(true);
-    let show_prog = create_rw_signal(false);
-    let show_fsh = create_rw_signal(false);
-    let show_lh = create_rw_signal(false);
-    let show_prolactin = create_rw_signal(false);
-    let show_shbg = create_rw_signal(false);
-    let show_fai = create_rw_signal(false);
-    let view_zoom = create_rw_signal(ViewZoom::default());
-    let view_tooltip = create_rw_signal(None::<ChartTooltip>);
-
-    let view_chart_state = create_memo({
-        let settings = store.settings;
-        move |_| {
-            let data_value = data.get();
-            let settings_value = settings.get();
-            compute_view_chart_state(
-                &data_value,
-                &settings_value,
-                &x_axis_mode.get(),
-                time_range_days.get(),
-                show_medications.get(),
-                show_e2.get(),
-                show_t.get(),
-                show_prog.get(),
-                show_fsh.get(),
-                show_lh.get(),
-                show_prolactin.get(),
-                show_shbg.get(),
-                show_fai.get(),
-            )
-        }
-    });
-
-    const VIEW_CANVAS_ID: &str = "view-chart-canvas";
-    let view_drag = Rc::new(RefCell::new(None::<DragState>));
-
-    let on_view_mouse_move = {
-        let view_chart_state = view_chart_state.clone();
-        let view_zoom = view_zoom;
-        let view_drag = view_drag.clone();
-        let view_tooltip = view_tooltip;
-        move |ev: leptos::ev::MouseEvent| {
-            let Some(canvas) = window()
-                .document()
-                .and_then(|doc| doc.get_element_by_id(VIEW_CANVAS_ID))
-                .and_then(|el| el.dyn_into::<HtmlCanvasElement>().ok())
-            else {
-                return;
-            };
-            let rect = canvas.get_bounding_client_rect();
-            let cursor_x = ev.client_x() as f64 - rect.left();
-            let cursor_y = ev.client_y() as f64 - rect.top();
-            let state = view_chart_state.get();
-            let zoom = view_zoom.get();
-            let x_min = zoom.x_min.unwrap_or(state.domain_min);
-            let x_max = zoom.x_max.unwrap_or(state.domain_max);
-            let padding = chart_padding();
-            let (width, height, domain_span, y_span) = compute_chart_bounds(
-                rect.width(),
-                rect.height(),
-                padding,
-                x_min,
-                x_max,
-                state.y_min,
-                state.y_max,
-            );
-            if let Some(drag) = view_drag.borrow().as_ref() {
-                view_tooltip.set(None);
-                let delta_px = cursor_x - drag.start_x;
-                let span = x_max - x_min;
-                let delta_domain = -(delta_px / width) * span;
-                let next_min = drag.start_min + delta_domain;
-                let next_max = drag.start_max + delta_domain;
-                view_zoom.set(clamp_zoom(
-                    state.domain_min,
-                    state.domain_max,
-                    next_min,
-                    next_max,
-                ));
-            } else {
-                let mut best = find_nearest_point(
-                    &state.points,
-                    x_min,
-                    domain_span,
-                    state.y_min,
-                    y_span,
-                    width,
-                    height,
-                    padding,
-                    cursor_x,
-                    cursor_y,
-                );
-                if let Some(candidate) = find_nearest_point(
-                    &state.dosage_points,
-                    x_min,
-                    domain_span,
-                    state.y_min,
-                    y_span,
-                    width,
-                    height,
-                    padding,
-                    cursor_x,
-                    cursor_y,
-                ) {
-                    let replace = best
-                        .as_ref()
-                        .map(|(_, dist)| *dist)
-                        .unwrap_or(f64::INFINITY)
-                        > candidate.1;
-                    if replace {
-                        best = Some(candidate);
-                    }
-                }
-                if let Some((candidate, _)) = best.take() {
-                    view_tooltip.set(Some(candidate));
-                } else {
-                    view_tooltip.set(None);
-                }
-            }
-        }
-    };
-
-    let on_view_mouse_leave = {
-        let view_drag = view_drag.clone();
-        let view_tooltip = view_tooltip;
-        move |_| {
-            view_drag.replace(None);
-            view_tooltip.set(None);
-        }
-    };
-
-    let on_view_mouse_down = {
-        let view_drag = view_drag.clone();
-        let view_zoom = view_zoom;
-        let view_chart_state = view_chart_state.clone();
-        move |ev: leptos::ev::MouseEvent| {
-            let Some(canvas) = window()
-                .document()
-                .and_then(|doc| doc.get_element_by_id(VIEW_CANVAS_ID))
-                .and_then(|el| el.dyn_into::<HtmlCanvasElement>().ok())
-            else {
-                return;
-            };
-            let rect = canvas.get_bounding_client_rect();
-            let cursor_x = ev.client_x() as f64 - rect.left();
-            let state = view_chart_state.get();
-            let zoom = view_zoom.get();
-            let x_min = zoom.x_min.unwrap_or(state.domain_min);
-            let x_max = zoom.x_max.unwrap_or(state.domain_max);
-            view_drag.replace(Some(DragState {
-                start_x: cursor_x,
-                start_min: x_min,
-                start_max: x_max,
-            }));
-        }
-    };
-
-    let on_view_mouse_up = {
-        let view_drag = view_drag.clone();
-        move |_| {
-            view_drag.replace(None);
-        }
-    };
-
-    let on_view_wheel = {
-        let view_zoom = view_zoom;
-        let view_chart_state = view_chart_state.clone();
-        move |ev: leptos::ev::WheelEvent| {
-            ev.prevent_default();
-            let Some(canvas) = window()
-                .document()
-                .and_then(|doc| doc.get_element_by_id(VIEW_CANVAS_ID))
-                .and_then(|el| el.dyn_into::<HtmlCanvasElement>().ok())
-            else {
-                return;
-            };
-            let rect = canvas.get_bounding_client_rect();
-            let cursor_x = ev.client_x() as f64 - rect.left();
-            let state = view_chart_state.get();
-            let zoom = view_zoom.get();
-            let x_min = zoom.x_min.unwrap_or(state.domain_min);
-            let x_max = zoom.x_max.unwrap_or(state.domain_max);
-            let padding = chart_padding();
-            let (width, _, domain_span, _) = compute_chart_bounds(
-                rect.width(),
-                rect.height(),
-                padding,
-                x_min,
-                x_max,
-                state.y_min,
-                state.y_max,
-            );
-            let cursor_ratio = ((cursor_x - padding.0) / width).clamp(0.0, 1.0);
-            let zoom_factor = if ev.delta_y() < 0.0 { 0.85 } else { 1.15 };
-            let new_span = (domain_span * zoom_factor).max(1.0);
-            let center = x_min + domain_span * cursor_ratio;
-            let new_min = center - new_span * cursor_ratio;
-            let new_max = new_min + new_span;
-            view_zoom.set(clamp_zoom(
-                state.domain_min,
-                state.domain_max,
-                new_min,
-                new_max,
-            ));
-        }
-    };
-
-    create_effect({
-        let view_chart_state = view_chart_state.clone();
-        let view_zoom = view_zoom;
-        move |_| {
-            let state = view_chart_state.get();
-            if !state.has_data {
-                return;
-            }
-            draw_view_chart(VIEW_CANVAS_ID, &state, view_zoom.get());
-        }
-    });
-
-    let view_resize_listener: Rc<RefCell<Option<EventListener>>> = Rc::new(RefCell::new(None));
-    create_effect({
-        let view_chart_state = view_chart_state.clone();
-        let view_zoom = view_zoom;
-        let view_resize_listener = view_resize_listener.clone();
-        move |_| {
-            view_chart_state.get();
-            let window = window();
-            let listener = EventListener::new(&window, "resize", move |_| {
-                let state = view_chart_state.get();
-                if state.has_data {
-                    draw_view_chart(VIEW_CANVAS_ID, &state, view_zoom.get());
-                }
-            });
-            view_resize_listener.replace(Some(listener));
-        }
-    });
-
-    let reset_view_zoom = {
-        let view_zoom = view_zoom;
-        move |_| view_zoom.set(ViewZoom::default())
-    };
-
-    let x_axis_days_disabled = move || view_chart_state.get().first_dose.is_none();
-    let view_tooltip_value = move || view_tooltip.get();
-
-    let entry_matches = |entry: &DosageHistoryEntry, key: &str| match entry {
-        DosageHistoryEntry::InjectableEstradiol { date, id, .. }
-        | DosageHistoryEntry::OralEstradiol { date, id, .. }
-        | DosageHistoryEntry::Antiandrogen { date, id, .. }
-        | DosageHistoryEntry::Progesterone { date, id, .. } => id
-            .as_ref()
-            .map(|v| v == key)
-            .unwrap_or_else(|| date.to_string() == key),
-    };
-
-    let on_save_edit = Rc::new({
-        let store_edit = store.clone();
-        move || {
-            let key = match editing_key.get() {
-                Some(value) => value,
-                None => return,
-            };
-            let dose_value = match editing_dose.get().trim().parse::<f64>().ok() {
-                Some(value) => value,
-                None => return,
-            };
-            let date_value = parse_date_or_now(&editing_date.get());
-            let note_text = editing_note.get();
-            let note_value = if note_text.trim().is_empty() {
-                None
-            } else {
-                Some(note_text.clone())
-            };
-
-            store_edit.data.update(|d| {
-                for entry in &mut d.dosageHistory {
-                    if entry_matches(entry, &key) {
-                        match entry {
-                            DosageHistoryEntry::InjectableEstradiol {
-                                date, dose, note, ..
-                            }
-                            | DosageHistoryEntry::OralEstradiol {
-                                date, dose, note, ..
-                            }
-                            | DosageHistoryEntry::Antiandrogen {
-                                date, dose, note, ..
-                            }
-                            | DosageHistoryEntry::Progesterone {
-                                date, dose, note, ..
-                            } => {
-                                *date = date_value;
-                                *dose = dose_value;
-                                *note = note_value.clone();
-                            }
-                        }
-                    }
-                }
-            });
-            store_edit.is_dirty.set(true);
-            store_edit.save();
-            editing_key.set(None);
-        }
-    });
-
-    let on_cancel_edit = move |_| editing_key.set(None);
-
-    let store_blood_modal = store.clone();
-    let store_measure_modal = store.clone();
-
-    page_layout(
-        "View",
-        view! {
-            <div class="view-layout">
-                <div class="view-header">
-                    <div>
-                        <h2>"HRT Tracking Data"</h2>
-                        <p class="muted">
-                            "This chart shows your hormone levels from blood tests along with your dosage history over time."
-                        </p>
-                    </div>
-                    <div class="header-actions">
-                        <A href="/create/measurement">"Add Measurement"</A>
-                    </div>
-                </div>
-
-                <div class="card">
-                    <h3>"Current Regimen"</h3>
-                    <div class="view-summary">
-                        <Show when=move || view_chart_state.get().first_dose.is_some()>
-                            <p>
-                                <strong>"Days since first dose: "</strong>
-                                {move || view_chart_state.get().first_dose.map(|first| {
-                                    let now = js_sys::Date::now() as i64;
-                                    let diff = (now - first) / (24 * 60 * 60 * 1000);
-                                    diff.max(0)
-                                }).unwrap_or(0)}
-                            </p>
-                        </Show>
-                        <Show when=move || store.data.get().injectableEstradiol.is_some()>
-                            <p>
-                                <strong>"Injectable Estradiol: "</strong>
-                                {move || store
-                                    .data
-                                    .get()
-                                    .injectableEstradiol
-                                    .as_ref()
-                                    .map(|cfg| format!("{:?}, {:.2} {:?} every {:.1} days", cfg.kind, cfg.dose, cfg.unit, cfg.frequency))
-                                    .unwrap_or_default()}
-                            </p>
-                        </Show>
-                        <Show when=move || store.data.get().oralEstradiol.is_some()>
-                            <p>
-                                <strong>"Oral Estradiol: "</strong>
-                                {move || store
-                                    .data
-                                    .get()
-                                    .oralEstradiol
-                                    .as_ref()
-                                    .map(|cfg| format!("{:?}, {:.2} {:?} every {:.1} days", cfg.kind, cfg.dose, cfg.unit, cfg.frequency))
-                                    .unwrap_or_default()}
-                            </p>
-                        </Show>
-                        <Show when=move || store.data.get().antiandrogen.is_some()>
-                            <p>
-                                <strong>"Antiandrogen: "</strong>
-                                {move || store
-                                    .data
-                                    .get()
-                                    .antiandrogen
-                                    .as_ref()
-                                    .map(|cfg| format!("{:?}, {:.2} {:?} every {:.1} days", cfg.kind, cfg.dose, cfg.unit, cfg.frequency))
-                                    .unwrap_or_default()}
-                            </p>
-                        </Show>
-                        <Show when=move || store.data.get().progesterone.is_some()>
-                            <p>
-                                <strong>"Progesterone: "</strong>
-                                {move || store
-                                    .data
-                                    .get()
-                                    .progesterone
-                                    .as_ref()
-                                    .map(|cfg| format!("{:?} ({:?}), {:.2} {:?} every {:.1} days", cfg.kind, cfg.route, cfg.dose, cfg.unit, cfg.frequency))
-                                    .unwrap_or_default()}
-                            </p>
-                        </Show>
-                        <Show when=move || store.data.get().injectableEstradiol.is_none()
-                            && store.data.get().oralEstradiol.is_none()
-                            && store.data.get().antiandrogen.is_none()
-                            && store.data.get().progesterone.is_none()>
-                            <p class="muted">"No regimen set up. You can set one on the dosage page."</p>
-                        </Show>
-                    </div>
-                </div>
-
-                <div class="view-chart-controls">
-                    <div class="chart-toolbar">
-                        <div class="chart-toolbar-group">
-                            <span class="muted">"X-Axis:"</span>
-                            <button
-                                class:active=move || x_axis_mode.get() == "date"
-                                on:click=move |_| x_axis_mode.set("date".to_string())
-                            >
-                                "Date"
-                            </button>
-                            <button
-                                class:active=move || x_axis_mode.get() == "days"
-                                on:click=move |_| x_axis_mode.set("days".to_string())
-                                prop:disabled=move || x_axis_days_disabled()
-                            >
-                                "Days since first dose"
-                            </button>
-                        </div>
-                        <div class="chart-toolbar-group">
-                            <span class="muted">"Time Range:"</span>
-                            <button class:active=move || time_range_days.get() == 30 on:click=move |_| time_range_days.set(30)>
-                                "30 days"
-                            </button>
-                            <button class:active=move || time_range_days.get() == 90 on:click=move |_| time_range_days.set(90)>
-                                "90 days"
-                            </button>
-                            <button class:active=move || time_range_days.get() == 180 on:click=move |_| time_range_days.set(180)>
-                                "180 days"
-                            </button>
-                            <button class:active=move || time_range_days.get() == 365 on:click=move |_| time_range_days.set(365)>
-                                "1 year"
-                            </button>
-                            <button class:active=move || time_range_days.get() == 9999 on:click=move |_| time_range_days.set(9999)>
-                                "All"
-                            </button>
-                        </div>
-                        <div class="chart-toolbar-group">
-                            <button on:click=reset_view_zoom disabled=move || view_zoom.get().x_min.is_none()>
-                                "Reset zoom"
-                            </button>
-                        </div>
-                    </div>
-
-                    <div class="chart-toolbar view-levels-group">
-                        <span class="muted">"Show Levels:"</span>
-                        <button class:active=move || show_e2.get() on:click=move |_| show_e2.set(!show_e2.get())>
-                            "E2"
-                        </button>
-                        <button class:active=move || show_t.get() on:click=move |_| show_t.set(!show_t.get())>
-                            "T"
-                        </button>
-                        <button class:active=move || show_prog.get() on:click=move |_| show_prog.set(!show_prog.get())>
-                            "Prog"
-                        </button>
-                        <button class:active=move || show_fsh.get() on:click=move |_| show_fsh.set(!show_fsh.get())>
-                            "FSH"
-                        </button>
-                        <button class:active=move || show_lh.get() on:click=move |_| show_lh.set(!show_lh.get())>
-                            "LH"
-                        </button>
-                        <button
-                            class:active=move || show_prolactin.get()
-                            on:click=move |_| show_prolactin.set(!show_prolactin.get())
-                        >
-                            "Prolactin"
-                        </button>
-                        <button class:active=move || show_shbg.get() on:click=move |_| show_shbg.set(!show_shbg.get())>
-                            "SHBG"
-                        </button>
-                        <button class:active=move || show_fai.get() on:click=move |_| show_fai.set(!show_fai.get())>
-                            "FAI"
-                        </button>
-                    </div>
-
-                    <div class="chart-toolbar view-dosage-group">
-                        <span class="muted">"Show Dosages:"</span>
-                        <button class:active=move || show_medications.get() on:click=move |_| show_medications.set(!show_medications.get())>
-                            {move || if show_medications.get() { "Medication Dosages (on)" } else { "Medication Dosages" }}
-                        </button>
-                    </div>
-                </div>
-
-                <div class="chart-card chart-interactive">
-                    <Show when=move || view_chart_state.get().has_data fallback=move || view! {
-                        <div class="empty-state">"No data available for the selected time range."</div>
-                    }>
-                        <canvas
-                            id=VIEW_CANVAS_ID
-                            width="900"
-                            height="420"
-                            on:mousemove=on_view_mouse_move.clone()
-                            on:mouseleave=on_view_mouse_leave.clone()
-                            on:mousedown=on_view_mouse_down.clone()
-                            on:mouseup=on_view_mouse_up.clone()
-                            on:wheel=on_view_wheel.clone()
-                        ></canvas>
-                        <Show when=move || view_tooltip_value().is_some()>
-                            <div
-                                class="chart-tooltip"
-                                style=move || {
-                                    view_tooltip_value()
-                                        .map(|tip| format!("left: {:.0}px; top: {:.0}px;", tip.x + 12.0, tip.y + 12.0))
-                                        .unwrap_or_default()
-                                }
-                            >
-                                {move || view_tooltip_value().map(|tip| tip.text).unwrap_or_default()}
-                            </div>
-                        </Show>
-                    </Show>
-                    <div class="chart-note muted">
-                        <p>"* Dosage values are scaled for visibility on the chart."</p>
-                        <p>"* Hover over data points for details."</p>
-                        <Show when=move || !store.data.get().bloodTests.is_empty()>
-                            <p>"* Hormone measurements are normalized to display units for charting; hover shows recorded units."</p>
-                        </Show>
-                    </div>
-                </div>
-            </div>
-
-            <section>
-                <h2>"Dosage History"</h2>
-                <Show
-                    when=move || !rows().is_empty()
-                    fallback=move || view! { <div class="empty-state">"No dosage history yet."</div> }
-                >
-                    <table class="table">
-                        <thead>
-                            <tr>
-                                <th>"Date"</th>
-                                <th>"Medication"</th>
-                                <th>"Dose"</th>
-                                <th>"Unit"</th>
-                                <th>"Actions"</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <For
-                                each=rows
-                                key=|entry| match entry {
-                                    DosageHistoryEntry::InjectableEstradiol { date, id, .. } => {
-                                        id.clone().unwrap_or_else(|| date.to_string())
-                                    }
-                                    DosageHistoryEntry::OralEstradiol { date, id, .. } => {
-                                        id.clone().unwrap_or_else(|| date.to_string())
-                                    }
-                                    DosageHistoryEntry::Antiandrogen { date, id, .. } => {
-                                        id.clone().unwrap_or_else(|| date.to_string())
-                                    }
-                                    DosageHistoryEntry::Progesterone { date, id, .. } => {
-                                        id.clone().unwrap_or_else(|| date.to_string())
-                                    }
-                                }
-                                children=move |entry| {
-                                    let (date, name, dose, unit, id_opt, note) = match entry {
-                                        DosageHistoryEntry::InjectableEstradiol {
-                                            date,
-                                            id,
-                                            kind,
-                                            dose,
-                                            unit,
-                                            note,
-                                            ..
-                                        } => (date, format!("{:?}", kind), dose, format!("{:?}", unit), id, note),
-                                        DosageHistoryEntry::OralEstradiol {
-                                            date,
-                                            id,
-                                            kind,
-                                            dose,
-                                            unit,
-                                            note,
-                                            ..
-                                        } => (date, format!("{:?}", kind), dose, format!("{:?}", unit), id, note),
-                                        DosageHistoryEntry::Antiandrogen {
-                                            date,
-                                            id,
-                                            kind,
-                                            dose,
-                                            unit,
-                                            note,
-                                            ..
-                                        } => (date, format!("{:?}", kind), dose, format!("{:?}", unit), id, note),
-                                        DosageHistoryEntry::Progesterone {
-                                            date,
-                                            id,
-                                            kind,
-                                            dose,
-                                            unit,
-                                            note,
-                                            ..
-                                        } => (date, format!("{:?}", kind), dose, format!("{:?}", unit), id, note),
-                                    };
-                                    let date_text = Local
-                                        .timestamp_millis_opt(date)
-                                        .single()
-                                        .map(|d| d.format("%Y-%m-%d").to_string())
-                                        .unwrap_or_else(|| date.to_string());
-                                    let entry_key = id_opt.clone().unwrap_or_else(|| date.to_string());
-                                    let note_value = note.clone().unwrap_or_default();
-                                    let on_delete = {
-                                        let store = use_store();
-                                        let entry_key = entry_key.clone();
-                                        let confirm_delete = confirm_delete;
-                                        let confirm_title = confirm_title;
-                                        let confirm_action = confirm_action;
-                                        move |_: leptos::ev::MouseEvent| {
-                                            confirm_title.set("Delete dosage entry?".to_string());
-                                            confirm_delete.set(Some(entry_key.clone()));
-                                            let store = store.clone();
-                                            let entry_key = entry_key.clone();
-                                            confirm_action.set(Some(Rc::new(move || {
-                                                store.data.update(|d| {
-                                                    d.dosageHistory.retain(|item| !entry_matches(item, &entry_key));
-                                                });
-                                                store.is_dirty.set(true);
-                                                store.save();
                                             })));
                                         }
                                     };
@@ -1393,132 +568,8 @@ fn ViewPage() -> impl IntoView {
                                                 store
                                                     .data
                                                     .update(|d| d.bloodTests.retain(|b| b.date != date));
-                                                store.is_dirty.set(true);
-                                                store.save();
-                                            })));
-                                        }
-                                    };
-                                    let on_edit = {
-                                        let date = entry.date;
-                                        let edit_blood_date = edit_blood_date;
-                                        let edit_blood_date_text = edit_blood_date_text;
-                                        let edit_blood_e2 = edit_blood_e2;
-                                        let edit_blood_e2_unit = edit_blood_e2_unit;
-                                        let edit_blood_t = edit_blood_t;
-                                        let edit_blood_t_unit = edit_blood_t_unit;
-                                        let edit_blood_notes = edit_blood_notes;
-                                        let e2_unit_value = entry
-                                            .estradiolUnit
-                                            .as_ref()
-                                            .map(|u| format!("{:?}", u))
-                                            .unwrap_or_else(|| "".to_string());
-                                        let t_unit_value = entry
-                                            .testUnit
-                                            .as_ref()
-                                            .map(|u| format!("{:?}", u))
-                                            .unwrap_or_else(|| "".to_string());
-                                        let e2_value = entry
-                                            .estradiolLevel
-                                            .map(|v| format!("{:.2}", v))
-                                            .unwrap_or_default();
-                                        let t_value = entry
-                                            .testLevel
-                                            .map(|v| format!("{:.2}", v))
-                                            .unwrap_or_default();
-                                        let notes_value = entry.notes.clone().unwrap_or_default();
-                                        let date_text_edit = date_text.clone();
-                                        move |_: leptos::ev::MouseEvent| {
-                                            edit_blood_date.set(Some(date));
-                                            edit_blood_date_text.set(date_text_edit.clone());
-                                            edit_blood_e2.set(e2_value.clone());
-                                            edit_blood_e2_unit.set(e2_unit_value.clone());
-                                            edit_blood_t.set(t_value.clone());
-                                            edit_blood_t_unit.set(t_unit_value.clone());
-                                            edit_blood_notes.set(notes_value.clone());
-                                        }
-                                    };
-                                    view! {
-                                        <tr>
-                                            <td>{date_text}</td>
-                                            <td>{format!("{} {}", e2, e2_unit)}</td>
-                                            <td>{format!("{} {}", t, t_unit)}</td>
-                                            <td>{entry.notes.unwrap_or_default()}</td>
-                                            <td>
-                                                <button type="button" on:click=on_edit>"Edit"</button>
-                                                <button type="button" on:click=on_delete>"Delete"</button>
-                                            </td>
-                                        </tr>
-                                    }
-                                }
-                            />
-                        </tbody>
-                    </table>
-                </Show>
-            </section>
+                                                store.mark_dirty();
 
-            <section>
-                <h2>"Measurements"</h2>
-                <Show
-                    when=move || !measurement_rows().is_empty()
-                    fallback=move || view! { <div class="empty-state">"No measurements yet."</div> }
-                >
-                    <table class="table">
-                        <thead>
-                            <tr>
-                                <th>"Date"</th>
-                                <th>"Weight"</th>
-                                <th>"Waist"</th>
-                                <th>"Hip"</th>
-                                <th>"Actions"</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <For
-                                each=measurement_rows
-                                key=|entry| entry.date
-                                children=move |entry| {
-                                    let date_text = Local
-                                        .timestamp_millis_opt(entry.date)
-                                        .single()
-                                        .map(|d| d.format("%Y-%m-%d").to_string())
-                                        .unwrap_or_else(|| entry.date.to_string());
-                                    let weight = entry
-                                        .weight
-                                        .map(|v| format!("{:.2}", v))
-                                        .unwrap_or_else(|| "-".to_string());
-                                    let weight_unit = entry
-                                        .weightUnit
-                                        .map(|u| format!("{:?}", u))
-                                        .unwrap_or_else(|| "".to_string());
-                                    let waist = entry
-                                        .waist
-                                        .map(|v| format!("{:.1}", v))
-                                        .unwrap_or_else(|| "-".to_string());
-                                    let hip = entry
-                                        .hip
-                                        .map(|v| format!("{:.1}", v))
-                                        .unwrap_or_else(|| "-".to_string());
-                                    let unit = entry
-                                        .bodyMeasurementUnit
-                                        .as_ref()
-                                        .map(|u| format!("{:?}", u))
-                                        .unwrap_or_else(|| "".to_string());
-                                    let on_delete = {
-                                        let store = use_store();
-                                        let date = entry.date;
-                                        let confirm_delete = confirm_delete;
-                                        let confirm_title = confirm_title;
-                                        let confirm_action = confirm_action;
-                                        move |_: leptos::ev::MouseEvent| {
-                                            confirm_title.set("Delete measurement?".to_string());
-                                            confirm_delete.set(Some(date.to_string()));
-                                            let store = store.clone();
-                                            confirm_action.set(Some(Rc::new(move || {
-                                                store
-                                                    .data
-                                                    .update(|d| d.measurements.retain(|m| m.date != date));
-                                                store.is_dirty.set(true);
-                                                store.save();
                                             })));
                                         }
                                     };
@@ -1719,8 +770,7 @@ fn ViewPage() -> impl IntoView {
                                             }
                                         }
                                     });
-                                    store.is_dirty.set(true);
-                                    store.save();
+                                    store.mark_dirty();
                                     edit_blood_date.set(None);
                                 }
                             }>
@@ -1798,8 +848,7 @@ fn ViewPage() -> impl IntoView {
                                             }
                                         }
                                     });
-                                    store.is_dirty.set(true);
-                                    store.save();
+                                    store.mark_dirty();
                                     edit_measurement_date.set(None);
                                 }
                             }>
@@ -1826,132 +875,644 @@ fn StatsPage() -> impl IntoView {
     let settings = store.settings;
     let display_unit = move || settings.get().displayEstradiolUnit;
     let ics_secret = move || settings.get().icsSecret.unwrap_or_default();
-    let auto_backfill = move || settings.get().enableAutoBackfill;
+    const DAY_MS: i64 = 24 * 60 * 60 * 1000;
 
-    let store_toggle = store.clone();
-    let on_toggle_backfill = move |ev: leptos::ev::Event| {
-        let enabled = event_target_checked(&ev);
-        store_toggle
-            .settings
-            .update(|s| s.enableAutoBackfill = enabled);
-        store_toggle.is_dirty.set(true);
-        store_toggle.save();
+    let data = store.data;
+    let settings = store.settings;
+    let hist = move || data.get().dosageHistory;
+    let vials = move || data.get().vials;
+
+    let total_days_since_start = move || {
+        let hist_value = hist();
+        let min_date = hist_value.iter().map(|d| match d {
+            DosageHistoryEntry::InjectableEstradiol { date, .. }
+            | DosageHistoryEntry::OralEstradiol { date, .. }
+            | DosageHistoryEntry::Antiandrogen { date, .. }
+            | DosageHistoryEntry::Progesterone { date, .. } => *date,
+        })
+        .min();
+        min_date.map(|value| ((js_sys::Date::now() as i64 - value) / DAY_MS).max(0))
     };
 
-    let store_secret = store.clone();
-    let on_secret_input = move |ev: leptos::ev::Event| {
-        let value = event_target_value(&ev);
-        store_secret.settings.update(|s| {
-            s.icsSecret = if value.trim().is_empty() {
-                None
+    let estrogen_records = move || {
+        hist()
+            .into_iter()
+            .filter(|d| matches!(
+                d,
+                DosageHistoryEntry::InjectableEstradiol { .. }
+                    | DosageHistoryEntry::OralEstradiol { .. }
+            ))
+            .collect::<Vec<_>>()
+    };
+
+    let injectable_records = move || {
+        hist()
+            .into_iter()
+            .filter(|d| matches!(d, DosageHistoryEntry::InjectableEstradiol { .. }))
+            .collect::<Vec<_>>()
+    };
+
+    let total_injectable_estradiol_mg = move || {
+        injectable_records()
+            .iter()
+            .map(|d| match d {
+                DosageHistoryEntry::InjectableEstradiol { dose, unit, .. } => {
+                    if *unit == HormoneUnits::Mg {
+                        *dose
+                    } else {
+                        0.0
+                    }
+                }
+                _ => 0.0,
+            })
+            .sum::<f64>()
+    };
+
+    let total_estrogen_mg = move || {
+        estrogen_records()
+            .iter()
+            .map(|d| match d {
+                DosageHistoryEntry::OralEstradiol {
+                    dose,
+                    unit,
+                    pillQuantity,
+                    ..
+                } => {
+                    if *unit != HormoneUnits::Mg {
+                        0.0
+                    } else {
+                        let qty = pillQuantity.unwrap_or(1.0);
+                        dose * qty
+                    }
+                }
+                DosageHistoryEntry::InjectableEstradiol { dose, unit, .. } => {
+                    if *unit == HormoneUnits::Mg {
+                        *dose
+                    } else {
+                        0.0
+                    }
+                }
+                _ => 0.0,
+            })
+            .sum::<f64>()
+    };
+
+    let total_injection_ml = move || {
+        let vials_value = vials();
+        injectable_records()
+            .iter()
+            .map(|d| match d {
+                DosageHistoryEntry::InjectableEstradiol { dose, unit, vialId, .. } => {
+                    if *unit != HormoneUnits::Mg {
+                        return 0.0;
+                    }
+                    let dose_value = *dose;
+                    if !dose_value.is_finite() || dose_value <= 0.0 {
+                        return 0.0;
+                    }
+                    let Some(vial_id) = vialId else {
+                        return 0.0;
+                    };
+                    let conc = vials_value
+                        .iter()
+                        .find(|v| v.id == *vial_id)
+                        .and_then(|v| v.concentrationMgPerMl)
+                        .unwrap_or(0.0);
+                    if conc > 0.0 {
+                        dose_value / conc
+                    } else {
+                        0.0
+                    }
+                }
+                _ => 0.0,
+            })
+            .sum::<f64>()
+    };
+
+    let oral_estradiol_records = move || {
+        hist()
+            .into_iter()
+            .filter(|d| matches!(d, DosageHistoryEntry::OralEstradiol { .. }))
+            .collect::<Vec<_>>()
+    };
+
+    let progesterone_records = move || {
+        hist()
+            .into_iter()
+            .filter(|d| matches!(d, DosageHistoryEntry::Progesterone { .. }))
+            .collect::<Vec<_>>()
+    };
+
+    let total_oral_pills_count = move || {
+        oral_estradiol_records()
+            .iter()
+            .map(|d| match d {
+                DosageHistoryEntry::OralEstradiol { pillQuantity, .. } => {
+                    let qty = pillQuantity.unwrap_or(1.0);
+                    if qty > 0.0 { qty } else { 1.0 }
+                }
+                _ => 0.0,
+            })
+            .sum::<f64>()
+    };
+
+    let total_oral_estradiol_mg = move || {
+        oral_estradiol_records()
+            .iter()
+            .map(|d| match d {
+                DosageHistoryEntry::OralEstradiol { dose, unit, pillQuantity, .. } => {
+                    if *unit != HormoneUnits::Mg {
+                        0.0
+                    } else {
+                        let qty = pillQuantity.unwrap_or(1.0);
+                        dose * qty
+                    }
+                }
+                _ => 0.0,
+            })
+            .sum::<f64>()
+    };
+
+    let total_progesterone_mg = move || {
+        progesterone_records()
+            .iter()
+            .map(|d| match d {
+                DosageHistoryEntry::Progesterone { dose, unit, pillQuantity, .. } => {
+                    if *unit != HormoneUnits::Mg {
+                        0.0
+                    } else {
+                        let qty = pillQuantity.unwrap_or(1.0);
+                        dose * qty
+                    }
+                }
+                _ => 0.0,
+            })
+            .sum::<f64>()
+    };
+
+    let boofed_progesterone_records = move || {
+        progesterone_records()
+            .into_iter()
+            .filter(|d| matches!(
+                d,
+                DosageHistoryEntry::Progesterone { route: ProgesteroneRoutes::Boofed, .. }
+            ))
+            .collect::<Vec<_>>()
+    };
+
+    let boofed_progesterone_count = move || {
+        boofed_progesterone_records()
+            .iter()
+            .map(|d| match d {
+                DosageHistoryEntry::Progesterone { pillQuantity, .. } => {
+                    let qty = pillQuantity.unwrap_or(1.0);
+                    if qty > 0.0 { qty } else { 1.0 }
+                }
+                _ => 0.0,
+            })
+            .sum::<f64>()
+    };
+
+    let boofed_progesterone_mg = move || {
+        boofed_progesterone_records()
+            .iter()
+            .map(|d| match d {
+                DosageHistoryEntry::Progesterone { dose, unit, pillQuantity, .. } => {
+                    if *unit != HormoneUnits::Mg {
+                        0.0
+                    } else {
+                        let qty = pillQuantity.unwrap_or(1.0);
+                        dose * qty
+                    }
+                }
+                _ => 0.0,
+            })
+            .sum::<f64>()
+    };
+
+    let total_pills_count = move || total_oral_pills_count() + boofed_progesterone_count();
+    let total_pills_mg_combined = move || total_oral_estradiol_mg() + boofed_progesterone_mg();
+
+    let fmt = |value: f64, decimals: usize| {
+        if !value.is_finite() {
+            "—".to_string()
+        } else {
+            let formatted = format!("{value:.decimals$}");
+            formatted.trim_end_matches('0').trim_end_matches('.').to_string()
+        }
+    };
+
+    let fmt_iu_from_ml = |ml: f64| {
+        if !ml.is_finite() {
+            "—".to_string()
+        } else {
+            format!("{}", (ml * 100.0).round() as i64)
+        }
+    };
+
+    let parse_needle_length_mm = |raw: &str| {
+        let cleaned = raw
+            .trim()
+            .to_lowercase()
+            .replace(['′', '’'], "'")
+            .replace(['″', '”'], "\"")
+            .replace('㎜', "mm");
+        if cleaned.is_empty() {
+            return None;
+        }
+        if let Some(match_val) = cleaned
+            .split_whitespace()
+            .find_map(|part| {
+                if part.ends_with("mm") {
+                    part.trim_end_matches("mm").parse::<f64>().ok()
+                } else {
+                    None
+                }
+            })
+        {
+            return if match_val > 0.0 { Some(match_val) } else { None };
+        }
+        if let Some(match_val) = cleaned
+            .split_whitespace()
+            .find_map(|part| {
+                if part.ends_with("cm") {
+                    part.trim_end_matches("cm").parse::<f64>().ok()
+                } else {
+                    None
+                }
+            })
+        {
+            return if match_val > 0.0 { Some(match_val * 10.0) } else { None };
+        }
+        if let Some(inch_token) = cleaned
+            .split_whitespace()
+            .find(|part| part.ends_with("in") || part.ends_with("inch") || part.ends_with("inches") || part.ends_with('"'))
+        {
+            let token = inch_token.trim_end_matches("in").trim_end_matches("inch").trim_end_matches("inches").trim_end_matches('"');
+            let value = if token.contains('/') {
+                let parts: Vec<&str> = token.split_whitespace().collect();
+                if parts.len() == 2 && parts[1].contains('/') {
+                    let whole = parts[0].parse::<f64>().ok()?;
+                    let frac: Vec<&str> = parts[1].split('/').collect();
+                    if frac.len() != 2 {
+                        return None;
+                    }
+                    let num = frac[0].parse::<f64>().ok()?;
+                    let den = frac[1].parse::<f64>().ok()?;
+                    if den == 0.0 {
+                        return None;
+                    }
+                    Some(whole + num / den)
+                } else if parts.len() == 1 {
+                    let frac: Vec<&str> = parts[0].split('/').collect();
+                    if frac.len() != 2 {
+                        return None;
+                    }
+                    let num = frac[0].parse::<f64>().ok()?;
+                    let den = frac[1].parse::<f64>().ok()?;
+                    if den == 0.0 {
+                        return None;
+                    }
+                    Some(num / den)
+                } else {
+                    None
+                }
             } else {
-                Some(value)
+                token.parse::<f64>().ok()
+            }?;
+            return if value > 0.0 { Some(value * 25.4) } else { None };
+        }
+        let numbers: Vec<f64> = cleaned
+            .split(|c: char| !c.is_ascii_digit() && c != '.')
+            .filter(|part| !part.is_empty())
+            .filter_map(|part| part.parse::<f64>().ok())
+            .collect();
+        numbers.last().copied().filter(|val| *val > 0.0)
+    };
+
+    let norm_syringe_kind = |kind: &Option<String>| {
+        match kind.as_deref() {
+            Some(value) if value == "Regular syringe" => value.to_string(),
+            Some(value) if value == "Low waste syringe" => value.to_string(),
+            Some(value) if value == "Low waste needle" => value.to_string(),
+            Some(value) if value == "Insulin syringe" => value.to_string(),
+            Some(value) if value == "Insulin pen" => value.to_string(),
+            Some(value) if !value.trim().is_empty() => value.to_string(),
+            _ => "Other".to_string(),
+        }
+    };
+
+    let deadspace_ul_for = |kind: &Option<String>| match kind.as_deref() {
+        Some("Regular syringe") => Some(92.0),
+        Some("Low waste syringe") => Some(59.0),
+        Some("Low waste needle") => Some(17.0),
+        Some("Insulin syringe") => Some(3.0),
+        Some("Insulin pen") => Some(3.0),
+        _ => None,
+    };
+
+    let by_kind_agg = move || {
+        let vials_value = vials();
+        let mut acc: std::collections::HashMap<String, (usize, f64, f64, f64, f64, f64)> =
+            std::collections::HashMap::new();
+        for entry in injectable_records() {
+            let (syringe_kind, needle_length, dose, unit, vial_id) = match entry {
+                DosageHistoryEntry::InjectableEstradiol {
+                    syringeKind,
+                    needleLength,
+                    dose,
+                    unit,
+                    vialId,
+                    ..
+                } => (syringeKind, needleLength, *dose, unit, vialId),
+                _ => continue,
             };
-        });
-        store_secret.is_dirty.set(true);
-        store_secret.save();
+            let key = norm_syringe_kind(&syringe_kind);
+            let record = acc.entry(key).or_insert((0, 0.0, 0.0, 0.0, 0.0, 0.0));
+            record.0 += 1;
+            if let Some(mm) = needle_length
+                .as_deref()
+                .and_then(|value| parse_needle_length_mm(value))
+            {
+                if mm.is_finite() && mm > 0.0 {
+                    record.1 += mm;
+                }
+            }
+            if let Some(ds_ul) = deadspace_ul_for(&syringe_kind) {
+                let ds_ml = ds_ul / 1000.0;
+                record.2 += ds_ml;
+                if let Some(vial_id) = vial_id {
+                    if let Some(conc) = vials_value
+                        .iter()
+                        .find(|v| v.id == *vial_id)
+                        .and_then(|v| v.concentrationMgPerMl)
+                    {
+                        if conc > 0.0 {
+                            record.3 += conc * ds_ml;
+                            if *unit == HormoneUnits::Mg && dose > 0.0 {
+                                let dose_ml = dose / conc;
+                                record.4 += ds_ml;
+                                record.5 += ds_ml + dose_ml;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        acc
     };
 
-    let store_unit = store.clone();
-    let on_display_unit_change = move |ev: leptos::ev::Event| {
-        let value = event_target_value(&ev);
-
-        let unit = match value.as_str() {
-            "pmol/L" => Some(HormoneUnits::E2PmolL),
-            "pg/mL" => Some(HormoneUnits::E2PgMl),
-            _ => None,
-        };
-        store_unit
-            .settings
-            .update(|s| s.displayEstradiolUnit = unit);
-        store_unit.is_dirty.set(true);
-        store_unit.save();
+    let wastage_agg = move || {
+        let vials_value = vials();
+        let mut total_ml = 0.0;
+        let mut total_mg = 0.0;
+        let mut skipped_no_kind = 0;
+        let mut skipped_no_conc = 0;
+        let mut counted = 0;
+        let mut dead_for_pct_ml = 0.0;
+        let mut drawn_for_pct_ml = 0.0;
+        for entry in injectable_records() {
+            let (syringe_kind, dose, unit, vial_id) = match entry {
+                DosageHistoryEntry::InjectableEstradiol { syringeKind, dose, unit, vialId, .. } => {
+                    (syringeKind, *dose, unit, vialId)
+                }
+                _ => continue,
+            };
+            let Some(ds_ul) = deadspace_ul_for(&syringe_kind) else {
+                skipped_no_kind += 1;
+                continue;
+            };
+            let ds_ml = ds_ul / 1000.0;
+            total_ml += ds_ml;
+            counted += 1;
+            if let Some(vial_id) = vial_id {
+                if let Some(conc) = vials_value
+                    .iter()
+                    .find(|v| v.id == *vial_id)
+                    .and_then(|v| v.concentrationMgPerMl)
+                {
+                    if conc > 0.0 {
+                        total_mg += conc * ds_ml;
+                        if *unit == HormoneUnits::Mg && dose > 0.0 {
+                            let dose_ml = dose / conc;
+                            dead_for_pct_ml += ds_ml;
+                            drawn_for_pct_ml += ds_ml + dose_ml;
+                        }
+                    }
+                } else {
+                    skipped_no_conc += 1;
+                }
+            }
+        }
+        (total_ml, total_mg, skipped_no_kind, skipped_no_conc, counted, dead_for_pct_ml, drawn_for_pct_ml)
     };
+
+    let wastage_pct = move || {
+        let (_, _, _, _, _, dead_for_pct_ml, drawn_for_pct_ml) = wastage_agg();
+        if drawn_for_pct_ml > 0.0 {
+            (100.0 * dead_for_pct_ml) / drawn_for_pct_ml
+        } else {
+            f64::NAN
+        }
+    };
+
+    let needle_agg = move || {
+        let mut sum_mm = 0.0;
+        let mut skipped = 0;
+        for entry in injectable_records() {
+            let needle = match entry {
+                DosageHistoryEntry::InjectableEstradiol { needleLength, .. } => needleLength.clone(),
+                _ => None,
+            };
+            let Some(value) = needle else {
+                skipped += 1;
+                continue;
+            };
+            if value.trim().is_empty() {
+                skipped += 1;
+                continue;
+            }
+            if let Some(mm) = parse_needle_length_mm(&value) {
+                if mm > 0.0 {
+                    sum_mm += mm;
+                } else {
+                    skipped += 1;
+                }
+            } else {
+                skipped += 1;
+            }
+        }
+        (sum_mm, skipped)
+    };
+
+    let stats_breakdown = move || settings.get().statsBreakdownBySyringeKind.unwrap_or(false);
 
     page_layout(
-        "Settings",
+        "Stats",
         view! {
-            <form>
-                <label>
-                    <input
-                        type="checkbox"
-                        on:change=on_toggle_backfill
-                        prop:checked=move || auto_backfill()
-                    />
-                    " Enable auto backfill"
-                </label>
+            <div class="view-layout">
+                <div class="view-header">
+                    <div>
+                        <h2>"Stats"</h2>
+                        <p class="muted">
+                            "Totals and usage stats based on your recorded doses."
+                        </p>
+                    </div>
+                </div>
 
-                <label>
-                        <input
-                            type="checkbox"
-                            on:change={
-                                let store = store.clone();
-                                move |ev| {
-                                    let enabled = event_target_checked(&ev);
-                                    store.settings.update(|s| s.enableBloodTestSchedule = Some(enabled));
-                                    store.is_dirty.set(true);
-                                    store.save();
+                <div class="card-grid">
+                    <div class="card">
+                        <h3>"Total Estrogen Taken"</h3>
+                        <p class="muted">"Injectable total"</p>
+                        <p><strong>{move || fmt(total_injectable_estradiol_mg(), 2)}</strong> " mg"</p>
+                        <p class="muted">"Oral total"</p>
+                        <p><strong>{move || fmt(total_oral_estradiol_mg(), 2)}</strong> " mg"</p>
+                        <p class="muted">"Combined"</p>
+                        <p><strong>{move || fmt(total_estrogen_mg(), 2)}</strong> " mg"</p>
+                        <Show when=move || total_injection_ml() > 0.0>
+                            <p class="muted">"Injection volume"</p>
+                            <p>
+                                <strong>{move || fmt(total_injection_ml(), 3)}</strong>
+                                " mL (" <strong>{move || fmt_iu_from_ml(total_injection_ml())}</strong> " IU)"
+                            </p>
+                        </Show>
+                    </div>
+                    <div class="card">
+                        <h3>"Pills"</h3>
+                        <p>
+                            "Estradiol pills:" <strong>{move || fmt(total_oral_pills_count(), 0)}</strong>
+                            <Show when=move || total_oral_pills_count() > 0.0>
+                                " (" <strong>{move || fmt(total_oral_estradiol_mg(), 2)}</strong> " mg)"
+                            </Show>
+                        </p>
+                        <p>
+                            "Progesterone boofed:" <strong>{move || fmt(boofed_progesterone_count(), 0)}</strong>
+                            <Show when=move || boofed_progesterone_count() > 0.0>
+                                " (" <strong>{move || fmt(boofed_progesterone_mg(), 2)}</strong> " mg)"
+                            </Show>
+                        </p>
+                        <p>
+                            "All pills combined:" <strong>{move || fmt(total_pills_count(), 0)}</strong>
+                            <Show when=move || total_pills_count() > 0.0>
+                                " (" <strong>{move || fmt(total_pills_mg_combined(), 2)}</strong> " mg)"
+                            </Show>
+                        </p>
+                        <Show when=move || total_progesterone_mg() > 0.0>
+                            <p class="muted">
+                                "Total progesterone: "<strong>{move || fmt(total_progesterone_mg(), 2)}</strong> " mg"
+                            </p>
+                        </Show>
+                    </div>
+                    <div class="card">
+                        <h3>"Days Since Starting"</h3>
+                        <Show when=move || total_days_since_start().is_some() fallback=move || view! {
+                            <p class="muted">"No doses recorded yet."</p>
+                        }>
+                            <p><strong>{move || total_days_since_start().unwrap_or(0)}</strong> " days"</p>
+                        </Show>
+                    </div>
+                    <div class="card">
+                        <h3>"Needle Usage"</h3>
+                        <p>
+                            "Total needle length: "
+                            <strong>{move || fmt(needle_agg().0, 1)}</strong> " mm ("
+                            <strong>{move || fmt(needle_agg().0 / 25.4, 2)}</strong> " in)"
+                        </p>
+                        <p>
+                            "Wastage from dead space: "
+                            <strong>{move || fmt(wastage_agg().0, 3)}</strong> " mL ("
+                            <strong>{move || fmt_iu_from_ml(wastage_agg().0)}</strong> " IU)"
+                            <Show when=move || wastage_agg().1 > 0.0>
+                                " · ≈ " <strong>{move || fmt(wastage_agg().1, 2)}</strong> " mg"
+                            </Show>
+                            <Show when=move || wastage_pct().is_finite()>
+                                " · " <strong>{move || fmt(wastage_pct(), 1)}</strong> "% of drawn volume"
+                            </Show>
+                        </p>
+                        <Show when=move || wastage_agg().2 > 0 || wastage_agg().3 > 0>
+                            <p class="muted">
+                                {move || {
+                                    let skipped_kind = wastage_agg().2;
+                                    let skipped_conc = wastage_agg().3;
+                                    if skipped_kind > 0 && skipped_conc > 0 {
+                                        format!("Skipped {} injection(s) without syringe kind. No mg estimate for {} injection(s) lacking vial concentration.", skipped_kind, skipped_conc)
+                                    } else if skipped_kind > 0 {
+                                        format!("Skipped {} injection(s) without a syringe kind.", skipped_kind)
+                                    } else if skipped_conc > 0 {
+                                        format!("No mg estimate for {} injection(s) lacking vial concentration.", skipped_conc)
+                                    } else {
+                                        "".to_string()
+                                    }
+                                }}
+                            </p>
+                        </Show>
+                        <Show when=move || needle_agg().1 > 0>
+                            <p class="muted">
+                                {move || format!("Skipped {} injection(s) without a parsable needle length.", needle_agg().1)}
+                            </p>
+                        </Show>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="view-header">
+                        <div>
+                            <h3>"Syringe Breakdown"</h3>
+                            <p class="muted">"Enable to see needle and wastage details by syringe kind."</p>
+                        </div>
+                        <label class="muted">
+                            <input
+                                type="checkbox"
+                                on:change={
+                                    let store = store.clone();
+                                    move |ev| {
+                                        store.settings.update(|s| {
+                                            s.statsBreakdownBySyringeKind = Some(event_target_checked(&ev));
+                                        });
+                                        store.mark_dirty();
+                                    }
                                 }
-                            }
-                            prop:checked=move || store.settings.get().enableBloodTestSchedule.unwrap_or(false)
-                        />
-
-                    " Enable blood test schedule"
-                </label>
-
-                <label>"Blood test interval (months)"</label>
-                        <input
-                            type="number"
-                            step="1"
-                            min="1"
-                            on:input={
-                                let store = store.clone();
-                                move |ev| {
-                                    let value = event_target_value(&ev);
-                                    let parsed = value.parse::<f64>().ok();
-                                    store.settings.update(|s| s.bloodTestIntervalMonths = parsed);
-                                    store.is_dirty.set(true);
-                                    store.save();
+                                prop:checked=stats_breakdown
+                            />
+                            " Break down by syringe kind"
+                        </label>
+                    </div>
+                    <Show when=move || stats_breakdown()>
+                        <div class="card-grid">
+                            <For
+                                each=move || by_kind_agg().into_iter().collect::<Vec<_>>()
+                                key=|(kind, _)| kind.clone()
+                                children=move |(kind, values)| {
+                                    let (count, sum_mm, dead_ml, total_mg, dead_pct_ml, drawn_pct_ml) = values;
+                                    let pct = if drawn_pct_ml > 0.0 {
+                                        (100.0 * dead_pct_ml) / drawn_pct_ml
+                                    } else {
+                                        f64::NAN
+                                    };
+                                    view! {
+                                        <div class="mini-card">
+                                            <h4>{kind}</h4>
+                                            <p class="muted">{format!("Count: {}", count)}</p>
+                                            <Show when=move || sum_mm > 0.0>
+                                                <p>{format!("Needle length: {} mm ({} in)", fmt(sum_mm, 1), fmt(sum_mm / 25.4, 2))}</p>
+                                            </Show>
+                                            <Show when=move || dead_ml > 0.0>
+                                                <p>{format!("Wastage: {} mL ({} IU)", fmt(dead_ml, 3), fmt_iu_from_ml(dead_ml))}</p>
+                                            </Show>
+                                            <Show when=move || total_mg > 0.0>
+                                                <p>{format!("≈ {} mg", fmt(total_mg, 2))}</p>
+                                            </Show>
+                                            <Show when=move || pct.is_finite()>
+                                                <p>{format!("{}% of drawn volume", fmt(pct, 1))}</p>
+                                            </Show>
+                                        </div>
+                                    }
                                 }
-                            }
-                            prop:value=move || store
-                                .settings
-                                .get()
-                                .bloodTestIntervalMonths
-                                .map(|v| v.to_string())
-                                .unwrap_or_else(|| "".to_string())
-                        />
-
-
-                <label>"ICS Secret"</label>
-                <input
-                    type="text"
-                    placeholder="Optional secret"
-                    on:input=on_secret_input
-                    prop:value=move || ics_secret()
-                />
-
-                <label>"Display Estradiol Unit"</label>
-                <select on:change=on_display_unit_change>
-                    <option value="pmol/L" selected=move || display_unit() == Some(HormoneUnits::E2PmolL)>
-                        "pmol/L"
-                    </option>
-                    <option value="pg/mL" selected=move || display_unit() == Some(HormoneUnits::E2PgMl)>
-                        "pg/mL"
-                    </option>
-                </select>
-
-                <button
-                    type="button"
-                    on:click={
-                        let store = store.clone();
-                        move |_| store.save()
-                    }
-                    prop:disabled=move || store.is_saving.get()
-                >
-                    "Save Settings"
-                </button>
-            </form>
+                            />
+                        </div>
+                    </Show>
+                </div>
+            </div>
         }
         .into_view(),
     )
@@ -2169,8 +1730,8 @@ fn VialsCreatePage() -> impl IntoView {
         let mut data = store.data.get();
         data.vials.push(entry);
         store.data.set(data);
-        store.is_dirty.set(true);
-        store.save();
+                                    store.mark_dirty();
+
         batch_number.set("".to_string());
         ester_kind.set("".to_string());
         concentration.set("".to_string());
@@ -2295,8 +1856,7 @@ fn VialsDetailPage() -> impl IntoView {
                                             target.spentAt = if next { Some(js_sys::Date::now() as i64) } else { None };
                                         }
                                     });
-                                    store_toggle.is_dirty.set(true);
-                                    store_toggle.save();
+                                    store_toggle.mark_dirty();
                                 }
                             }
                         >
@@ -2330,8 +1890,7 @@ fn VialsDetailPage() -> impl IntoView {
                                 }
                             });
                             sub_vials.set(next_list);
-                            store_subvial.is_dirty.set(true);
-                            store_subvial.save();
+                            store_subvial.mark_dirty();
                             sub_label.set("".to_string());
                             sub_notes.set("".to_string());
                         }

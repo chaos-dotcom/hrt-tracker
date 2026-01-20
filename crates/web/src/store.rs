@@ -1,8 +1,11 @@
 use gloo_net::http::Request;
+use gloo_timers::callback::Timeout;
 use hrt_shared::logic::{backfill_scheduled_doses, migrate_blood_tests_fudge_factor};
 use hrt_shared::types::{HormoneUnits, HrtData, Settings};
 use leptos::*;
 use serde_json::Value;
+use std::cell::RefCell;
+use std::rc::Rc;
 
 #[derive(Clone)]
 pub struct AppStore {
@@ -13,6 +16,7 @@ pub struct AppStore {
     pub is_dirty: RwSignal<bool>,
     pub last_saved: RwSignal<Option<i64>>,
     pub last_error: RwSignal<Option<String>>,
+    autosave_handle: Rc<RefCell<Option<Timeout>>>,
 }
 
 impl AppStore {
@@ -25,6 +29,7 @@ impl AppStore {
             is_dirty: create_rw_signal(false),
             last_saved: create_rw_signal(None),
             last_error: create_rw_signal(None),
+            autosave_handle: Rc::new(RefCell::new(None)),
         }
     }
 
@@ -70,6 +75,24 @@ impl AppStore {
             }
             is_loading.set(false);
         });
+    }
+
+    pub fn mark_dirty(&self) {
+        self.is_dirty.set(true);
+        self.schedule_autosave();
+    }
+
+    fn schedule_autosave(&self) {
+        let mut handle = self.autosave_handle.borrow_mut();
+        if let Some(existing) = handle.take() {
+            existing.cancel();
+        }
+        let store = self.clone();
+        *handle = Some(Timeout::new(900, move || {
+            if store.is_dirty.get() && !store.is_saving.get() {
+                store.save();
+            }
+        }));
     }
 
     pub fn save(&self) {
