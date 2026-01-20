@@ -3792,7 +3792,7 @@ fn draw_view_chart(canvas_id: &str, state: &ViewChartState, zoom: ViewZoom) {
         .configure_mesh()
         .disable_mesh()
         .label_style(
-            ("Quicksand", 12)
+            ("Quicksand", 14)
                 .into_font()
                 .color(&RGBColor(180, 167, 198)),
         )
@@ -3874,7 +3874,7 @@ fn draw_estrannaise_chart(canvas_id: &str, series: &EstrannaiseSeries, zoom: Vie
         .configure_mesh()
         .disable_mesh()
         .label_style(
-            ("Quicksand", 12)
+            ("Quicksand", 14)
                 .into_font()
                 .color(&RGBColor(180, 167, 198)),
         )
