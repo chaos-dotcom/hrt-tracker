@@ -5,3 +5,14 @@ members = [
   "crates/web",
 ]
 resolver = "2"
+
+[[workspace.metadata.leptos]]
+name = "hrt-web"
+site-root = "target/site"
+site-pkg-dir = "pkg"
+assets-dir = "static"
+style-file = "crates/web/src/styles.css"
+bin-package = "hrt-web"
+lib-package = "hrt-web"
+site-addr = "127.0.0.1:4100"
+reload-port = 4102

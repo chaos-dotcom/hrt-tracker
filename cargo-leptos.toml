@@ -5,10 +5,15 @@
 # Generated output directory for the web build.
 site-root = "target/site"
 site-pkg-dir = "pkg"
+site-addr = "127.0.0.1:4100"
+reload-port = 4102
 
 [build]
 # Name of the web crate.
 bin-package = "hrt-web"
+
+[style]
+file = "crates/web/src/styles.css"
 
 [watch]
 # Optional: run the server during watch.
