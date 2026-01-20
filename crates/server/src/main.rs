@@ -1,9 +1,29 @@
+use axum::http::{HeaderValue, Method};
 use axum::routing::{get, post};
 use axum::Router;
 use hrt_server::{api, ics};
+use tower_http::cors::{AllowOrigin, Any, CorsLayer};
 
 #[tokio::main]
 async fn main() {
+    let cors = CorsLayer::new()
+        .allow_origin(AllowOrigin::list([
+            "http://127.0.0.1:4100"
+                .parse::<HeaderValue>()
+                .expect("invalid CORS origin"),
+            "http://127.0.0.1:3000"
+                .parse::<HeaderValue>()
+                .expect("invalid CORS origin"),
+            "http://localhost:4100"
+                .parse::<HeaderValue>()
+                .expect("invalid CORS origin"),
+            "http://localhost:3000"
+                .parse::<HeaderValue>()
+                .expect("invalid CORS origin"),
+        ]))
+        .allow_methods([Method::GET, Method::POST, Method::DELETE])
+        .allow_headers(Any);
+
     let app = Router::new()
         .route("/health", get(|| async { "ok" }))
         .route("/api/data", get(api::get_data).post(api::post_data))
@@ -21,10 +41,13 @@ async fn main() {
         .route(
             "/api/dosage-photo/:entry_id/:filename",
             get(api::get_dosage_photo).delete(api::delete_dosage_photo),
-        );
+        )
+        .layer(cors);
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000")
+    let addr = std::env::var("HRT_SERVER_ADDR").unwrap_or_else(|_| "127.0.0.1:4200".to_string());
+    let listener = tokio::net::TcpListener::bind(&addr)
         .await
         .expect("Failed to bind");
+    println!("Server listening on http://{addr}");
     axum::serve(listener, app).await.expect("server error");
 }
