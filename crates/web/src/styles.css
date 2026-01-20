@@ -64,7 +64,7 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 24px;
-  padding: 22px 28px;
+  padding: 20px 24px;
   background: rgba(18, 18, 30, 0.9);
   border-bottom: 1px solid rgba(243, 154, 181, 0.25);
   position: sticky;
@@ -135,12 +135,12 @@ body {
 }
 
 .main-content {
-  padding: 26px 28px 48px;
+  padding: 20px 20px 40px;
   display: grid;
   gap: 24px;
-  max-width: 1200px;
+  max-width: 1560px;
   margin: 0 auto;
-  width: min(1200px, 100%);
+  width: min(1560px, 100%);
 }
 
 .main-content:has(.dashboard-layout) {
@@ -277,6 +277,10 @@ body {
   position: relative;
 }
 
+.chart-card.chart-interactive {
+  overflow: hidden;
+}
+
 .chart-card svg text {
   fill: var(--ink);
 }
@@ -289,6 +293,12 @@ body {
   width: 100%;
   height: auto;
   display: block;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.chart-card.chart-interactive canvas:active {
+  cursor: grabbing;
 }
 
 .chart-toolbar {
@@ -336,6 +346,25 @@ body {
 .chart-toolbar button:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.view-summary {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.view-summary p {
+  margin: 0;
+}
+
+.chart-input {
+  width: auto;
+  max-width: 140px;
+}
+
+.chart-toolbar input[type="checkbox"] {
+  width: auto;
 }
 
 .chart-note {
@@ -513,6 +542,7 @@ body {
 }
 
 .chart-tooltip {
+  position: absolute;
   background: rgba(16, 16, 26, 0.92);
   color: var(--ink);
   border: 1px solid rgba(243, 154, 181, 0.3);
@@ -522,6 +552,7 @@ body {
   max-width: 240px;
   box-shadow: 0 12px 24px rgba(8, 6, 16, 0.35);
   line-height: 1.4;
+  pointer-events: none;
 }
 
 section {
@@ -791,6 +822,6 @@ section section {
   }
 
   .main-content {
-    padding: 20px;
+    padding: 18px;
   }
 }

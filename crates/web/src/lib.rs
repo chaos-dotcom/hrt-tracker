@@ -15,10 +15,19 @@ use axum::Router;
 use tower_http::services::ServeDir;
 
 use chrono::{Local, TimeZone};
-use hrt_shared::types::{DosageHistoryEntry, HormoneUnits, LengthUnit};
+use gloo_events::EventListener;
+use hrt_shared::estrannaise::e2_multidose_3c;
+use hrt_shared::types::{
+    BloodTest, DosageHistoryEntry, EstrannaiseModel, HormoneUnits, InjectableEstradiols,
+    LengthUnit, Settings,
+};
+use leptos::window;
 use plotters::prelude::*;
 use plotters_canvas::CanvasBackend;
+use std::cell::RefCell;
 use std::rc::Rc;
+use wasm_bindgen::JsCast;
+use web_sys::HtmlCanvasElement;
 
 #[component]
 pub fn App() -> impl IntoView {
@@ -672,6 +681,255 @@ fn ViewPage() -> impl IntoView {
     let edit_measurement_hip = create_rw_signal(String::new());
     let edit_measurement_unit = create_rw_signal(String::new());
 
+    let x_axis_mode = create_rw_signal("date".to_string());
+    let time_range_days = create_rw_signal(365_i64);
+    let show_medications = create_rw_signal(true);
+    let show_e2 = create_rw_signal(true);
+    let show_t = create_rw_signal(true);
+    let show_prog = create_rw_signal(false);
+    let show_fsh = create_rw_signal(false);
+    let show_lh = create_rw_signal(false);
+    let show_prolactin = create_rw_signal(false);
+    let show_shbg = create_rw_signal(false);
+    let show_fai = create_rw_signal(false);
+    let view_zoom = create_rw_signal(ViewZoom::default());
+    let view_tooltip = create_rw_signal(None::<ChartTooltip>);
+
+    let view_chart_state = create_memo({
+        let settings = store.settings;
+        move |_| {
+            let data_value = data.get();
+            let settings_value = settings.get();
+            compute_view_chart_state(
+                &data_value,
+                &settings_value,
+                &x_axis_mode.get(),
+                time_range_days.get(),
+                show_medications.get(),
+                show_e2.get(),
+                show_t.get(),
+                show_prog.get(),
+                show_fsh.get(),
+                show_lh.get(),
+                show_prolactin.get(),
+                show_shbg.get(),
+                show_fai.get(),
+            )
+        }
+    });
+
+    const VIEW_CANVAS_ID: &str = "view-chart-canvas";
+    let view_drag = Rc::new(RefCell::new(None::<DragState>));
+
+    let on_view_mouse_move = {
+        let view_chart_state = view_chart_state.clone();
+        let view_zoom = view_zoom;
+        let view_drag = view_drag.clone();
+        let view_tooltip = view_tooltip;
+        move |ev: leptos::ev::MouseEvent| {
+            let Some(canvas) = window()
+                .document()
+                .and_then(|doc| doc.get_element_by_id(VIEW_CANVAS_ID))
+                .and_then(|el| el.dyn_into::<HtmlCanvasElement>().ok())
+            else {
+                return;
+            };
+            let rect = canvas.get_bounding_client_rect();
+            let cursor_x = ev.client_x() as f64 - rect.left();
+            let cursor_y = ev.client_y() as f64 - rect.top();
+            let state = view_chart_state.get();
+            let zoom = view_zoom.get();
+            let x_min = zoom.x_min.unwrap_or(state.domain_min);
+            let x_max = zoom.x_max.unwrap_or(state.domain_max);
+            let padding = chart_padding();
+            let (width, height, domain_span, y_span) = compute_chart_bounds(
+                rect.width(),
+                rect.height(),
+                padding,
+                x_min,
+                x_max,
+                state.y_min,
+                state.y_max,
+            );
+            if let Some(drag) = view_drag.borrow().as_ref() {
+                view_tooltip.set(None);
+                let delta_px = cursor_x - drag.start_x;
+                let span = x_max - x_min;
+                let delta_domain = -(delta_px / width) * span;
+                let next_min = drag.start_min + delta_domain;
+                let next_max = drag.start_max + delta_domain;
+                view_zoom.set(clamp_zoom(
+                    state.domain_min,
+                    state.domain_max,
+                    next_min,
+                    next_max,
+                ));
+            } else {
+                let mut best = find_nearest_point(
+                    &state.points,
+                    x_min,
+                    domain_span,
+                    state.y_min,
+                    y_span,
+                    width,
+                    height,
+                    padding,
+                    cursor_x,
+                    cursor_y,
+                );
+                if let Some(candidate) = find_nearest_point(
+                    &state.dosage_points,
+                    x_min,
+                    domain_span,
+                    state.y_min,
+                    y_span,
+                    width,
+                    height,
+                    padding,
+                    cursor_x,
+                    cursor_y,
+                ) {
+                    let replace = best
+                        .as_ref()
+                        .map(|(_, dist)| *dist)
+                        .unwrap_or(f64::INFINITY)
+                        > candidate.1;
+                    if replace {
+                        best = Some(candidate);
+                    }
+                }
+                if let Some((candidate, _)) = best.take() {
+                    view_tooltip.set(Some(candidate));
+                } else {
+                    view_tooltip.set(None);
+                }
+            }
+        }
+    };
+
+    let on_view_mouse_leave = {
+        let view_drag = view_drag.clone();
+        let view_tooltip = view_tooltip;
+        move |_| {
+            view_drag.replace(None);
+            view_tooltip.set(None);
+        }
+    };
+
+    let on_view_mouse_down = {
+        let view_drag = view_drag.clone();
+        let view_zoom = view_zoom;
+        let view_chart_state = view_chart_state.clone();
+        move |ev: leptos::ev::MouseEvent| {
+            let Some(canvas) = window()
+                .document()
+                .and_then(|doc| doc.get_element_by_id(VIEW_CANVAS_ID))
+                .and_then(|el| el.dyn_into::<HtmlCanvasElement>().ok())
+            else {
+                return;
+            };
+            let rect = canvas.get_bounding_client_rect();
+            let cursor_x = ev.client_x() as f64 - rect.left();
+            let state = view_chart_state.get();
+            let zoom = view_zoom.get();
+            let x_min = zoom.x_min.unwrap_or(state.domain_min);
+            let x_max = zoom.x_max.unwrap_or(state.domain_max);
+            view_drag.replace(Some(DragState {
+                start_x: cursor_x,
+                start_min: x_min,
+                start_max: x_max,
+            }));
+        }
+    };
+
+    let on_view_mouse_up = {
+        let view_drag = view_drag.clone();
+        move |_| {
+            view_drag.replace(None);
+        }
+    };
+
+    let on_view_wheel = {
+        let view_zoom = view_zoom;
+        let view_chart_state = view_chart_state.clone();
+        move |ev: leptos::ev::WheelEvent| {
+            ev.prevent_default();
+            let Some(canvas) = window()
+                .document()
+                .and_then(|doc| doc.get_element_by_id(VIEW_CANVAS_ID))
+                .and_then(|el| el.dyn_into::<HtmlCanvasElement>().ok())
+            else {
+                return;
+            };
+            let rect = canvas.get_bounding_client_rect();
+            let cursor_x = ev.client_x() as f64 - rect.left();
+            let state = view_chart_state.get();
+            let zoom = view_zoom.get();
+            let x_min = zoom.x_min.unwrap_or(state.domain_min);
+            let x_max = zoom.x_max.unwrap_or(state.domain_max);
+            let padding = chart_padding();
+            let (width, _, domain_span, _) = compute_chart_bounds(
+                rect.width(),
+                rect.height(),
+                padding,
+                x_min,
+                x_max,
+                state.y_min,
+                state.y_max,
+            );
+            let cursor_ratio = ((cursor_x - padding.0) / width).clamp(0.0, 1.0);
+            let zoom_factor = if ev.delta_y() < 0.0 { 0.85 } else { 1.15 };
+            let new_span = (domain_span * zoom_factor).max(1.0);
+            let center = x_min + domain_span * cursor_ratio;
+            let new_min = center - new_span * cursor_ratio;
+            let new_max = new_min + new_span;
+            view_zoom.set(clamp_zoom(
+                state.domain_min,
+                state.domain_max,
+                new_min,
+                new_max,
+            ));
+        }
+    };
+
+    create_effect({
+        let view_chart_state = view_chart_state.clone();
+        let view_zoom = view_zoom;
+        move |_| {
+            let state = view_chart_state.get();
+            if !state.has_data {
+                return;
+            }
+            draw_view_chart(VIEW_CANVAS_ID, &state, view_zoom.get());
+        }
+    });
+
+    let view_resize_listener: Rc<RefCell<Option<EventListener>>> = Rc::new(RefCell::new(None));
+    create_effect({
+        let view_chart_state = view_chart_state.clone();
+        let view_zoom = view_zoom;
+        let view_resize_listener = view_resize_listener.clone();
+        move |_| {
+            view_chart_state.get();
+            let window = window();
+            let listener = EventListener::new(&window, "resize", move |_| {
+                let state = view_chart_state.get();
+                if state.has_data {
+                    draw_view_chart(VIEW_CANVAS_ID, &state, view_zoom.get());
+                }
+            });
+            view_resize_listener.replace(Some(listener));
+        }
+    });
+
+    let reset_view_zoom = {
+        let view_zoom = view_zoom;
+        move |_| view_zoom.set(ViewZoom::default())
+    };
+
+    let x_axis_days_disabled = move || view_chart_state.get().first_dose.is_none();
+    let view_tooltip_value = move || view_tooltip.get();
+
     let entry_matches = |entry: &DosageHistoryEntry, key: &str| match entry {
         DosageHistoryEntry::InjectableEstradiol { date, id, .. }
         | DosageHistoryEntry::OralEstradiol { date, id, .. }
@@ -739,6 +997,208 @@ fn ViewPage() -> impl IntoView {
     page_layout(
         "View",
         view! {
+            <div class="view-layout">
+                <div class="view-header">
+                    <div>
+                        <h2>"HRT Tracking Data"</h2>
+                        <p class="muted">
+                            "This chart shows your hormone levels from blood tests along with your dosage history over time."
+                        </p>
+                    </div>
+                    <div class="header-actions">
+                        <A href="/create/measurement">"Add Measurement"</A>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3>"Current Regimen"</h3>
+                    <div class="view-summary">
+                        <Show when=move || view_chart_state.get().first_dose.is_some()>
+                            <p>
+                                <strong>"Days since first dose: "</strong>
+                                {move || view_chart_state.get().first_dose.map(|first| {
+                                    let now = js_sys::Date::now() as i64;
+                                    let diff = (now - first) / (24 * 60 * 60 * 1000);
+                                    diff.max(0)
+                                }).unwrap_or(0)}
+                            </p>
+                        </Show>
+                        <Show when=move || store.data.get().injectableEstradiol.is_some()>
+                            <p>
+                                <strong>"Injectable Estradiol: "</strong>
+                                {move || store
+                                    .data
+                                    .get()
+                                    .injectableEstradiol
+                                    .as_ref()
+                                    .map(|cfg| format!("{:?}, {:.2} {:?} every {:.1} days", cfg.kind, cfg.dose, cfg.unit, cfg.frequency))
+                                    .unwrap_or_default()}
+                            </p>
+                        </Show>
+                        <Show when=move || store.data.get().oralEstradiol.is_some()>
+                            <p>
+                                <strong>"Oral Estradiol: "</strong>
+                                {move || store
+                                    .data
+                                    .get()
+                                    .oralEstradiol
+                                    .as_ref()
+                                    .map(|cfg| format!("{:?}, {:.2} {:?} every {:.1} days", cfg.kind, cfg.dose, cfg.unit, cfg.frequency))
+                                    .unwrap_or_default()}
+                            </p>
+                        </Show>
+                        <Show when=move || store.data.get().antiandrogen.is_some()>
+                            <p>
+                                <strong>"Antiandrogen: "</strong>
+                                {move || store
+                                    .data
+                                    .get()
+                                    .antiandrogen
+                                    .as_ref()
+                                    .map(|cfg| format!("{:?}, {:.2} {:?} every {:.1} days", cfg.kind, cfg.dose, cfg.unit, cfg.frequency))
+                                    .unwrap_or_default()}
+                            </p>
+                        </Show>
+                        <Show when=move || store.data.get().progesterone.is_some()>
+                            <p>
+                                <strong>"Progesterone: "</strong>
+                                {move || store
+                                    .data
+                                    .get()
+                                    .progesterone
+                                    .as_ref()
+                                    .map(|cfg| format!("{:?} ({:?}), {:.2} {:?} every {:.1} days", cfg.kind, cfg.route, cfg.dose, cfg.unit, cfg.frequency))
+                                    .unwrap_or_default()}
+                            </p>
+                        </Show>
+                        <Show when=move || store.data.get().injectableEstradiol.is_none()
+                            && store.data.get().oralEstradiol.is_none()
+                            && store.data.get().antiandrogen.is_none()
+                            && store.data.get().progesterone.is_none()>
+                            <p class="muted">"No regimen set up. You can set one on the dosage page."</p>
+                        </Show>
+                    </div>
+                </div>
+
+                <div class="view-chart-controls">
+                    <div class="chart-toolbar">
+                        <div class="chart-toolbar-group">
+                            <span class="muted">"X-Axis:"</span>
+                            <button
+                                class:active=move || x_axis_mode.get() == "date"
+                                on:click=move |_| x_axis_mode.set("date".to_string())
+                            >
+                                "Date"
+                            </button>
+                            <button
+                                class:active=move || x_axis_mode.get() == "days"
+                                on:click=move |_| x_axis_mode.set("days".to_string())
+                                prop:disabled=move || x_axis_days_disabled()
+                            >
+                                "Days since first dose"
+                            </button>
+                        </div>
+                        <div class="chart-toolbar-group">
+                            <span class="muted">"Time Range:"</span>
+                            <button class:active=move || time_range_days.get() == 30 on:click=move |_| time_range_days.set(30)>
+                                "30 days"
+                            </button>
+                            <button class:active=move || time_range_days.get() == 90 on:click=move |_| time_range_days.set(90)>
+                                "90 days"
+                            </button>
+                            <button class:active=move || time_range_days.get() == 180 on:click=move |_| time_range_days.set(180)>
+                                "180 days"
+                            </button>
+                            <button class:active=move || time_range_days.get() == 365 on:click=move |_| time_range_days.set(365)>
+                                "1 year"
+                            </button>
+                            <button class:active=move || time_range_days.get() == 9999 on:click=move |_| time_range_days.set(9999)>
+                                "All"
+                            </button>
+                        </div>
+                        <div class="chart-toolbar-group">
+                            <button on:click=reset_view_zoom disabled=move || view_zoom.get().x_min.is_none()>
+                                "Reset zoom"
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="chart-toolbar view-levels-group">
+                        <span class="muted">"Show Levels:"</span>
+                        <button class:active=move || show_e2.get() on:click=move |_| show_e2.set(!show_e2.get())>
+                            "E2"
+                        </button>
+                        <button class:active=move || show_t.get() on:click=move |_| show_t.set(!show_t.get())>
+                            "T"
+                        </button>
+                        <button class:active=move || show_prog.get() on:click=move |_| show_prog.set(!show_prog.get())>
+                            "Prog"
+                        </button>
+                        <button class:active=move || show_fsh.get() on:click=move |_| show_fsh.set(!show_fsh.get())>
+                            "FSH"
+                        </button>
+                        <button class:active=move || show_lh.get() on:click=move |_| show_lh.set(!show_lh.get())>
+                            "LH"
+                        </button>
+                        <button
+                            class:active=move || show_prolactin.get()
+                            on:click=move |_| show_prolactin.set(!show_prolactin.get())
+                        >
+                            "Prolactin"
+                        </button>
+                        <button class:active=move || show_shbg.get() on:click=move |_| show_shbg.set(!show_shbg.get())>
+                            "SHBG"
+                        </button>
+                        <button class:active=move || show_fai.get() on:click=move |_| show_fai.set(!show_fai.get())>
+                            "FAI"
+                        </button>
+                    </div>
+
+                    <div class="chart-toolbar view-dosage-group">
+                        <span class="muted">"Show Dosages:"</span>
+                        <button class:active=move || show_medications.get() on:click=move |_| show_medications.set(!show_medications.get())>
+                            {move || if show_medications.get() { "Medication Dosages (on)" } else { "Medication Dosages" }}
+                        </button>
+                    </div>
+                </div>
+
+                <div class="chart-card chart-interactive">
+                    <Show when=move || view_chart_state.get().has_data fallback=move || view! {
+                        <div class="empty-state">"No data available for the selected time range."</div>
+                    }>
+                        <canvas
+                            id=VIEW_CANVAS_ID
+                            width="900"
+                            height="420"
+                            on:mousemove=on_view_mouse_move.clone()
+                            on:mouseleave=on_view_mouse_leave.clone()
+                            on:mousedown=on_view_mouse_down.clone()
+                            on:mouseup=on_view_mouse_up.clone()
+                            on:wheel=on_view_wheel.clone()
+                        ></canvas>
+                        <Show when=move || view_tooltip_value().is_some()>
+                            <div
+                                class="chart-tooltip"
+                                style=move || {
+                                    view_tooltip_value()
+                                        .map(|tip| format!("left: {:.0}px; top: {:.0}px;", tip.x + 12.0, tip.y + 12.0))
+                                        .unwrap_or_default()
+                                }
+                            >
+                                {move || view_tooltip_value().map(|tip| tip.text).unwrap_or_default()}
+                            </div>
+                        </Show>
+                    </Show>
+                    <div class="chart-note muted">
+                        <p>"* Dosage values are scaled for visibility on the chart."</p>
+                        <p>"* Hover over data points for details."</p>
+                        <Show when=move || !store.data.get().bloodTests.is_empty()>
+                            <p>"* Hormone measurements are normalized to display units for charting; hover shows recorded units."</p>
+                        </Show>
+                    </div>
+                </div>
+            </div>
+
             <section>
                 <h2>"Dosage History"</h2>
                 <Show
@@ -838,23 +1298,21 @@ fn ViewPage() -> impl IntoView {
                                             })));
                                         }
                                     };
-                                let on_edit = {
-                                    let entry_key = entry_key.clone();
-                                    let editing_key = editing_key;
-                                    let editing_date = editing_date;
-                                    let editing_dose = editing_dose;
-                                    let editing_note = editing_note;
-                                    let note_value = note_value.clone();
-                                    let date_text_edit = date_text.clone();
-                                    move |_: leptos::ev::MouseEvent| {
-                                        editing_key.set(Some(entry_key.clone()));
-                                        editing_date.set(date_text_edit.clone());
-                                        editing_dose.set(format!("{:.2}", dose));
-                                        editing_note.set(note_value.clone());
-                                    }
-                                };
-
-
+                                    let on_edit = {
+                                        let entry_key = entry_key.clone();
+                                        let editing_key = editing_key;
+                                        let editing_date = editing_date;
+                                        let editing_dose = editing_dose;
+                                        let editing_note = editing_note;
+                                        let note_value = note_value.clone();
+                                        let date_text_edit = date_text.clone();
+                                        move |_: leptos::ev::MouseEvent| {
+                                            editing_key.set(Some(entry_key.clone()));
+                                            editing_date.set(date_text_edit.clone());
+                                            editing_dose.set(format!("{:.2}", dose));
+                                            editing_note.set(note_value.clone());
+                                        }
+                                    };
                                     view! {
                                         <tr>
                                             <td>{date_text}</td>
@@ -1595,7 +2053,9 @@ fn CalcPage() -> impl IntoView {
                     <p class="muted">{move || result.get().unwrap_or_default()}</p>
                 </Show>
             </form>
-            <PlaceholderChart title="Conversion Curve" />
+            <div class="chart-card">
+                <div class="empty-state">"Conversion chart not available in Rust UI yet."</div>
+            </div>
         }
         .into_view(),
     )
@@ -1777,7 +2237,7 @@ fn VialsDetailPage() -> impl IntoView {
         let vial_store = vial_store.clone();
         let sub_label = sub_label.clone();
         let sub_notes = sub_notes.clone();
-        move |entry: hrt_shared::types::Vial| {
+        Rc::new(move |entry: hrt_shared::types::Vial| {
             let created = Local
                 .timestamp_millis_opt(entry.createdAt)
                 .single()
@@ -1824,16 +2284,20 @@ fn VialsDetailPage() -> impl IntoView {
                     <div class="primary-actions">
                         <button
                             type="button"
-                            on:click=move |_| {
-                                store_toggle.data.update(|d| {
-                                    if let Some(target) = d.vials.iter_mut().find(|v| v.id == entry_id) {
-                                        let next = !target.isSpent.unwrap_or(false);
-                                        target.isSpent = Some(next);
-                                        target.spentAt = if next { Some(js_sys::Date::now() as i64) } else { None };
-                                    }
-                                });
-                                store_toggle.is_dirty.set(true);
-                                store_toggle.save();
+                            on:click={
+                                let entry_id = entry_id.clone();
+                                let store_toggle = store_toggle.clone();
+                                move |_| {
+                                    store_toggle.data.update(|d| {
+                                        if let Some(target) = d.vials.iter_mut().find(|v| v.id == entry_id) {
+                                            let next = !target.isSpent.unwrap_or(false);
+                                            target.isSpent = Some(next);
+                                            target.spentAt = if next { Some(js_sys::Date::now() as i64) } else { None };
+                                        }
+                                    });
+                                    store_toggle.is_dirty.set(true);
+                                    store_toggle.save();
+                                }
                             }
                         >
                             {if is_spent { "Mark Active" } else { "Mark Spent" }}
@@ -1926,20 +2390,23 @@ fn VialsDetailPage() -> impl IntoView {
                 </section>
             }
             .into_view()
-        }
+        })
+    };
+
+    let rendered_vial = {
+        let render_vial = render_vial.clone();
+        let vial = vial.clone();
+        create_memo(move |_| vial().map(|entry| (render_vial)(entry)))
     };
 
     page_layout(
         "Vial Detail",
         view! {
             <Show
-                when=move || vial().is_some()
+                when=move || rendered_vial.get().is_some()
                 fallback=move || view! { <div class="empty-state">"Vial not found."</div> }
             >
-                {move || {
-                    let render = render_vial.clone();
-                    vial().map(render).unwrap_or_else(|| view! {}.into_view())
-                }}
+                {move || rendered_vial.get().unwrap_or_else(|| view! {}.into_view())}
             </Show>
         }
         .into_view(),
@@ -1948,36 +2415,354 @@ fn VialsDetailPage() -> impl IntoView {
 
 #[component]
 fn EstrannaisePage() -> impl IntoView {
+    let store = use_store();
+    let x_axis_mode = create_rw_signal("date".to_string());
+    let forecast_enabled = create_rw_signal(true);
+    let forecast_weeks = create_rw_signal(8_i64);
+    let forecast_dose_override = create_rw_signal(String::new());
+    let forecast_frequency_override = create_rw_signal(String::new());
+    let estrannaise_zoom = create_rw_signal(ViewZoom::default());
+    let estrannaise_tooltip = create_rw_signal(None::<ChartTooltip>);
+
+    let estrannaise_series = create_memo({
+        let settings = store.settings;
+        move |_| {
+            let data_value = store.data.get();
+            let settings_value = settings.get();
+            let dose_override = forecast_dose_override.get().trim().parse::<f64>().ok();
+            let freq_override = forecast_frequency_override.get().trim().parse::<f64>().ok();
+            compute_estrannaise_series(
+                &data_value,
+                &settings_value,
+                &x_axis_mode.get(),
+                forecast_enabled.get(),
+                forecast_weeks.get(),
+                dose_override,
+                freq_override,
+            )
+        }
+    });
+
+    const ESTRANNAISE_CANVAS_ID: &str = "estrannaise-chart-canvas";
+    let estrannaise_drag = Rc::new(RefCell::new(None::<DragState>));
+
+    let on_mouse_move = {
+        let estrannaise_series = estrannaise_series.clone();
+        let estrannaise_zoom = estrannaise_zoom;
+        let estrannaise_tooltip = estrannaise_tooltip;
+        let estrannaise_drag = estrannaise_drag.clone();
+        move |ev: leptos::ev::MouseEvent| {
+            let Some(canvas) = window()
+                .document()
+                .and_then(|doc| doc.get_element_by_id(ESTRANNAISE_CANVAS_ID))
+                .and_then(|el| el.dyn_into::<HtmlCanvasElement>().ok())
+            else {
+                return;
+            };
+            let rect = canvas.get_bounding_client_rect();
+            let cursor_x = ev.client_x() as f64 - rect.left();
+            let cursor_y = ev.client_y() as f64 - rect.top();
+            let series = estrannaise_series.get();
+            let zoom = estrannaise_zoom.get();
+            let x_min = zoom.x_min.unwrap_or(series.domain_min);
+            let x_max = zoom.x_max.unwrap_or(series.domain_max);
+            let padding = chart_padding();
+            let (width, height, domain_span, y_span) = compute_chart_bounds(
+                rect.width(),
+                rect.height(),
+                padding,
+                x_min,
+                x_max,
+                series.y_min,
+                series.y_max,
+            );
+            let mut best: Option<(ChartTooltip, f64)> = None;
+            for set in [&series.blended, &series.stepped, &series.blood] {
+                if let Some(candidate) = find_nearest_estrannaise_point(
+                    set,
+                    x_min,
+                    domain_span,
+                    series.y_min,
+                    y_span,
+                    width,
+                    height,
+                    padding,
+                    cursor_x,
+                    cursor_y,
+                ) {
+                    if best
+                        .as_ref()
+                        .map(|(_, dist)| *dist)
+                        .unwrap_or(f64::INFINITY)
+                        > candidate.1
+                    {
+                        best = Some(candidate);
+                    }
+                }
+            }
+            if let Some(drag) = estrannaise_drag.borrow().as_ref() {
+                estrannaise_tooltip.set(None);
+                let delta_px = cursor_x - drag.start_x;
+                let span = x_max - x_min;
+                let delta_domain = -(delta_px / width) * span;
+                let next_min = drag.start_min + delta_domain;
+                let next_max = drag.start_max + delta_domain;
+                estrannaise_zoom.set(clamp_zoom(
+                    series.domain_min,
+                    series.domain_max,
+                    next_min,
+                    next_max,
+                ));
+            } else {
+                estrannaise_tooltip.set(best.map(|(tip, _)| tip));
+            }
+        }
+    };
+
+    let on_mouse_leave = {
+        let estrannaise_drag = estrannaise_drag.clone();
+        let estrannaise_tooltip = estrannaise_tooltip;
+        move |_| {
+            estrannaise_drag.replace(None);
+            estrannaise_tooltip.set(None);
+        }
+    };
+
+    let on_mouse_down = {
+        let estrannaise_drag = estrannaise_drag.clone();
+        let estrannaise_zoom = estrannaise_zoom;
+        let estrannaise_series = estrannaise_series.clone();
+        move |ev: leptos::ev::MouseEvent| {
+            let Some(canvas) = window()
+                .document()
+                .and_then(|doc| doc.get_element_by_id(ESTRANNAISE_CANVAS_ID))
+                .and_then(|el| el.dyn_into::<HtmlCanvasElement>().ok())
+            else {
+                return;
+            };
+            let rect = canvas.get_bounding_client_rect();
+            let cursor_x = ev.client_x() as f64 - rect.left();
+            let series = estrannaise_series.get();
+            let zoom = estrannaise_zoom.get();
+            let x_min = zoom.x_min.unwrap_or(series.domain_min);
+            let x_max = zoom.x_max.unwrap_or(series.domain_max);
+            estrannaise_drag.replace(Some(DragState {
+                start_x: cursor_x,
+                start_min: x_min,
+                start_max: x_max,
+            }));
+        }
+    };
+
+    let on_mouse_up = {
+        let estrannaise_drag = estrannaise_drag.clone();
+        move |_| {
+            estrannaise_drag.replace(None);
+        }
+    };
+
+    let on_wheel = {
+        let estrannaise_zoom = estrannaise_zoom;
+        let estrannaise_series = estrannaise_series.clone();
+        move |ev: leptos::ev::WheelEvent| {
+            ev.prevent_default();
+            let Some(canvas) = window()
+                .document()
+                .and_then(|doc| doc.get_element_by_id(ESTRANNAISE_CANVAS_ID))
+                .and_then(|el| el.dyn_into::<HtmlCanvasElement>().ok())
+            else {
+                return;
+            };
+            let rect = canvas.get_bounding_client_rect();
+            let cursor_x = ev.client_x() as f64 - rect.left();
+            let series = estrannaise_series.get();
+            let zoom = estrannaise_zoom.get();
+            let x_min = zoom.x_min.unwrap_or(series.domain_min);
+            let x_max = zoom.x_max.unwrap_or(series.domain_max);
+            let padding = chart_padding();
+            let (width, _, domain_span, _) = compute_chart_bounds(
+                rect.width(),
+                rect.height(),
+                padding,
+                x_min,
+                x_max,
+                series.y_min,
+                series.y_max,
+            );
+            let cursor_ratio = ((cursor_x - padding.0) / width).clamp(0.0, 1.0);
+            let zoom_factor = if ev.delta_y() < 0.0 { 0.85 } else { 1.15 };
+            let new_span = (domain_span * zoom_factor).max(1.0);
+            let center = x_min + domain_span * cursor_ratio;
+            let new_min = center - new_span * cursor_ratio;
+            let new_max = new_min + new_span;
+            estrannaise_zoom.set(clamp_zoom(
+                series.domain_min,
+                series.domain_max,
+                new_min,
+                new_max,
+            ));
+        }
+    };
+
+    create_effect({
+        let estrannaise_series = estrannaise_series.clone();
+        let estrannaise_zoom = estrannaise_zoom;
+        move |_| {
+            let series = estrannaise_series.get();
+            if series.blended.is_empty() && series.stepped.is_empty() && series.blood.is_empty() {
+                return;
+            }
+            draw_estrannaise_chart(ESTRANNAISE_CANVAS_ID, &series, estrannaise_zoom.get());
+        }
+    });
+
+    let resize_listener: Rc<RefCell<Option<EventListener>>> = Rc::new(RefCell::new(None));
+    create_effect({
+        let estrannaise_series = estrannaise_series.clone();
+        let estrannaise_zoom = estrannaise_zoom;
+        let resize_listener = resize_listener.clone();
+        move |_| {
+            estrannaise_series.get();
+            let window = window();
+            let listener = EventListener::new(&window, "resize", move |_| {
+                let series = estrannaise_series.get();
+                if series.blended.is_empty() && series.stepped.is_empty() && series.blood.is_empty()
+                {
+                    return;
+                }
+                draw_estrannaise_chart(ESTRANNAISE_CANVAS_ID, &series, estrannaise_zoom.get());
+            });
+            resize_listener.replace(Some(listener));
+        }
+    });
+
+    let reset_zoom = {
+        let estrannaise_zoom = estrannaise_zoom;
+        move |_| estrannaise_zoom.set(ViewZoom::default())
+    };
+
+    let tooltip_value = move || estrannaise_tooltip.get();
+
     page_layout(
         "Estrannaise",
         view! {
-            <p class="muted">"Charting comes in Phase 6. These controls mirror the original inputs."</p>
-            <form>
-                <label>"Model"</label>
-                <select>
-                    <option value="EB im">"EB im"</option>
-                    <option value="EV im">"EV im"</option>
-                    <option value="EEn im">"EEn im"</option>
-                    <option value="EC im">"EC im"</option>
-                    <option value="EUn im">"EUn im"</option>
-                    <option value="EUn casubq">"EUn casubq"</option>
-                    <option value="patch tw">"patch tw"</option>
-                    <option value="patch ow">"patch ow"</option>
-                </select>
+            <div class="view-layout">
+                <div class="view-header">
+                    <div>
+                        <h2>"Estrannaise"</h2>
+                        <p class="muted">
+                            "Estrannaise-style modeling with blended vs. step fudge factors, plus forecasted schedule windows."
+                        </p>
+                    </div>
+                </div>
 
-                <label>"Dose (mg)"</label>
-                <input type="number" step="0.1" />
+                <div class="chart-toolbar">
+                    <div class="chart-toolbar-group">
+                        <span class="muted">"X-Axis:"</span>
+                        <button
+                            class:active=move || x_axis_mode.get() == "date"
+                            on:click=move |_| x_axis_mode.set("date".to_string())
+                        >
+                            "Date"
+                        </button>
+                        <button
+                            class:active=move || x_axis_mode.get() == "days"
+                            on:click=move |_| x_axis_mode.set("days".to_string())
+                            prop:disabled=move || estrannaise_series.get().first_dose.is_none()
+                        >
+                            "Days since first dose"
+                        </button>
+                    </div>
+                    <div class="chart-toolbar-group">
+                        <label class="muted">"Forecast"</label>
+                        <input
+                            type="checkbox"
+                            on:change=move |ev| forecast_enabled.set(event_target_checked(&ev))
+                            prop:checked=move || forecast_enabled.get()
+                        />
+                    </div>
+                    <div class="chart-toolbar-group">
+                        <label class="muted">"Weeks"</label>
+                        <select on:change=move |ev| forecast_weeks.set(event_target_value(&ev).parse::<i64>().unwrap_or(8))>
+                            <option value="4" selected=move || forecast_weeks.get() == 4>"4"</option>
+                            <option value="6" selected=move || forecast_weeks.get() == 6>"6"</option>
+                            <option value="8" selected=move || forecast_weeks.get() == 8>"8"</option>
+                        </select>
+                    </div>
+                    <div class="chart-toolbar-group">
+                        <label class="muted">"Dose"</label>
+                        <input
+                            type="number"
+                            step="0.1"
+                            min="0"
+                            class="chart-input"
+                            placeholder="auto"
+                            on:input=move |ev| forecast_dose_override.set(event_target_value(&ev))
+                            prop:value=move || forecast_dose_override.get()
+                        />
+                    </div>
+                    <div class="chart-toolbar-group">
+                        <label class="muted">"Every (days)"</label>
+                        <input
+                            type="number"
+                            step="1"
+                            min="1"
+                            class="chart-input"
+                            placeholder="auto"
+                            on:input=move |ev| forecast_frequency_override.set(event_target_value(&ev))
+                            prop:value=move || forecast_frequency_override.get()
+                        />
+                    </div>
+                    <div class="chart-toolbar-group">
+                        <button on:click=reset_zoom disabled=move || estrannaise_zoom.get().x_min.is_none()>
+                            "Reset zoom"
+                        </button>
+                    </div>
+                </div>
 
-                <label>"Every (days)"</label>
-                <input type="number" step="1" />
-
-                <label>"Step fudge factor"</label>
-                <input type="number" step="0.1" />
-
-                <label>"Weeks"</label>
-                <input type="number" step="1" />
-            </form>
-            <PlaceholderChart title="Estrannaise Preview" />
+                <div class="chart-card chart-interactive">
+                    <Show
+                        when=move || !estrannaise_series.get().blended.is_empty()
+                            || !estrannaise_series.get().stepped.is_empty()
+                            || !estrannaise_series.get().blood.is_empty()
+                        fallback=move || view! {
+                            <div class="empty-state">
+                                <p>"No Estrannaise data available."</p>
+                                <p class="muted">"Add injectable estradiol history and blood tests to see model lines."</p>
+                            </div>
+                        }
+                    >
+                        <canvas
+                            id=ESTRANNAISE_CANVAS_ID
+                            width="900"
+                            height="420"
+                            on:mousemove=on_mouse_move.clone()
+                            on:mouseleave=on_mouse_leave.clone()
+                            on:mousedown=on_mouse_down.clone()
+                            on:mouseup=on_mouse_up.clone()
+                            on:wheel=on_wheel.clone()
+                        ></canvas>
+                        <Show when=move || tooltip_value().is_some()>
+                            <div
+                                class="chart-tooltip"
+                                style=move || {
+                                    tooltip_value()
+                                        .map(|tip| format!("left: {:.0}px; top: {:.0}px;", tip.x + 12.0, tip.y + 12.0))
+                                        .unwrap_or_default()
+                                }
+                            >
+                                {move || tooltip_value().map(|tip| tip.text).unwrap_or_default()}
+                            </div>
+                        </Show>
+                    </Show>
+                    <div class="chart-note muted">
+                        <p>"* Blue line blends fudge factor between blood tests."</p>
+                        <p>"* Pink dashed line steps to each test's fudge factor."</p>
+                        <p>"* Orange points show measured E2 in display units."</p>
+                        <p>"* Shaded region is forecasted schedule window."</p>
+                    </div>
+                </div>
+            </div>
         }
         .into_view(),
     )
@@ -2060,49 +2845,1075 @@ fn parse_length_unit(value: &str) -> Option<LengthUnit> {
     }
 }
 
-#[component]
-fn PlaceholderChart(title: &'static str) -> impl IntoView {
-    let canvas_id = format!("chart-{}", title.to_lowercase().replace(' ', "-"));
-    let canvas_draw_id = canvas_id.clone();
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct ViewZoom {
+    x_min: Option<f64>,
+    x_max: Option<f64>,
+}
 
-    let draw = move || {
-        let backend = CanvasBackend::new(&canvas_draw_id)
-            .expect("canvas backend")
-            .into_drawing_area();
-        backend.fill(&RGBColor(15, 17, 26)).ok();
+#[derive(Clone, Debug, Default, PartialEq)]
+struct ChartTooltip {
+    text: String,
+    x: f64,
+    y: f64,
+}
 
-        let chart = ChartBuilder::on(&backend)
-            .margin(16)
-            .caption(title, ("Quicksand", 18))
-            .x_label_area_size(24)
-            .y_label_area_size(32)
-            .build_cartesian_2d(0..10, 0..10)
-            .ok();
-        if let Some(mut chart) = chart {
-            chart
-                .configure_mesh()
-                .disable_mesh()
-                .label_style(
-                    ("Quicksand", 12)
-                        .into_font()
-                        .color(&RGBColor(180, 167, 198)),
-                )
-                .axis_style(&RGBColor(80, 70, 100))
-                .draw()
-                .ok();
-            chart
-                .draw_series(LineSeries::new(
-                    (0..10).map(|x| (x, (x * x) % 10)),
-                    &RGBColor(243, 154, 181),
-                ))
-                .ok();
+#[derive(Clone, Debug, PartialEq)]
+struct ViewChartPoint {
+    x: f64,
+    y: f64,
+    label: String,
+    color: RGBColor,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+struct ViewChartState {
+    domain_min: f64,
+    domain_max: f64,
+    y_min: f64,
+    y_max: f64,
+    x_label: String,
+    y_label: String,
+    points: Vec<ViewChartPoint>,
+    dosage_points: Vec<ViewChartPoint>,
+    first_dose: Option<i64>,
+    use_days: bool,
+    has_data: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct EstrannaisePoint {
+    x: f64,
+    y: f64,
+    label: String,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+struct EstrannaiseSeries {
+    blended: Vec<EstrannaisePoint>,
+    stepped: Vec<EstrannaisePoint>,
+    blood: Vec<EstrannaisePoint>,
+    forecast: Option<(f64, f64)>,
+    domain_min: f64,
+    domain_max: f64,
+    y_min: f64,
+    y_max: f64,
+    x_label: String,
+    y_label: String,
+    first_dose: Option<i64>,
+    use_days: bool,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct DragState {
+    start_x: f64,
+    start_min: f64,
+    start_max: f64,
+}
+
+const CHART_MARGIN: f64 = 18.0;
+const CHART_X_LABEL: f64 = 42.0;
+const CHART_Y_LABEL: f64 = 52.0;
+
+fn chart_padding() -> (f64, f64, f64, f64) {
+    (
+        CHART_MARGIN + CHART_Y_LABEL,
+        CHART_MARGIN,
+        CHART_MARGIN,
+        CHART_MARGIN + CHART_X_LABEL,
+    )
+}
+
+fn clamp_zoom(domain_min: f64, domain_max: f64, new_min: f64, new_max: f64) -> ViewZoom {
+    let full_span = domain_max - domain_min;
+    let span = (new_max - new_min).max(1.0);
+    if span >= full_span * 0.98 {
+        return ViewZoom::default();
+    }
+    let mut min_val = new_min;
+    let mut max_val = new_min + span;
+    if min_val < domain_min {
+        min_val = domain_min;
+        max_val = domain_min + span;
+    }
+    if max_val > domain_max {
+        max_val = domain_max;
+        min_val = domain_max - span;
+    }
+    ViewZoom {
+        x_min: Some(min_val),
+        x_max: Some(max_val),
+    }
+}
+
+fn hormone_unit_label(unit: &HormoneUnits) -> &'static str {
+    match unit {
+        HormoneUnits::E2PmolL => "pmol/L",
+        HormoneUnits::E2PgMl => "pg/mL",
+        HormoneUnits::TNgDl => "ng/dL",
+        HormoneUnits::TNmolL => "nmol/L",
+        HormoneUnits::Mg => "mg",
+        HormoneUnits::NgMl => "ng/mL",
+        HormoneUnits::MIuMl => "mIU/mL",
+        HormoneUnits::MIuL => "mIU/L",
+        HormoneUnits::UL => "U/L",
+    }
+}
+
+fn convert_estradiol_to_display(
+    value: f64,
+    unit: &HormoneUnits,
+    display_unit: &HormoneUnits,
+) -> f64 {
+    if display_unit == &HormoneUnits::E2PmolL {
+        if unit == &HormoneUnits::E2PmolL {
+            value
+        } else {
+            value * 3.6713
         }
-        backend.present().ok();
+    } else if unit == &HormoneUnits::E2PmolL {
+        value / 3.6713
+    } else {
+        value
+    }
+}
+
+fn estradiol_conversion_factor(display_unit: &HormoneUnits) -> f64 {
+    if display_unit == &HormoneUnits::E2PmolL {
+        3.6713
+    } else {
+        1.0
+    }
+}
+
+fn convert_testosterone_to_ng_dl(value: f64, unit: &HormoneUnits) -> f64 {
+    if unit == &HormoneUnits::TNmolL {
+        value * 28.818
+    } else {
+        value
+    }
+}
+
+fn convert_fsh_to_miu_ml(value: f64, unit: &HormoneUnits) -> f64 {
+    match unit {
+        HormoneUnits::MIuL => value / 1000.0,
+        HormoneUnits::UL => value,
+        _ => value,
+    }
+}
+
+fn convert_lh_to_miu_ml(value: f64, unit: &HormoneUnits) -> f64 {
+    match unit {
+        HormoneUnits::MIuL => value / 1000.0,
+        HormoneUnits::UL => value,
+        _ => value,
+    }
+}
+
+fn convert_progesterone_to_ng_ml(value: f64, unit: &HormoneUnits) -> f64 {
+    if unit == &HormoneUnits::TNmolL {
+        value * 0.31
+    } else {
+        value
+    }
+}
+
+fn fmt_date_label(date_ms: i64, axis_mode: &str, first_dose: Option<i64>) -> String {
+    const DAY_MS: i64 = 24 * 60 * 60 * 1000;
+    if axis_mode == "days" {
+        if let Some(first) = first_dose {
+            let days = (date_ms - first) as f64 / DAY_MS as f64;
+            return format!("Day {:.1}", days);
+        }
+    }
+    Local
+        .timestamp_millis_opt(date_ms)
+        .single()
+        .map(|d| d.format("%Y-%m-%d").to_string())
+        .unwrap_or_else(|| date_ms.to_string())
+}
+
+fn map_estrannaise_model(kind: &InjectableEstradiols) -> Option<EstrannaiseModel> {
+    match kind {
+        InjectableEstradiols::Benzoate => Some(EstrannaiseModel::EbIm),
+        InjectableEstradiols::Valerate => Some(EstrannaiseModel::EvIm),
+        InjectableEstradiols::Enanthate => Some(EstrannaiseModel::EEnIm),
+        InjectableEstradiols::Cypionate => Some(EstrannaiseModel::EcIm),
+        InjectableEstradiols::Undecylate => Some(EstrannaiseModel::EUnIm),
+        InjectableEstradiols::PolyestradiolPhosphate => None,
+    }
+}
+
+fn extract_fudge_series(tests: &[BloodTest]) -> Vec<(i64, f64)> {
+    let mut series: Vec<(i64, f64)> = tests
+        .iter()
+        .filter_map(|t| t.fudgeFactor.map(|value| (t.date, value)))
+        .collect();
+    series.sort_by_key(|(date, _)| *date);
+    if series.is_empty() {
+        series.push((js_sys::Date::now() as i64, 1.0));
+    }
+    series
+}
+
+fn blend_fudge(series: &[(i64, f64)], target: i64) -> f64 {
+    if series.is_empty() {
+        return 1.0;
+    }
+    if target <= series[0].0 {
+        return series[0].1;
+    }
+    let last = series[series.len() - 1];
+    if target >= last.0 {
+        return last.1;
+    }
+    for window in series.windows(2) {
+        let (prev_date, prev_val) = window[0];
+        let (next_date, next_val) = window[1];
+        if target <= next_date {
+            let span = (next_date - prev_date) as f64;
+            if span <= 0.0 {
+                return prev_val;
+            }
+            let ratio = (target - prev_date) as f64 / span;
+            return prev_val + (next_val - prev_val) * ratio;
+        }
+    }
+    last.1
+}
+
+fn step_fudge(series: &[(i64, f64)], target: i64) -> f64 {
+    if series.is_empty() {
+        return 1.0;
+    }
+    if target <= series[0].0 {
+        return series[0].1;
+    }
+    for window in series.windows(2) {
+        let (_prev_date, prev_val) = window[0];
+        let (next_date, _) = window[1];
+        if target < next_date {
+            return prev_val;
+        }
+    }
+    series[series.len() - 1].1
+}
+
+fn compute_view_chart_state(
+    data: &hrt_shared::types::HrtData,
+    settings: &Settings,
+    axis_mode: &str,
+    time_range_days: i64,
+    show_medications: bool,
+    show_e2: bool,
+    show_t: bool,
+    show_prog: bool,
+    show_fsh: bool,
+    show_lh: bool,
+    show_prolactin: bool,
+    show_shbg: bool,
+    show_fai: bool,
+) -> ViewChartState {
+    let now = js_sys::Date::now() as i64;
+    let start_time = now - time_range_days * 24 * 60 * 60 * 1000;
+    let display_unit = settings
+        .displayEstradiolUnit
+        .clone()
+        .unwrap_or(HormoneUnits::E2PmolL);
+    let first_dose = data
+        .dosageHistory
+        .iter()
+        .map(|d| match d {
+            DosageHistoryEntry::InjectableEstradiol { date, .. }
+            | DosageHistoryEntry::OralEstradiol { date, .. }
+            | DosageHistoryEntry::Antiandrogen { date, .. }
+            | DosageHistoryEntry::Progesterone { date, .. } => *date,
+        })
+        .min();
+
+    let use_days = axis_mode == "days" && first_dose.is_some();
+    let x_label = if use_days {
+        "Days since first dose".to_string()
+    } else {
+        "Date".to_string()
     };
 
-    view! {
-        <div class="chart-card">
-            <canvas id=canvas_id width="640" height="280" on:load=move |_| draw()></canvas>
-        </div>
+    let mut points = Vec::new();
+    let mut all_values = Vec::new();
+    let mut has_data = false;
+
+    for test in data.bloodTests.iter().filter(|t| t.date >= start_time) {
+        let x = if use_days {
+            (test.date - first_dose.unwrap_or(test.date)) as f64 / (24.0 * 60.0 * 60.0 * 1000.0)
+        } else {
+            test.date as f64
+        };
+        let date_label = fmt_date_label(test.date, axis_mode, first_dose);
+        let date_short = if use_days {
+            date_label.clone()
+        } else {
+            Local
+                .timestamp_millis_opt(test.date)
+                .single()
+                .map(|d| d.format("%b %d").to_string())
+                .unwrap_or_else(|| date_label.clone())
+        };
+        if show_e2 {
+            if let Some(value) = test.estradiolLevel {
+                let raw_unit = test.estradiolUnit.clone().unwrap_or(HormoneUnits::E2PgMl);
+                let plot_val = convert_estradiol_to_display(value, &raw_unit, &display_unit);
+                let unit_label = hormone_unit_label(&display_unit);
+                let tooltip = if raw_unit != display_unit {
+                    format!(
+                        "Estradiol: {:.2} {} -> {:.2} {} ({})",
+                        value,
+                        hormone_unit_label(&raw_unit),
+                        plot_val,
+                        unit_label,
+                        date_short
+                    )
+                } else {
+                    format!("Estradiol: {:.2} {} ({})", plot_val, unit_label, date_short)
+                };
+                points.push(ViewChartPoint {
+                    x,
+                    y: plot_val,
+                    label: tooltip,
+                    color: RGBColor(70, 130, 180),
+                });
+                all_values.push(plot_val);
+                has_data = true;
+            }
+        }
+        if show_t {
+            if let Some(value) = test.testLevel {
+                let raw_unit = test.testUnit.clone().unwrap_or(HormoneUnits::TNgDl);
+                let plot_val = convert_testosterone_to_ng_dl(value, &raw_unit);
+                let unit_label = "ng/dL";
+                let tooltip = if raw_unit != HormoneUnits::TNgDl {
+                    format!(
+                        "Testosterone: {:.2} {} -> {:.2} {} ({})",
+                        value,
+                        hormone_unit_label(&raw_unit),
+                        plot_val,
+                        unit_label,
+                        date_short
+                    )
+                } else {
+                    format!(
+                        "Testosterone: {:.2} {} ({})",
+                        plot_val, unit_label, date_short
+                    )
+                };
+                points.push(ViewChartPoint {
+                    x,
+                    y: plot_val,
+                    label: tooltip,
+                    color: RGBColor(220, 20, 60),
+                });
+                all_values.push(plot_val);
+                has_data = true;
+            }
+        }
+        if show_prog {
+            if let Some(value) = test.progesteroneLevel {
+                let raw_unit = test.progesteroneUnit.clone().unwrap_or(HormoneUnits::NgMl);
+                let plot_val = convert_progesterone_to_ng_ml(value, &raw_unit);
+                let tooltip = format!("Progesterone: {:.2} ng/mL ({})", plot_val, date_short);
+                points.push(ViewChartPoint {
+                    x,
+                    y: plot_val,
+                    label: tooltip,
+                    color: RGBColor(148, 0, 211),
+                });
+                all_values.push(plot_val);
+                has_data = true;
+            }
+        }
+        if show_fsh {
+            if let Some(value) = test.fshLevel {
+                let raw_unit = test.fshUnit.clone().unwrap_or(HormoneUnits::MIuMl);
+                let plot_val = convert_fsh_to_miu_ml(value, &raw_unit);
+                let tooltip = format!("FSH: {:.2} mIU/mL ({})", plot_val, date_short);
+                points.push(ViewChartPoint {
+                    x,
+                    y: plot_val,
+                    label: tooltip,
+                    color: RGBColor(34, 139, 34),
+                });
+                all_values.push(plot_val);
+                has_data = true;
+            }
+        }
+        if show_lh {
+            if let Some(value) = test.lhLevel {
+                let raw_unit = test.lhUnit.clone().unwrap_or(HormoneUnits::MIuMl);
+                let plot_val = convert_lh_to_miu_ml(value, &raw_unit);
+                let tooltip = format!("LH: {:.2} mIU/mL ({})", plot_val, date_short);
+                points.push(ViewChartPoint {
+                    x,
+                    y: plot_val,
+                    label: tooltip,
+                    color: RGBColor(0, 139, 139),
+                });
+                all_values.push(plot_val);
+                has_data = true;
+            }
+        }
+        if show_prolactin {
+            if let Some(value) = test.prolactinLevel {
+                let raw_unit = test.prolactinUnit.clone().unwrap_or(HormoneUnits::NgMl);
+                let unit_label = hormone_unit_label(&raw_unit);
+                let tooltip = format!("Prolactin: {:.2} {} ({})", value, unit_label, date_short);
+                points.push(ViewChartPoint {
+                    x,
+                    y: value,
+                    label: tooltip,
+                    color: RGBColor(139, 69, 19),
+                });
+                all_values.push(value);
+                has_data = true;
+            }
+        }
+        if show_shbg {
+            if let Some(value) = test.shbgLevel {
+                let raw_unit = test.shbgUnit.clone().unwrap_or(HormoneUnits::TNmolL);
+                let unit_label = hormone_unit_label(&raw_unit);
+                let tooltip = format!("SHBG: {:.2} {} ({})", value, unit_label, date_short);
+                points.push(ViewChartPoint {
+                    x,
+                    y: value,
+                    label: tooltip,
+                    color: RGBColor(255, 20, 147),
+                });
+                all_values.push(value);
+                has_data = true;
+            }
+        }
+        if show_fai {
+            if let Some(value) = test.freeAndrogenIndex {
+                let tooltip = format!("FAI: {:.2} ({})", value, date_short);
+                points.push(ViewChartPoint {
+                    x,
+                    y: value,
+                    label: tooltip,
+                    color: RGBColor(0, 0, 0),
+                });
+                all_values.push(value);
+                has_data = true;
+            }
+        }
     }
+
+    let mut dosage_points = Vec::new();
+    if show_medications {
+        for dose in data.dosageHistory.iter() {
+            let date = match dose {
+                DosageHistoryEntry::InjectableEstradiol { date, .. }
+                | DosageHistoryEntry::OralEstradiol { date, .. }
+                | DosageHistoryEntry::Antiandrogen { date, .. }
+                | DosageHistoryEntry::Progesterone { date, .. } => *date,
+            };
+            if date < start_time {
+                continue;
+            }
+            let (label, value, color) = match dose {
+                DosageHistoryEntry::InjectableEstradiol {
+                    kind, dose, unit, ..
+                } => (
+                    format!(
+                        "Injection: {:?}, {:.2} {}",
+                        kind,
+                        dose,
+                        hormone_unit_label(unit)
+                    ),
+                    (*dose * 20.0).min(300.0),
+                    RGBColor(0, 114, 178),
+                ),
+                DosageHistoryEntry::OralEstradiol {
+                    kind, dose, unit, ..
+                } => (
+                    format!(
+                        "Oral E: {:?}, {:.2} {}",
+                        kind,
+                        dose,
+                        hormone_unit_label(unit)
+                    ),
+                    (*dose * 10.0).min(200.0),
+                    RGBColor(46, 139, 87),
+                ),
+                DosageHistoryEntry::Antiandrogen {
+                    kind, dose, unit, ..
+                } => (
+                    format!("AA: {:?}, {:.2} {}", kind, dose, hormone_unit_label(unit)),
+                    (*dose * 10.0).min(200.0),
+                    RGBColor(255, 140, 0),
+                ),
+                DosageHistoryEntry::Progesterone {
+                    kind, dose, unit, ..
+                } => (
+                    format!(
+                        "Progesterone: {:?}, {:.2} {}",
+                        kind,
+                        dose,
+                        hormone_unit_label(unit)
+                    ),
+                    (*dose).min(400.0),
+                    RGBColor(255, 215, 0),
+                ),
+            };
+            let x = if use_days {
+                (date - first_dose.unwrap_or(date)) as f64 / (24.0 * 60.0 * 60.0 * 1000.0)
+            } else {
+                date as f64
+            };
+            let date_label = fmt_date_label(date, axis_mode, first_dose);
+            dosage_points.push(ViewChartPoint {
+                x,
+                y: value,
+                label: format!("{} ({})", label, date_label),
+                color,
+            });
+
+            all_values.push(value);
+            has_data = true;
+        }
+    }
+
+    if all_values.is_empty() {
+        all_values.push(0.0);
+        all_values.push(1.0);
+    }
+    let mut y_min = all_values.iter().cloned().fold(f64::INFINITY, f64::min);
+    let mut y_max = all_values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    if (y_min - y_max).abs() < f64::EPSILON {
+        y_min = (y_min - 1.0).max(0.0);
+        y_max += 1.0;
+    } else {
+        let pad = (y_max - y_min) * 0.08;
+        y_min = (y_min - pad).max(0.0);
+        y_max += pad;
+    }
+
+    let mut x_values: Vec<f64> = points.iter().map(|p| p.x).collect();
+    x_values.extend(dosage_points.iter().map(|p| p.x));
+
+    let (domain_min, domain_max) = if x_values.is_empty() {
+        if use_days {
+            (0.0, 30.0)
+        } else {
+            (start_time as f64, now as f64)
+        }
+    } else {
+        let mut min_x = x_values.iter().cloned().fold(f64::INFINITY, f64::min);
+        let mut max_x = x_values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        if (min_x - max_x).abs() < f64::EPSILON {
+            min_x -= 1.0;
+            max_x += 1.0;
+        }
+        (min_x, max_x)
+    };
+
+    ViewChartState {
+        domain_min,
+        domain_max,
+        y_min,
+        y_max,
+        x_label,
+        y_label: "Levels".to_string(),
+        points,
+        dosage_points,
+        first_dose,
+        use_days,
+        has_data,
+    }
+}
+
+fn compute_estrannaise_series(
+    data: &hrt_shared::types::HrtData,
+    settings: &Settings,
+    axis_mode: &str,
+    forecast_enabled: bool,
+    forecast_weeks: i64,
+    forecast_dose_override: Option<f64>,
+    forecast_freq_override: Option<f64>,
+) -> EstrannaiseSeries {
+    let display_unit = settings
+        .displayEstradiolUnit
+        .clone()
+        .unwrap_or(HormoneUnits::E2PmolL);
+    let conversion = estradiol_conversion_factor(&display_unit);
+    let dose_history: Vec<_> = data
+        .dosageHistory
+        .iter()
+        .filter_map(|d| match d {
+            DosageHistoryEntry::InjectableEstradiol {
+                date,
+                kind,
+                dose,
+                unit: _,
+                ..
+            } => Some((*date, kind.clone(), *dose)),
+            _ => None,
+        })
+        .collect();
+    let mut dose_history = dose_history;
+    dose_history.sort_by_key(|(date, _, _)| *date);
+
+    let earliest_date = if !dose_history.is_empty() {
+        Some(dose_history.first().map(|(date, _, _)| *date).unwrap())
+    } else {
+        data.bloodTests.iter().map(|t| t.date).min()
+    };
+    let Some(first_dose) = earliest_date else {
+        return EstrannaiseSeries::default();
+    };
+
+    let last_dose = dose_history
+        .last()
+        .map(|(date, _, _)| *date)
+        .unwrap_or(first_dose);
+    let start_date = first_dose;
+    let base_end = (last_dose + 30 * 24 * 60 * 60 * 1000).max(js_sys::Date::now() as i64);
+    let forecast_weeks = forecast_weeks.clamp(4, 8);
+    let forecast_end =
+        base_end.max(js_sys::Date::now() as i64 + forecast_weeks * 7 * 24 * 60 * 60 * 1000);
+
+    let schedule = data.injectableEstradiol.clone();
+    let forecast_start = js_sys::Date::now() as i64;
+    let forecast_start_date = schedule
+        .as_ref()
+        .and_then(|s| s.nextDoseDate)
+        .unwrap_or(forecast_start)
+        .max(forecast_start);
+    let forecast_dose = forecast_dose_override.or_else(|| schedule.as_ref().map(|s| s.dose));
+    let forecast_freq = forecast_freq_override.or_else(|| schedule.as_ref().map(|s| s.frequency));
+    let forecast_type = schedule
+        .as_ref()
+        .map(|s| s.kind.clone())
+        .or_else(|| dose_history.last().map(|(_, kind, _)| kind.clone()));
+
+    let mut forecast_doses = Vec::new();
+    if forecast_enabled {
+        if let (Some(dose), Some(freq), Some(kind)) = (forecast_dose, forecast_freq, forecast_type)
+        {
+            let mut t = forecast_start_date;
+            while t <= forecast_end {
+                forecast_doses.push((t, kind.clone(), dose));
+                t += (freq * 24.0 * 60.0 * 60.0 * 1000.0) as i64;
+            }
+        }
+    }
+
+    let mut all_doses = dose_history.clone();
+    all_doses.extend(forecast_doses.clone());
+    all_doses.sort_by_key(|(date, _, _)| *date);
+
+    let series = extract_fudge_series(&data.bloodTests);
+    let step_ms = 6 * 60 * 60 * 1000;
+    let mut blended = Vec::new();
+    let mut stepped = Vec::new();
+    let mut y_values = Vec::new();
+
+    let mut time_map = Vec::new();
+    let mut dose_map = Vec::new();
+    let mut model_map = Vec::new();
+    for (date, kind, dose) in &all_doses {
+        if let Some(model) = map_estrannaise_model(kind) {
+            time_map.push((*date - start_date) as f64 / (24.0 * 60.0 * 60.0 * 1000.0));
+            dose_map.push(*dose);
+            model_map.push(model);
+        }
+    }
+
+    if !model_map.is_empty() {
+        let mut t = start_date;
+        while t <= forecast_end {
+            let day_value = (t - start_date) as f64 / (24.0 * 60.0 * 60.0 * 1000.0);
+            let blended_fudge = blend_fudge(&series, t);
+            let step_fudge = step_fudge(&series, t);
+            let blended_val = e2_multidose_3c(
+                day_value,
+                &dose_map,
+                &time_map,
+                &model_map,
+                blended_fudge * conversion,
+                false,
+            );
+            let stepped_val = e2_multidose_3c(
+                day_value,
+                &dose_map,
+                &time_map,
+                &model_map,
+                step_fudge * conversion,
+                false,
+            );
+            let x = if axis_mode == "days" {
+                day_value
+            } else {
+                t as f64
+            };
+            let label = fmt_date_label(t, axis_mode, Some(start_date));
+            blended.push(EstrannaisePoint {
+                x,
+                y: blended_val,
+                label: format!("Blended: {:.1} ({})", blended_val, label),
+            });
+            stepped.push(EstrannaisePoint {
+                x,
+                y: stepped_val,
+                label: format!("Step: {:.1} ({})", stepped_val, label),
+            });
+            y_values.push(blended_val);
+            y_values.push(stepped_val);
+            t += step_ms;
+        }
+    }
+
+    let blood: Vec<EstrannaisePoint> = data
+        .bloodTests
+        .iter()
+        .filter_map(|test| {
+            test.estradiolLevel
+                .map(|value| (test.date, value, test.estradiolUnit.clone()))
+        })
+        .map(|(date, value, unit)| {
+            let raw_unit = unit.unwrap_or(HormoneUnits::E2PgMl);
+            let plot_val = convert_estradiol_to_display(value, &raw_unit, &display_unit);
+            let x = if axis_mode == "days" {
+                (date - first_dose) as f64 / (24.0 * 60.0 * 60.0 * 1000.0)
+            } else {
+                date as f64
+            };
+            let label = fmt_date_label(date, axis_mode, Some(first_dose));
+            y_values.push(plot_val);
+            EstrannaisePoint {
+                x,
+                y: plot_val,
+                label: format!("Blood test: {:.1} ({})", plot_val, label),
+            }
+        })
+        .collect();
+
+    let mut y_min = y_values.iter().cloned().fold(f64::INFINITY, f64::min);
+    let mut y_max = y_values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    if (y_min - y_max).abs() < f64::EPSILON {
+        y_min = y_min - 1.0;
+        y_max += 1.0;
+    } else {
+        let pad = (y_max - y_min) * 0.08;
+        y_min -= pad;
+        y_max += pad;
+    }
+
+    let domain_min = if axis_mode == "days" {
+        0.0
+    } else {
+        start_date as f64
+    };
+    let domain_max = if axis_mode == "days" {
+        ((forecast_end - start_date) as f64 / (24.0 * 60.0 * 60.0 * 1000.0)).max(30.0)
+    } else {
+        forecast_end as f64
+    };
+
+    let forecast = if forecast_enabled {
+        let start_x = if axis_mode == "days" {
+            (forecast_start - start_date) as f64 / (24.0 * 60.0 * 60.0 * 1000.0)
+        } else {
+            forecast_start as f64
+        };
+        let end_x = if axis_mode == "days" {
+            (forecast_end - start_date) as f64 / (24.0 * 60.0 * 60.0 * 1000.0)
+        } else {
+            forecast_end as f64
+        };
+        Some((start_x, end_x))
+    } else {
+        None
+    };
+
+    EstrannaiseSeries {
+        blended,
+        stepped,
+        blood,
+        forecast,
+        domain_min,
+        domain_max,
+        y_min,
+        y_max,
+        x_label: if axis_mode == "days" {
+            "Days since first dose".to_string()
+        } else {
+            "Date".to_string()
+        },
+        y_label: format!("E2 ({})", hormone_unit_label(&display_unit)),
+        first_dose: Some(first_dose),
+        use_days: axis_mode == "days",
+    }
+}
+
+fn compute_chart_bounds(
+    client_width: f64,
+    client_height: f64,
+    padding: (f64, f64, f64, f64),
+    domain_min: f64,
+    domain_max: f64,
+    y_min: f64,
+    y_max: f64,
+) -> (f64, f64, f64, f64) {
+    let (left, top, right, bottom) = padding;
+    let width = (client_width - left - right).max(1.0);
+    let height = (client_height - top - bottom).max(1.0);
+    let domain_span = (domain_max - domain_min).abs().max(1.0);
+    let y_span = (y_max - y_min).abs().max(1.0);
+    (width, height, domain_span, y_span)
+}
+
+fn data_to_canvas_x(x: f64, domain_min: f64, domain_span: f64, width: f64, left: f64) -> f64 {
+    left + ((x - domain_min) / domain_span) * width
+}
+
+fn data_to_canvas_y(y: f64, y_min: f64, y_span: f64, height: f64, top: f64) -> f64 {
+    top + height - ((y - y_min) / y_span) * height
+}
+
+fn find_nearest_point(
+    points: &[ViewChartPoint],
+    domain_min: f64,
+    domain_span: f64,
+    y_min: f64,
+    y_span: f64,
+    width: f64,
+    height: f64,
+    padding: (f64, f64, f64, f64),
+    cursor_x: f64,
+    cursor_y: f64,
+) -> Option<(ChartTooltip, f64)> {
+    let (left, top, _, _) = padding;
+    let mut best: Option<(f64, &ViewChartPoint, f64, f64)> = None;
+    for point in points {
+        let px = data_to_canvas_x(point.x, domain_min, domain_span, width, left);
+        let py = data_to_canvas_y(point.y, y_min, y_span, height, top);
+        let dx = px - cursor_x;
+        let dy = py - cursor_y;
+        let dist = (dx * dx + dy * dy).sqrt();
+        if dist < 18.0 {
+            match best {
+                Some((best_dist, _, _, _)) if dist >= best_dist => {}
+                _ => best = Some((dist, point, px, py)),
+            }
+        }
+    }
+    best.map(|(dist, point, px, py)| {
+        (
+            ChartTooltip {
+                text: point.label.clone(),
+                x: px,
+                y: py,
+            },
+            dist,
+        )
+    })
+}
+
+fn find_nearest_estrannaise_point(
+    points: &[EstrannaisePoint],
+    domain_min: f64,
+    domain_span: f64,
+    y_min: f64,
+    y_span: f64,
+    width: f64,
+    height: f64,
+    padding: (f64, f64, f64, f64),
+    cursor_x: f64,
+    cursor_y: f64,
+) -> Option<(ChartTooltip, f64)> {
+    let (left, top, _, _) = padding;
+    let mut best: Option<(f64, &EstrannaisePoint, f64, f64)> = None;
+    for point in points {
+        let px = data_to_canvas_x(point.x, domain_min, domain_span, width, left);
+        let py = data_to_canvas_y(point.y, y_min, y_span, height, top);
+        let dx = px - cursor_x;
+        let dy = py - cursor_y;
+        let dist = (dx * dx + dy * dy).sqrt();
+        if dist < 18.0 {
+            match best {
+                Some((best_dist, _, _, _)) if dist >= best_dist => {}
+                _ => best = Some((dist, point, px, py)),
+            }
+        }
+    }
+    best.map(|(dist, point, px, py)| {
+        (
+            ChartTooltip {
+                text: point.label.clone(),
+                x: px,
+                y: py,
+            },
+            dist,
+        )
+    })
+}
+
+fn draw_view_chart(canvas_id: &str, state: &ViewChartState, zoom: ViewZoom) {
+    let Some(canvas) = window()
+        .document()
+        .and_then(|doc| doc.get_element_by_id(canvas_id))
+        .and_then(|el| el.dyn_into::<HtmlCanvasElement>().ok())
+    else {
+        return;
+    };
+    let rect = canvas.get_bounding_client_rect();
+    let width = rect.width().max(320.0);
+    let height = rect.height().max(280.0);
+    let dpr = window().device_pixel_ratio();
+    canvas.set_width((width * dpr) as u32);
+    canvas.set_height((height * dpr) as u32);
+
+    let backend = CanvasBackend::with_canvas_object(canvas)
+        .expect("canvas backend")
+        .into_drawing_area();
+    backend.fill(&RGBColor(15, 17, 26)).ok();
+
+    let x_min = zoom.x_min.unwrap_or(state.domain_min);
+    let x_max = zoom.x_max.unwrap_or(state.domain_max);
+    let mut chart = match ChartBuilder::on(&backend)
+        .margin(CHART_MARGIN as i32)
+        .x_label_area_size(CHART_X_LABEL as i32)
+        .y_label_area_size(CHART_Y_LABEL as i32)
+        .build_cartesian_2d(x_min..x_max, state.y_min..state.y_max)
+    {
+        Ok(chart) => chart,
+        Err(_) => return,
+    };
+
+    chart
+        .configure_mesh()
+        .disable_mesh()
+        .label_style(
+            ("Quicksand", 12)
+                .into_font()
+                .color(&RGBColor(180, 167, 198)),
+        )
+        .axis_style(&RGBColor(80, 70, 100))
+        .x_desc(state.x_label.clone())
+        .y_desc(state.y_label.clone())
+        .draw()
+        .ok();
+
+    let mut line_map: std::collections::HashMap<RGBColor, Vec<(f64, f64)>> =
+        std::collections::HashMap::new();
+    for point in &state.points {
+        line_map
+            .entry(point.color)
+            .or_default()
+            .push((point.x, point.y));
+    }
+    for (color, mut series) in line_map {
+        series.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+        chart.draw_series(LineSeries::new(series, &color)).ok();
+    }
+
+    for point in &state.points {
+        chart
+            .draw_series(std::iter::once(Circle::new(
+                (point.x, point.y),
+                4,
+                point.color.filled(),
+            )))
+            .ok();
+    }
+
+    for point in &state.dosage_points {
+        chart
+            .draw_series(std::iter::once(TriangleMarker::new(
+                (point.x, point.y),
+                6,
+                point.color.filled(),
+            )))
+            .ok();
+    }
+
+    backend.present().ok();
+}
+
+fn draw_estrannaise_chart(canvas_id: &str, series: &EstrannaiseSeries, zoom: ViewZoom) {
+    let Some(canvas) = window()
+        .document()
+        .and_then(|doc| doc.get_element_by_id(canvas_id))
+        .and_then(|el| el.dyn_into::<HtmlCanvasElement>().ok())
+    else {
+        return;
+    };
+    let rect = canvas.get_bounding_client_rect();
+    let width = rect.width().max(320.0);
+    let height = rect.height().max(280.0);
+    let dpr = window().device_pixel_ratio();
+    canvas.set_width((width * dpr) as u32);
+    canvas.set_height((height * dpr) as u32);
+
+    let backend = CanvasBackend::with_canvas_object(canvas)
+        .expect("canvas backend")
+        .into_drawing_area();
+    backend.fill(&RGBColor(15, 17, 26)).ok();
+
+    let x_min = zoom.x_min.unwrap_or(series.domain_min);
+    let x_max = zoom.x_max.unwrap_or(series.domain_max);
+    let mut chart = match ChartBuilder::on(&backend)
+        .margin(CHART_MARGIN as i32)
+        .x_label_area_size(CHART_X_LABEL as i32)
+        .y_label_area_size(CHART_Y_LABEL as i32)
+        .build_cartesian_2d(x_min..x_max, series.y_min..series.y_max)
+    {
+        Ok(chart) => chart,
+        Err(_) => return,
+    };
+
+    chart
+        .configure_mesh()
+        .disable_mesh()
+        .label_style(
+            ("Quicksand", 12)
+                .into_font()
+                .color(&RGBColor(180, 167, 198)),
+        )
+        .axis_style(&RGBColor(80, 70, 100))
+        .x_desc(series.x_label.clone())
+        .y_desc(series.y_label.clone())
+        .draw()
+        .ok();
+
+    if let Some((start, end)) = series.forecast {
+        chart
+            .draw_series(std::iter::once(Rectangle::new(
+                [(start, series.y_min), (end, series.y_max)],
+                RGBAColor(246, 193, 119, 0.12).filled(),
+            )))
+            .ok();
+    }
+
+    if !series.blended.is_empty() {
+        let line = series.blended.iter().map(|p| (p.x, p.y));
+        chart
+            .draw_series(LineSeries::new(line, &RGBColor(46, 134, 171)))
+            .ok();
+    }
+    if !series.stepped.is_empty() {
+        let line = series.stepped.iter().map(|p| (p.x, p.y));
+        chart
+            .draw_series(LineSeries::new(line, &RGBColor(162, 59, 114)))
+            .ok();
+    }
+    for point in &series.blood {
+        chart
+            .draw_series(std::iter::once(Circle::new(
+                (point.x, point.y),
+                4,
+                RGBColor(255, 165, 0).filled(),
+            )))
+            .ok();
+    }
+
+    backend.present().ok();
 }
