@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cargo leptos serve --release
+cargo run -p hrt-server --release & cargo leptos serve --release
 wait -n
