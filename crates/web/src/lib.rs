@@ -1,4 +1,5 @@
 use leptos::*;
+use leptos::*;
 use leptos_router::*;
 
 #[cfg(target_arch = "wasm32")]
@@ -18,14 +19,15 @@ use chrono::{Local, TimeZone};
 use gloo_events::EventListener;
 use hrt_shared::estrannaise::e2_multidose_3c;
 use hrt_shared::types::{
-    BloodTest, DosageHistoryEntry, EstrannaiseModel, HormoneUnits, InjectableEstradiols,
-    LengthUnit, Settings,
+    Antiandrogens, BloodTest, DosageHistoryEntry, EstrannaiseModel, HormoneUnits,
+    InjectableEstradiols, LengthUnit, OralEstradiols, ProgesteroneRoutes, Progesterones, Settings,
 };
 use leptos::window;
 use plotters::prelude::*;
 use plotters_canvas::CanvasBackend;
 use std::cell::RefCell;
 use std::rc::Rc;
+use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
 use web_sys::HtmlCanvasElement;
 
@@ -50,7 +52,7 @@ pub fn App() -> impl IntoView {
                             <A href="/create/measurement" active_class="active">"New Measurement"</A>
                             <A href="/calc" active_class="active">"Calculator"</A>
                             <A href="/vials" active_class="active">"Vials"</A>
-                            <A href="/backup" active_class="active">"Backup"</A>
+                            <A href="/backup" active_class="active">"Settings & Backup"</A>
                         </nav>
                     </header>
                     <main class="main-content">
@@ -333,30 +335,175 @@ fn CreateDosage() -> impl IntoView {
             return;
         }
 
+        let unit = parse_hormone_unit(&unit_value.get()).unwrap_or(HormoneUnits::Mg);
+        let note = if note_value.get().trim().is_empty() {
+            None
+        } else {
+            Some(note_value.get())
+        };
+        let entry = match dosage_type.get().as_str() {
+            "oralEstradiol" => DosageHistoryEntry::OralEstradiol {
+                date,
+                id: None,
+                kind: OralEstradiols::Hemihydrate,
+                dose,
+                unit,
+                pillQuantity: None,
+                note,
+            },
+            "antiandrogen" => DosageHistoryEntry::Antiandrogen {
+                date,
+                id: None,
+                kind: Antiandrogens::Spiro,
+                dose,
+                unit,
+                note,
+            },
+            "progesterone" => DosageHistoryEntry::Progesterone {
+                date,
+                id: None,
+                kind: Progesterones::Micronized,
+                route: ProgesteroneRoutes::Oral,
+                dose,
+                unit,
+                pillQuantity: None,
+                note,
+            },
+            _ => DosageHistoryEntry::InjectableEstradiol {
+                date,
+                id: None,
+                kind: InjectableEstradiols::Valerate,
+                dose,
+                unit,
+                note,
+                injectionSite: None,
+                vialId: None,
+                subVialId: None,
+                syringeKind: None,
+                needleLength: None,
+                needleGauge: None,
+                photos: None,
+            },
+        };
+
+        store.data.update(|d| d.dosageHistory.push(entry));
+        store.mark_dirty();
+
+        dose_value.set("".to_string());
+        medication_name.set("".to_string());
+        note_value.set("".to_string());
+        date_value.set("".to_string());
+    };
+
+    page_layout(
+        "Create Dosage",
+        view! {
+            <form on:submit=on_submit>
+                <label>"Date"</label>
+                <input
+                    type="date"
+                    on:input=move |ev| date_value.set(event_target_value(&ev))
+                    prop:value=move || date_value.get()
+                />
+
+                <label>"Medication type"</label>
+                <select
+                    on:change=move |ev| dosage_type.set(event_target_value(&ev))
+                    prop:value=move || dosage_type.get()
+                >
+                    <option value="injectableEstradiol">"Injectable Estradiol"</option>
+                    <option value="oralEstradiol">"Oral Estradiol"</option>
+                    <option value="antiandrogen">"Antiandrogen"</option>
+                    <option value="progesterone">"Progesterone"</option>
+                </select>
+
+                <label>"Medication name"</label>
+                <input
+                    type="text"
+                    on:input=move |ev| medication_name.set(event_target_value(&ev))
+                    prop:value=move || medication_name.get()
+                />
+
+                <label>"Dose"</label>
+                <input
+                    type="number"
+                    step="0.01"
+                    on:input=move |ev| dose_value.set(event_target_value(&ev))
+                    prop:value=move || dose_value.get()
+                />
+
+                <label>"Unit"</label>
+                <select
+                    on:change=move |ev| unit_value.set(event_target_value(&ev))
+                    prop:value=move || unit_value.get()
+                >
+                    <option value="mg">"mg"</option>
+                </select>
+
+                <label>"Notes"</label>
+                <textarea
+                    rows="3"
+                    on:input=move |ev| note_value.set(event_target_value(&ev))
+                    prop:value=move || note_value.get()
+                ></textarea>
+
+                <button type="submit">"Add Dose"</button>
+                <Show when=move || error.get().is_some()>
+                    <p class="error">{move || error.get().unwrap_or_default()}</p>
+                </Show>
+            </form>
+        }
+        .into_view(),
+    )
+}
+
+#[component]
+fn CreateBloodTest() -> impl IntoView {
+    let store = use_store();
+    let estradiol_value = create_rw_signal("".to_string());
+    let estradiol_unit = create_rw_signal("pg/mL".to_string());
+    let test_value = create_rw_signal("".to_string());
+    let test_unit = create_rw_signal("ng/dL".to_string());
+    let notes = create_rw_signal("".to_string());
+    let date_value = create_rw_signal("".to_string());
+    let error = create_rw_signal(None::<String>);
+    let show_error = move || error.get().unwrap_or_default();
+
+    let on_submit = move |ev: leptos::ev::SubmitEvent| {
+        ev.prevent_default();
+        error.set(None);
+        let date = parse_date_or_now(&date_value.get());
+        let estradiol_level = estradiol_value.get().trim().parse::<f64>().ok();
+        let test_level = test_value.get().trim().parse::<f64>().ok();
+
+        if estradiol_level.is_none() && test_level.is_none() {
+            error.set(Some("Provide at least one hormone value.".to_string()));
+            return;
+        }
+
         let entry = serde_json::json!({
             "date": date,
-            "medicationType": dosage_type.get(),
-            "type": medication_name.get(),
-            "dose": dose,
-            "unit": unit_value.get(),
-            "note": if note_value.get().trim().is_empty() {
+            "estradiolLevel": estradiol_level,
+            "estradiolUnit": estradiol_unit.get(),
+            "testLevel": test_level,
+            "testUnit": test_unit.get(),
+            "notes": if notes.get().trim().is_empty() {
                 serde_json::Value::Null
             } else {
-                serde_json::Value::String(note_value.get())
+                serde_json::Value::String(notes.get())
             }
         });
 
         let mut data = store.data.get();
-        let mut history = serde_json::to_value(&data.dosageHistory)
+        let mut list = serde_json::to_value(&data.bloodTests)
             .ok()
             .and_then(|v| v.as_array().cloned())
             .unwrap_or_default();
-        history.push(entry);
-        data.dosageHistory =
-            serde_json::from_value(serde_json::Value::Array(history)).unwrap_or_default();
+        list.push(entry);
+        data.bloodTests =
+            serde_json::from_value(serde_json::Value::Array(list)).unwrap_or_default();
         store.data.set(data);
         store.mark_dirty();
-
         estradiol_value.set("".to_string());
         test_value.set("".to_string());
         notes.set("".to_string());
@@ -468,8 +615,714 @@ fn CreateMeasurement() -> impl IntoView {
         data.measurements =
             serde_json::from_value(serde_json::Value::Array(list)).unwrap_or_default();
         store.data.set(data);
-                                    store.mark_dirty();
+        store.mark_dirty();
+        weight.set("".to_string());
+        waist.set("".to_string());
+        hip.set("".to_string());
+        date_value.set("".to_string());
+    };
 
+    page_layout(
+        "Create Measurement",
+        view! {
+            <form on:submit=on_submit>
+                <label>"Date"</label>
+                <input
+                    type="date"
+                    on:input=move |ev| date_value.set(event_target_value(&ev))
+                    prop:value=move || date_value.get()
+                />
+
+                <label>"Weight"</label>
+                <div class="inline">
+                    <input
+                        type="number"
+                        step="0.1"
+                        on:input=move |ev| weight.set(event_target_value(&ev))
+                        prop:value=move || weight.get()
+                    />
+                    <select
+                        on:change=move |ev| weight_unit.set(event_target_value(&ev))
+                        prop:value=move || weight_unit.get()
+                    >
+                        <option value="kg">"kg"</option>
+                        <option value="lbs">"lbs"</option>
+                    </select>
+                </div>
+                <label>"Waist"</label>
+                <input
+                    type="number"
+                    step="0.1"
+                    on:input=move |ev| waist.set(event_target_value(&ev))
+                    prop:value=move || waist.get()
+                />
+                <label>"Hip"</label>
+                <input
+                    type="number"
+                    step="0.1"
+                    on:input=move |ev| hip.set(event_target_value(&ev))
+                    prop:value=move || hip.get()
+                />
+                <label>"Body measurement unit"</label>
+                <select
+                    on:change=move |ev| unit.set(event_target_value(&ev))
+                    prop:value=move || unit.get()
+                >
+                    <option value="cm">"cm"</option>
+                    <option value="in">"in"</option>
+                </select>
+                <button type="submit">"Add Measurement"</button>
+                <Show when=move || error.get().is_some()>
+                    <p class="error">{move || error.get().unwrap_or_default()}</p>
+                </Show>
+            </form>
+        }
+        .into_view(),
+    )
+}
+
+#[component]
+fn ViewPage() -> impl IntoView {
+    let store = use_store();
+    let data = store.data;
+    let rows = move || data.get().dosageHistory.clone();
+    let blood_rows = move || data.get().bloodTests.clone();
+    let measurement_rows = move || data.get().measurements.clone();
+    let editing_key = create_rw_signal(None::<String>);
+    let editing_date = create_rw_signal(String::new());
+    let editing_dose = create_rw_signal(String::new());
+    let editing_note = create_rw_signal(String::new());
+    let confirm_delete = create_rw_signal(None::<String>);
+    let confirm_title = create_rw_signal(String::new());
+    let confirm_action = create_rw_signal(None::<Rc<dyn Fn()>>);
+
+    let edit_blood_date = create_rw_signal(None::<i64>);
+    let edit_blood_date_text = create_rw_signal(String::new());
+    let edit_blood_e2 = create_rw_signal(String::new());
+    let edit_blood_e2_unit = create_rw_signal(String::new());
+    let edit_blood_t = create_rw_signal(String::new());
+    let edit_blood_t_unit = create_rw_signal(String::new());
+    let edit_blood_notes = create_rw_signal(String::new());
+
+    let edit_measurement_date = create_rw_signal(None::<i64>);
+    let edit_measurement_date_text = create_rw_signal(String::new());
+    let edit_measurement_weight = create_rw_signal(String::new());
+    let edit_measurement_waist = create_rw_signal(String::new());
+    let edit_measurement_hip = create_rw_signal(String::new());
+    let edit_measurement_unit = create_rw_signal(String::new());
+
+    let x_axis_mode = create_rw_signal("date".to_string());
+    let time_range_days = create_rw_signal(365_i64);
+    let show_medications = create_rw_signal(true);
+    let show_e2 = create_rw_signal(true);
+    let show_t = create_rw_signal(true);
+    let show_prog = create_rw_signal(false);
+    let show_fsh = create_rw_signal(false);
+    let show_lh = create_rw_signal(false);
+    let show_prolactin = create_rw_signal(false);
+    let show_shbg = create_rw_signal(false);
+    let show_fai = create_rw_signal(false);
+    let view_zoom = create_rw_signal(ViewZoom::default());
+    let view_tooltip = create_rw_signal(None::<ChartTooltip>);
+
+    let view_chart_state = create_memo({
+        let settings = store.settings;
+        move |_| {
+            let data_value = data.get();
+            let settings_value = settings.get();
+            compute_view_chart_state(
+                &data_value,
+                &settings_value,
+                &x_axis_mode.get(),
+                time_range_days.get(),
+                show_medications.get(),
+                show_e2.get(),
+                show_t.get(),
+                show_prog.get(),
+                show_fsh.get(),
+                show_lh.get(),
+                show_prolactin.get(),
+                show_shbg.get(),
+                show_fai.get(),
+            )
+        }
+    });
+
+    const VIEW_CANVAS_ID: &str = "view-chart-canvas";
+    let view_drag = Rc::new(RefCell::new(None::<DragState>));
+
+    let on_view_mouse_move = {
+        let view_chart_state = view_chart_state.clone();
+        let view_zoom = view_zoom;
+        let view_drag = view_drag.clone();
+        let view_tooltip = view_tooltip;
+        move |ev: leptos::ev::MouseEvent| {
+            let Some(canvas) = window()
+                .document()
+                .and_then(|doc| doc.get_element_by_id(VIEW_CANVAS_ID))
+                .and_then(|el| el.dyn_into::<HtmlCanvasElement>().ok())
+            else {
+                return;
+            };
+            let rect = canvas.get_bounding_client_rect();
+            let cursor_x = ev.client_x() as f64 - rect.left();
+            let cursor_y = ev.client_y() as f64 - rect.top();
+            let state = view_chart_state.get();
+            let zoom = view_zoom.get();
+            let x_min = zoom.x_min.unwrap_or(state.domain_min);
+            let x_max = zoom.x_max.unwrap_or(state.domain_max);
+            let padding = chart_padding();
+            let (width, height, domain_span, y_span) = compute_chart_bounds(
+                rect.width(),
+                rect.height(),
+                padding,
+                x_min,
+                x_max,
+                state.y_min,
+                state.y_max,
+            );
+            if let Some(drag) = view_drag.borrow().as_ref() {
+                view_tooltip.set(None);
+                let delta_px = cursor_x - drag.start_x;
+                let span = x_max - x_min;
+                let delta_domain = -(delta_px / width) * span;
+                let next_min = drag.start_min + delta_domain;
+                let next_max = drag.start_max + delta_domain;
+                view_zoom.set(clamp_zoom(
+                    state.domain_min,
+                    state.domain_max,
+                    next_min,
+                    next_max,
+                ));
+            } else {
+                let mut best = find_nearest_point(
+                    &state.points,
+                    x_min,
+                    domain_span,
+                    state.y_min,
+                    y_span,
+                    width,
+                    height,
+                    padding,
+                    cursor_x,
+                    cursor_y,
+                );
+                if let Some(candidate) = find_nearest_point(
+                    &state.dosage_points,
+                    x_min,
+                    domain_span,
+                    state.y_min,
+                    y_span,
+                    width,
+                    height,
+                    padding,
+                    cursor_x,
+                    cursor_y,
+                ) {
+                    let replace = best
+                        .as_ref()
+                        .map(|(_, dist)| *dist)
+                        .unwrap_or(f64::INFINITY)
+                        > candidate.1;
+                    if replace {
+                        best = Some(candidate);
+                    }
+                }
+                if let Some((candidate, _)) = best.take() {
+                    view_tooltip.set(Some(candidate));
+                } else {
+                    view_tooltip.set(None);
+                }
+            }
+        }
+    };
+
+    let on_view_mouse_leave = {
+        let view_drag = view_drag.clone();
+        let view_tooltip = view_tooltip;
+        move |_| {
+            view_drag.replace(None);
+            view_tooltip.set(None);
+        }
+    };
+
+    let on_view_mouse_down = {
+        let view_drag = view_drag.clone();
+        let view_zoom = view_zoom;
+        let view_chart_state = view_chart_state.clone();
+        move |ev: leptos::ev::MouseEvent| {
+            let Some(canvas) = window()
+                .document()
+                .and_then(|doc| doc.get_element_by_id(VIEW_CANVAS_ID))
+                .and_then(|el| el.dyn_into::<HtmlCanvasElement>().ok())
+            else {
+                return;
+            };
+            let rect = canvas.get_bounding_client_rect();
+            let cursor_x = ev.client_x() as f64 - rect.left();
+            let state = view_chart_state.get();
+            let zoom = view_zoom.get();
+            let x_min = zoom.x_min.unwrap_or(state.domain_min);
+            let x_max = zoom.x_max.unwrap_or(state.domain_max);
+            view_drag.replace(Some(DragState {
+                start_x: cursor_x,
+                start_min: x_min,
+                start_max: x_max,
+            }));
+        }
+    };
+
+    let on_view_mouse_up = {
+        let view_drag = view_drag.clone();
+        move |_| {
+            view_drag.replace(None);
+        }
+    };
+
+    let on_view_wheel = {
+        let view_zoom = view_zoom;
+        let view_chart_state = view_chart_state.clone();
+        move |ev: leptos::ev::WheelEvent| {
+            ev.prevent_default();
+            let Some(canvas) = window()
+                .document()
+                .and_then(|doc| doc.get_element_by_id(VIEW_CANVAS_ID))
+                .and_then(|el| el.dyn_into::<HtmlCanvasElement>().ok())
+            else {
+                return;
+            };
+            let rect = canvas.get_bounding_client_rect();
+            let cursor_x = ev.client_x() as f64 - rect.left();
+            let state = view_chart_state.get();
+            let zoom = view_zoom.get();
+            let x_min = zoom.x_min.unwrap_or(state.domain_min);
+            let x_max = zoom.x_max.unwrap_or(state.domain_max);
+            let padding = chart_padding();
+            let (width, _, domain_span, _) = compute_chart_bounds(
+                rect.width(),
+                rect.height(),
+                padding,
+                x_min,
+                x_max,
+                state.y_min,
+                state.y_max,
+            );
+            let cursor_ratio = ((cursor_x - padding.0) / width).clamp(0.0, 1.0);
+            let zoom_factor = if ev.delta_y() < 0.0 { 0.85 } else { 1.15 };
+            let new_span = (domain_span * zoom_factor).max(1.0);
+            let center = x_min + domain_span * cursor_ratio;
+            let new_min = center - new_span * cursor_ratio;
+            let new_max = new_min + new_span;
+            view_zoom.set(clamp_zoom(
+                state.domain_min,
+                state.domain_max,
+                new_min,
+                new_max,
+            ));
+        }
+    };
+
+    create_effect({
+        let view_chart_state = view_chart_state.clone();
+        let view_zoom = view_zoom;
+        move |_| {
+            let state = view_chart_state.get();
+            if !state.has_data {
+                return;
+            }
+            draw_view_chart(VIEW_CANVAS_ID, &state, view_zoom.get());
+        }
+    });
+
+    let view_resize_listener: Rc<RefCell<Option<EventListener>>> = Rc::new(RefCell::new(None));
+    create_effect({
+        let view_chart_state = view_chart_state.clone();
+        let view_zoom = view_zoom;
+        let view_resize_listener = view_resize_listener.clone();
+        move |_| {
+            view_chart_state.get();
+            let window = window();
+            let listener = EventListener::new(&window, "resize", move |_| {
+                let state = view_chart_state.get();
+                if state.has_data {
+                    draw_view_chart(VIEW_CANVAS_ID, &state, view_zoom.get());
+                }
+            });
+            view_resize_listener.replace(Some(listener));
+        }
+    });
+
+    let reset_view_zoom = {
+        let view_zoom = view_zoom;
+        move |_| view_zoom.set(ViewZoom::default())
+    };
+
+    let x_axis_days_disabled = move || view_chart_state.get().first_dose.is_none();
+    let view_tooltip_value = move || view_tooltip.get();
+
+    let entry_matches = |entry: &DosageHistoryEntry, key: &str| match entry {
+        DosageHistoryEntry::InjectableEstradiol { date, id, .. }
+        | DosageHistoryEntry::OralEstradiol { date, id, .. }
+        | DosageHistoryEntry::Antiandrogen { date, id, .. }
+        | DosageHistoryEntry::Progesterone { date, id, .. } => id
+            .as_ref()
+            .map(|v| v == key)
+            .unwrap_or_else(|| date.to_string() == key),
+    };
+
+    let on_save_edit = Rc::new({
+        let store_edit = store.clone();
+        move || {
+            let key = match editing_key.get() {
+                Some(value) => value,
+                None => return,
+            };
+            let dose_value = match editing_dose.get().trim().parse::<f64>().ok() {
+                Some(value) => value,
+                None => return,
+            };
+            let date_value = parse_date_or_now(&editing_date.get());
+            let note_text = editing_note.get();
+            let note_value = if note_text.trim().is_empty() {
+                None
+            } else {
+                Some(note_text.clone())
+            };
+
+            store_edit.data.update(|d| {
+                for entry in &mut d.dosageHistory {
+                    if entry_matches(entry, &key) {
+                        match entry {
+                            DosageHistoryEntry::InjectableEstradiol {
+                                date, dose, note, ..
+                            }
+                            | DosageHistoryEntry::OralEstradiol {
+                                date, dose, note, ..
+                            }
+                            | DosageHistoryEntry::Antiandrogen {
+                                date, dose, note, ..
+                            }
+                            | DosageHistoryEntry::Progesterone {
+                                date, dose, note, ..
+                            } => {
+                                *date = date_value;
+                                *dose = dose_value;
+                                *note = note_value.clone();
+                            }
+                        }
+                    }
+                }
+            });
+            store_edit.mark_dirty();
+            editing_key.set(None);
+        }
+    });
+
+    let on_cancel_edit = move |_| editing_key.set(None);
+
+    let store_blood_modal = store.clone();
+    let store_measure_modal = store.clone();
+
+    page_layout(
+        "View",
+        view! {
+            <div class="view-layout">
+                <div class="view-header">
+                    <div>
+                        <h2>"HRT Tracking Data"</h2>
+                        <p class="muted">
+                            "This chart shows your hormone levels from blood tests along with your dosage history over time."
+                        </p>
+                    </div>
+                    <div class="header-actions">
+                        <A href="/create/measurement">"Add Measurement"</A>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3>"Current Regimen"</h3>
+                    <div class="view-summary">
+                        <Show when=move || view_chart_state.get().first_dose.is_some()>
+                            <p>
+                                <strong>"Days since first dose: "</strong>
+                                {move || view_chart_state.get().first_dose.map(|first| {
+                                    let now = js_sys::Date::now() as i64;
+                                    let diff = (now - first) / (24 * 60 * 60 * 1000);
+                                    diff.max(0)
+                                }).unwrap_or(0)}
+                            </p>
+                        </Show>
+                        <Show when=move || store.data.get().injectableEstradiol.is_some()>
+                            <p>
+                                <strong>"Injectable Estradiol: "</strong>
+                                {move || store
+                                    .data
+                                    .get()
+                                    .injectableEstradiol
+                                    .as_ref()
+                                    .map(|cfg| format!("{:?}, {:.2} {:?} every {:.1} days", cfg.kind, cfg.dose, cfg.unit, cfg.frequency))
+                                    .unwrap_or_default()}
+                            </p>
+                        </Show>
+                        <Show when=move || store.data.get().oralEstradiol.is_some()>
+                            <p>
+                                <strong>"Oral Estradiol: "</strong>
+                                {move || store
+                                    .data
+                                    .get()
+                                    .oralEstradiol
+                                    .as_ref()
+                                    .map(|cfg| format!("{:?}, {:.2} {:?} every {:.1} days", cfg.kind, cfg.dose, cfg.unit, cfg.frequency))
+                                    .unwrap_or_default()}
+                            </p>
+                        </Show>
+                        <Show when=move || store.data.get().antiandrogen.is_some()>
+                            <p>
+                                <strong>"Antiandrogen: "</strong>
+                                {move || store
+                                    .data
+                                    .get()
+                                    .antiandrogen
+                                    .as_ref()
+                                    .map(|cfg| format!("{:?}, {:.2} {:?} every {:.1} days", cfg.kind, cfg.dose, cfg.unit, cfg.frequency))
+                                    .unwrap_or_default()}
+                            </p>
+                        </Show>
+                        <Show when=move || store.data.get().progesterone.is_some()>
+                            <p>
+                                <strong>"Progesterone: "</strong>
+                                {move || store
+                                    .data
+                                    .get()
+                                    .progesterone
+                                    .as_ref()
+                                    .map(|cfg| format!("{:?} ({:?}), {:.2} {:?} every {:.1} days", cfg.kind, cfg.route, cfg.dose, cfg.unit, cfg.frequency))
+                                    .unwrap_or_default()}
+                            </p>
+                        </Show>
+                        <Show when=move || store.data.get().injectableEstradiol.is_none()
+                            && store.data.get().oralEstradiol.is_none()
+                            && store.data.get().antiandrogen.is_none()
+                            && store.data.get().progesterone.is_none()>
+                            <p class="muted">"No regimen set up. You can set one on the dosage page."</p>
+                        </Show>
+                    </div>
+                </div>
+
+                <div class="view-chart-controls">
+                    <div class="chart-toolbar">
+                        <div class="chart-toolbar-group">
+                            <span class="muted">"X-Axis:"</span>
+                            <button
+                                class:active=move || x_axis_mode.get() == "date"
+                                on:click=move |_| x_axis_mode.set("date".to_string())
+                            >
+                                "Date"
+                            </button>
+                            <button
+                                class:active=move || x_axis_mode.get() == "days"
+                                on:click=move |_| x_axis_mode.set("days".to_string())
+                                prop:disabled=move || x_axis_days_disabled()
+                            >
+                                "Days since first dose"
+                            </button>
+                        </div>
+                        <div class="chart-toolbar-group">
+                            <span class="muted">"Time Range:"</span>
+                            <button class:active=move || time_range_days.get() == 30 on:click=move |_| time_range_days.set(30)>
+                                "30 days"
+                            </button>
+                            <button class:active=move || time_range_days.get() == 90 on:click=move |_| time_range_days.set(90)>
+                                "90 days"
+                            </button>
+                            <button class:active=move || time_range_days.get() == 180 on:click=move |_| time_range_days.set(180)>
+                                "180 days"
+                            </button>
+                            <button class:active=move || time_range_days.get() == 365 on:click=move |_| time_range_days.set(365)>
+                                "1 year"
+                            </button>
+                            <button class:active=move || time_range_days.get() == 9999 on:click=move |_| time_range_days.set(9999)>
+                                "All"
+                            </button>
+                        </div>
+                        <div class="chart-toolbar-group">
+                            <button on:click=reset_view_zoom disabled=move || view_zoom.get().x_min.is_none()>
+                                "Reset zoom"
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="chart-toolbar view-levels-group">
+                        <span class="muted">"Show Levels:"</span>
+                        <button class:active=move || show_e2.get() on:click=move |_| show_e2.set(!show_e2.get())>
+                            "E2"
+                        </button>
+                        <button class:active=move || show_t.get() on:click=move |_| show_t.set(!show_t.get())>
+                            "T"
+                        </button>
+                        <button class:active=move || show_prog.get() on:click=move |_| show_prog.set(!show_prog.get())>
+                            "Prog"
+                        </button>
+                        <button class:active=move || show_fsh.get() on:click=move |_| show_fsh.set(!show_fsh.get())>
+                            "FSH"
+                        </button>
+                        <button class:active=move || show_lh.get() on:click=move |_| show_lh.set(!show_lh.get())>
+                            "LH"
+                        </button>
+                        <button
+                            class:active=move || show_prolactin.get()
+                            on:click=move |_| show_prolactin.set(!show_prolactin.get())
+                        >
+                            "Prolactin"
+                        </button>
+                        <button class:active=move || show_shbg.get() on:click=move |_| show_shbg.set(!show_shbg.get())>
+                            "SHBG"
+                        </button>
+                        <button class:active=move || show_fai.get() on:click=move |_| show_fai.set(!show_fai.get())>
+                            "FAI"
+                        </button>
+                    </div>
+
+                    <div class="chart-toolbar view-dosage-group">
+                        <span class="muted">"Show Dosages:"</span>
+                        <button class:active=move || show_medications.get() on:click=move |_| show_medications.set(!show_medications.get())>
+                            {move || if show_medications.get() { "Medication Dosages (on)" } else { "Medication Dosages" }}
+                        </button>
+                    </div>
+                </div>
+
+                <div class="chart-card chart-interactive">
+                    <Show when=move || view_chart_state.get().has_data fallback=move || view! {
+                        <div class="empty-state">"No data available for the selected time range."</div>
+                    }>
+                        <canvas
+                            id=VIEW_CANVAS_ID
+                            width="900"
+                            height="420"
+                            on:mousemove=on_view_mouse_move.clone()
+                            on:mouseleave=on_view_mouse_leave.clone()
+                            on:mousedown=on_view_mouse_down.clone()
+                            on:mouseup=on_view_mouse_up.clone()
+                            on:wheel=on_view_wheel.clone()
+                        ></canvas>
+                        <Show when=move || view_tooltip_value().is_some()>
+                            <div
+                                class="chart-tooltip"
+                                style=move || {
+                                    view_tooltip_value()
+                                        .map(|tip| format!("left: {:.0}px; top: {:.0}px;", tip.x + 12.0, tip.y + 12.0))
+                                        .unwrap_or_default()
+                                }
+                            >
+                                {move || view_tooltip_value().map(|tip| tip.text).unwrap_or_default()}
+                            </div>
+                        </Show>
+                    </Show>
+                    <div class="chart-note muted">
+                        <p>"* Dosage values are scaled for visibility on the chart."</p>
+                        <p>"* Hover over data points for details."</p>
+                        <Show when=move || !store.data.get().bloodTests.is_empty()>
+                            <p>"* Hormone measurements are normalized to display units for charting; hover shows recorded units."</p>
+                        </Show>
+                    </div>
+                </div>
+            </div>
+
+            <section>
+                <h2>"Dosage History"</h2>
+                <Show
+                    when=move || !rows().is_empty()
+                    fallback=move || view! { <div class="empty-state">"No dosage history yet."</div> }
+                >
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>"Date"</th>
+                                <th>"Medication"</th>
+                                <th>"Dose"</th>
+                                <th>"Unit"</th>
+                                <th>"Actions"</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <For
+                                each=rows
+                                key=|entry| match entry {
+                                    DosageHistoryEntry::InjectableEstradiol { date, id, .. } => {
+                                        id.clone().unwrap_or_else(|| date.to_string())
+                                    }
+                                    DosageHistoryEntry::OralEstradiol { date, id, .. } => {
+                                        id.clone().unwrap_or_else(|| date.to_string())
+                                    }
+                                    DosageHistoryEntry::Antiandrogen { date, id, .. } => {
+                                        id.clone().unwrap_or_else(|| date.to_string())
+                                    }
+                                    DosageHistoryEntry::Progesterone { date, id, .. } => {
+                                        id.clone().unwrap_or_else(|| date.to_string())
+                                    }
+                                }
+                                children=move |entry| {
+                                    let (date, name, dose, unit, id_opt, note) = match entry {
+                                        DosageHistoryEntry::InjectableEstradiol {
+                                            date,
+                                            id,
+                                            kind,
+                                            dose,
+                                            unit,
+                                            note,
+                                            ..
+                                        } => (date, format!("{:?}", kind), dose, format!("{:?}", unit), id, note),
+                                        DosageHistoryEntry::OralEstradiol {
+                                            date,
+                                            id,
+                                            kind,
+                                            dose,
+                                            unit,
+                                            note,
+                                            ..
+                                        } => (date, format!("{:?}", kind), dose, format!("{:?}", unit), id, note),
+                                        DosageHistoryEntry::Antiandrogen {
+                                            date,
+                                            id,
+                                            kind,
+                                            dose,
+                                            unit,
+                                            note,
+                                            ..
+                                        } => (date, format!("{:?}", kind), dose, format!("{:?}", unit), id, note),
+                                        DosageHistoryEntry::Progesterone {
+                                            date,
+                                            id,
+                                            kind,
+                                            dose,
+                                            unit,
+                                            note,
+                                            ..
+                                        } => (date, format!("{:?}", kind), dose, format!("{:?}", unit), id, note),
+                                    };
+                                    let date_text = Local
+                                        .timestamp_millis_opt(date)
+                                        .single()
+                                        .map(|d| d.format("%Y-%m-%d").to_string())
+                                        .unwrap_or_else(|| date.to_string());
+                                    let entry_key = id_opt.clone().unwrap_or_else(|| date.to_string());
+                                    let note_value = note.clone().unwrap_or_default();
+                                    let on_delete = {
+                                        let store = use_store();
+                                        let entry_key = entry_key.clone();
+                                        let confirm_delete = confirm_delete;
+                                        let confirm_title = confirm_title;
+                                        let confirm_action = confirm_action;
+                                        move |_: leptos::ev::MouseEvent| {
+                                            confirm_title.set("Delete dosage entry?".to_string());
+                                            confirm_delete.set(Some(entry_key.clone()));
+                                            let store = store.clone();
+                                            let entry_key = entry_key.clone();
+                                            confirm_action.set(Some(Rc::new(move || {
+                                                store.data.update(|d| {
+                                                    d.dosageHistory.retain(|item| !entry_matches(item, &entry_key));
+                                                });
+                                                store.mark_dirty();
                                             })));
                                         }
                                     };
@@ -569,45 +1422,167 @@ fn CreateMeasurement() -> impl IntoView {
                                                     .data
                                                     .update(|d| d.bloodTests.retain(|b| b.date != date));
                                                 store.mark_dirty();
-
                                             })));
                                         }
                                     };
-                                let on_edit = {
-                                    let date = entry.date;
-                                    let edit_measurement_date = edit_measurement_date;
-                                    let edit_measurement_date_text = edit_measurement_date_text;
-                                    let edit_measurement_weight = edit_measurement_weight;
-                                    let edit_measurement_waist = edit_measurement_waist;
-                                    let edit_measurement_hip = edit_measurement_hip;
-                                    let edit_measurement_unit = edit_measurement_unit;
-                                    let weight_value = entry
+                                    let on_edit = {
+                                        let date = entry.date;
+                                        let edit_blood_date = edit_blood_date;
+                                        let edit_blood_date_text = edit_blood_date_text;
+                                        let edit_blood_e2 = edit_blood_e2;
+                                        let edit_blood_e2_unit = edit_blood_e2_unit;
+                                        let edit_blood_t = edit_blood_t;
+                                        let edit_blood_t_unit = edit_blood_t_unit;
+                                        let edit_blood_notes = edit_blood_notes;
+                                        let e2_unit_value = entry
+                                            .estradiolUnit
+                                            .as_ref()
+                                            .map(|u| format!("{:?}", u))
+                                            .unwrap_or_else(|| "".to_string());
+                                        let t_unit_value = entry
+                                            .testUnit
+                                            .as_ref()
+                                            .map(|u| format!("{:?}", u))
+                                            .unwrap_or_else(|| "".to_string());
+                                        let e2_value = entry
+                                            .estradiolLevel
+                                            .map(|v| format!("{:.2}", v))
+                                            .unwrap_or_default();
+                                        let t_value = entry
+                                            .testLevel
+                                            .map(|v| format!("{:.2}", v))
+                                            .unwrap_or_default();
+                                        let notes_value = entry.notes.clone().unwrap_or_default();
+                                        let date_text_edit = date_text.clone();
+                                        move |_: leptos::ev::MouseEvent| {
+                                            edit_blood_date.set(Some(date));
+                                            edit_blood_date_text.set(date_text_edit.clone());
+                                            edit_blood_e2.set(e2_value.clone());
+                                            edit_blood_e2_unit.set(e2_unit_value.clone());
+                                            edit_blood_t.set(t_value.clone());
+                                            edit_blood_t_unit.set(t_unit_value.clone());
+                                            edit_blood_notes.set(notes_value.clone());
+                                        }
+                                    };
+                                    view! {
+                                        <tr>
+                                            <td>{date_text}</td>
+                                            <td>{format!("{} {}", e2, e2_unit)}</td>
+                                            <td>{format!("{} {}", t, t_unit)}</td>
+                                            <td>{entry.notes.unwrap_or_default()}</td>
+                                            <td>
+                                                <button type="button" on:click=on_edit>"Edit"</button>
+                                                <button type="button" on:click=on_delete>"Delete"</button>
+                                            </td>
+                                        </tr>
+                                    }
+                                }
+                            />
+                        </tbody>
+                    </table>
+                </Show>
+            </section>
+
+            <section>
+                <h2>"Measurements"</h2>
+                <Show
+                    when=move || !measurement_rows().is_empty()
+                    fallback=move || view! { <div class="empty-state">"No measurements yet."</div> }
+                >
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>"Date"</th>
+                                <th>"Weight"</th>
+                                <th>"Waist"</th>
+                                <th>"Hip"</th>
+                                <th>"Actions"</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <For
+                                each=measurement_rows
+                                key=|entry| entry.date
+                                children=move |entry| {
+                                    let date_text = Local
+                                        .timestamp_millis_opt(entry.date)
+                                        .single()
+                                        .map(|d| d.format("%Y-%m-%d").to_string())
+                                        .unwrap_or_else(|| entry.date.to_string());
+                                    let weight = entry
                                         .weight
                                         .map(|v| format!("{:.2}", v))
-                                        .unwrap_or_default();
-                                    let waist_value = entry
+                                        .unwrap_or_else(|| "-".to_string());
+                                    let weight_unit = entry
+                                        .weightUnit
+                                        .map(|u| format!("{:?}", u))
+                                        .unwrap_or_else(|| "".to_string());
+                                    let waist = entry
                                         .waist
                                         .map(|v| format!("{:.1}", v))
-                                        .unwrap_or_default();
-                                    let hip_value = entry
+                                        .unwrap_or_else(|| "-".to_string());
+                                    let hip = entry
                                         .hip
                                         .map(|v| format!("{:.1}", v))
-                                        .unwrap_or_default();
-                                    let unit_value = entry
+                                        .unwrap_or_else(|| "-".to_string());
+                                    let unit = entry
                                         .bodyMeasurementUnit
                                         .as_ref()
                                         .map(|u| format!("{:?}", u))
-                                        .unwrap_or_default();
-                                    let date_text_edit = date_text.clone();
-                                    move |_| {
-                                        edit_measurement_date.set(Some(date));
-                                        edit_measurement_date_text.set(date_text_edit.clone());
-                                        edit_measurement_weight.set(weight_value.clone());
-                                        edit_measurement_waist.set(waist_value.clone());
-                                        edit_measurement_hip.set(hip_value.clone());
-                                        edit_measurement_unit.set(unit_value.clone());
-                                    }
-                                };
+                                        .unwrap_or_else(|| "".to_string());
+                                    let on_delete = {
+                                        let store = use_store();
+                                        let date = entry.date;
+                                        let confirm_delete = confirm_delete;
+                                        let confirm_title = confirm_title;
+                                        let confirm_action = confirm_action;
+                                        move |_: leptos::ev::MouseEvent| {
+                                            confirm_title.set("Delete measurement?".to_string());
+                                            confirm_delete.set(Some(date.to_string()));
+                                            let store = store.clone();
+                                            confirm_action.set(Some(Rc::new(move || {
+                                                store
+                                                    .data
+                                                    .update(|d| d.measurements.retain(|m| m.date != date));
+                                                store.mark_dirty();
+                                            })));
+                                        }
+                                    };
+                                    let on_edit = {
+                                        let date = entry.date;
+                                        let edit_measurement_date = edit_measurement_date;
+                                        let edit_measurement_date_text = edit_measurement_date_text;
+                                        let edit_measurement_weight = edit_measurement_weight;
+                                        let edit_measurement_waist = edit_measurement_waist;
+                                        let edit_measurement_hip = edit_measurement_hip;
+                                        let edit_measurement_unit = edit_measurement_unit;
+                                        let weight_value = entry
+                                            .weight
+                                            .map(|v| format!("{:.2}", v))
+                                            .unwrap_or_default();
+                                        let waist_value = entry
+                                            .waist
+                                            .map(|v| format!("{:.1}", v))
+                                            .unwrap_or_default();
+                                        let hip_value = entry
+                                            .hip
+                                            .map(|v| format!("{:.1}", v))
+                                            .unwrap_or_default();
+                                        let unit_value = entry
+                                            .bodyMeasurementUnit
+                                            .as_ref()
+                                            .map(|u| format!("{:?}", u))
+                                            .unwrap_or_default();
+                                        let date_text_edit = date_text.clone();
+                                        move |_| {
+                                            edit_measurement_date.set(Some(date));
+                                            edit_measurement_date_text.set(date_text_edit.clone());
+                                            edit_measurement_weight.set(weight_value.clone());
+                                            edit_measurement_waist.set(waist_value.clone());
+                                            edit_measurement_hip.set(hip_value.clone());
+                                            edit_measurement_unit.set(unit_value.clone());
+                                        }
+                                    };
                                     view! {
                                         <tr>
                                             <td>{date_text}</td>
@@ -872,36 +1847,36 @@ fn CreateMeasurement() -> impl IntoView {
 #[component]
 fn StatsPage() -> impl IntoView {
     let store = use_store();
-    let settings = store.settings;
-    let display_unit = move || settings.get().displayEstradiolUnit;
-    let ics_secret = move || settings.get().icsSecret.unwrap_or_default();
-    const DAY_MS: i64 = 24 * 60 * 60 * 1000;
-
     let data = store.data;
     let settings = store.settings;
+    const DAY_MS: i64 = 24 * 60 * 60 * 1000;
     let hist = move || data.get().dosageHistory;
     let vials = move || data.get().vials;
 
     let total_days_since_start = move || {
         let hist_value = hist();
-        let min_date = hist_value.iter().map(|d| match d {
-            DosageHistoryEntry::InjectableEstradiol { date, .. }
-            | DosageHistoryEntry::OralEstradiol { date, .. }
-            | DosageHistoryEntry::Antiandrogen { date, .. }
-            | DosageHistoryEntry::Progesterone { date, .. } => *date,
-        })
-        .min();
+        let min_date = hist_value
+            .iter()
+            .map(|d| match d {
+                DosageHistoryEntry::InjectableEstradiol { date, .. }
+                | DosageHistoryEntry::OralEstradiol { date, .. }
+                | DosageHistoryEntry::Antiandrogen { date, .. }
+                | DosageHistoryEntry::Progesterone { date, .. } => *date,
+            })
+            .min();
         min_date.map(|value| ((js_sys::Date::now() as i64 - value) / DAY_MS).max(0))
     };
 
     let estrogen_records = move || {
         hist()
             .into_iter()
-            .filter(|d| matches!(
-                d,
-                DosageHistoryEntry::InjectableEstradiol { .. }
-                    | DosageHistoryEntry::OralEstradiol { .. }
-            ))
+            .filter(|d| {
+                matches!(
+                    d,
+                    DosageHistoryEntry::InjectableEstradiol { .. }
+                        | DosageHistoryEntry::OralEstradiol { .. }
+                )
+            })
             .collect::<Vec<_>>()
     };
 
@@ -962,7 +1937,9 @@ fn StatsPage() -> impl IntoView {
         injectable_records()
             .iter()
             .map(|d| match d {
-                DosageHistoryEntry::InjectableEstradiol { dose, unit, vialId, .. } => {
+                DosageHistoryEntry::InjectableEstradiol {
+                    dose, unit, vialId, ..
+                } => {
                     if *unit != HormoneUnits::Mg {
                         return 0.0;
                     }
@@ -1009,7 +1986,11 @@ fn StatsPage() -> impl IntoView {
             .map(|d| match d {
                 DosageHistoryEntry::OralEstradiol { pillQuantity, .. } => {
                     let qty = pillQuantity.unwrap_or(1.0);
-                    if qty > 0.0 { qty } else { 1.0 }
+                    if qty > 0.0 {
+                        qty
+                    } else {
+                        1.0
+                    }
                 }
                 _ => 0.0,
             })
@@ -1020,7 +2001,12 @@ fn StatsPage() -> impl IntoView {
         oral_estradiol_records()
             .iter()
             .map(|d| match d {
-                DosageHistoryEntry::OralEstradiol { dose, unit, pillQuantity, .. } => {
+                DosageHistoryEntry::OralEstradiol {
+                    dose,
+                    unit,
+                    pillQuantity,
+                    ..
+                } => {
                     if *unit != HormoneUnits::Mg {
                         0.0
                     } else {
@@ -1037,7 +2023,12 @@ fn StatsPage() -> impl IntoView {
         progesterone_records()
             .iter()
             .map(|d| match d {
-                DosageHistoryEntry::Progesterone { dose, unit, pillQuantity, .. } => {
+                DosageHistoryEntry::Progesterone {
+                    dose,
+                    unit,
+                    pillQuantity,
+                    ..
+                } => {
                     if *unit != HormoneUnits::Mg {
                         0.0
                     } else {
@@ -1053,10 +2044,15 @@ fn StatsPage() -> impl IntoView {
     let boofed_progesterone_records = move || {
         progesterone_records()
             .into_iter()
-            .filter(|d| matches!(
-                d,
-                DosageHistoryEntry::Progesterone { route: ProgesteroneRoutes::Boofed, .. }
-            ))
+            .filter(|d| {
+                matches!(
+                    d,
+                    DosageHistoryEntry::Progesterone {
+                        route: ProgesteroneRoutes::Boofed,
+                        ..
+                    }
+                )
+            })
             .collect::<Vec<_>>()
     };
 
@@ -1066,7 +2062,11 @@ fn StatsPage() -> impl IntoView {
             .map(|d| match d {
                 DosageHistoryEntry::Progesterone { pillQuantity, .. } => {
                     let qty = pillQuantity.unwrap_or(1.0);
-                    if qty > 0.0 { qty } else { 1.0 }
+                    if qty > 0.0 {
+                        qty
+                    } else {
+                        1.0
+                    }
                 }
                 _ => 0.0,
             })
@@ -1077,7 +2077,12 @@ fn StatsPage() -> impl IntoView {
         boofed_progesterone_records()
             .iter()
             .map(|d| match d {
-                DosageHistoryEntry::Progesterone { dose, unit, pillQuantity, .. } => {
+                DosageHistoryEntry::Progesterone {
+                    dose,
+                    unit,
+                    pillQuantity,
+                    ..
+                } => {
                     if *unit != HormoneUnits::Mg {
                         0.0
                     } else {
@@ -1095,60 +2100,66 @@ fn StatsPage() -> impl IntoView {
 
     let fmt = |value: f64, decimals: usize| {
         if !value.is_finite() {
-            "—".to_string()
+            "-".to_string()
         } else {
             let formatted = format!("{value:.decimals$}");
-            formatted.trim_end_matches('0').trim_end_matches('.').to_string()
+            formatted
+                .trim_end_matches('0')
+                .trim_end_matches('.')
+                .to_string()
         }
     };
 
     let fmt_iu_from_ml = |ml: f64| {
         if !ml.is_finite() {
-            "—".to_string()
+            "-".to_string()
         } else {
             format!("{}", (ml * 100.0).round() as i64)
         }
     };
 
     let parse_needle_length_mm = |raw: &str| {
-        let cleaned = raw
-            .trim()
-            .to_lowercase()
-            .replace(['′', '’'], "'")
-            .replace(['″', '”'], "\"")
-            .replace('㎜', "mm");
+        let cleaned = raw.trim().to_lowercase();
         if cleaned.is_empty() {
             return None;
         }
-        if let Some(match_val) = cleaned
-            .split_whitespace()
-            .find_map(|part| {
-                if part.ends_with("mm") {
-                    part.trim_end_matches("mm").parse::<f64>().ok()
-                } else {
-                    None
-                }
-            })
-        {
-            return if match_val > 0.0 { Some(match_val) } else { None };
+        if let Some(match_val) = cleaned.split_whitespace().find_map(|part| {
+            if part.ends_with("mm") {
+                part.trim_end_matches("mm").parse::<f64>().ok()
+            } else {
+                None
+            }
+        }) {
+            return if match_val > 0.0 {
+                Some(match_val)
+            } else {
+                None
+            };
         }
-        if let Some(match_val) = cleaned
-            .split_whitespace()
-            .find_map(|part| {
-                if part.ends_with("cm") {
-                    part.trim_end_matches("cm").parse::<f64>().ok()
-                } else {
-                    None
-                }
-            })
-        {
-            return if match_val > 0.0 { Some(match_val * 10.0) } else { None };
+        if let Some(match_val) = cleaned.split_whitespace().find_map(|part| {
+            if part.ends_with("cm") {
+                part.trim_end_matches("cm").parse::<f64>().ok()
+            } else {
+                None
+            }
+        }) {
+            return if match_val > 0.0 {
+                Some(match_val * 10.0)
+            } else {
+                None
+            };
         }
-        if let Some(inch_token) = cleaned
-            .split_whitespace()
-            .find(|part| part.ends_with("in") || part.ends_with("inch") || part.ends_with("inches") || part.ends_with('"'))
-        {
-            let token = inch_token.trim_end_matches("in").trim_end_matches("inch").trim_end_matches("inches").trim_end_matches('"');
+        if let Some(inch_token) = cleaned.split_whitespace().find(|part| {
+            part.ends_with("in")
+                || part.ends_with("inch")
+                || part.ends_with("inches")
+                || part.ends_with('"')
+        }) {
+            let token = inch_token
+                .trim_end_matches("in")
+                .trim_end_matches("inch")
+                .trim_end_matches("inches")
+                .trim_end_matches('"');
             let value = if token.contains('/') {
                 let parts: Vec<&str> = token.split_whitespace().collect();
                 if parts.len() == 2 && parts[1].contains('/') {
@@ -1180,7 +2191,11 @@ fn StatsPage() -> impl IntoView {
             } else {
                 token.parse::<f64>().ok()
             }?;
-            return if value > 0.0 { Some(value * 25.4) } else { None };
+            return if value > 0.0 {
+                Some(value * 25.4)
+            } else {
+                None
+            };
         }
         let numbers: Vec<f64> = cleaned
             .split(|c: char| !c.is_ascii_digit() && c != '.')
@@ -1190,16 +2205,14 @@ fn StatsPage() -> impl IntoView {
         numbers.last().copied().filter(|val| *val > 0.0)
     };
 
-    let norm_syringe_kind = |kind: &Option<String>| {
-        match kind.as_deref() {
-            Some(value) if value == "Regular syringe" => value.to_string(),
-            Some(value) if value == "Low waste syringe" => value.to_string(),
-            Some(value) if value == "Low waste needle" => value.to_string(),
-            Some(value) if value == "Insulin syringe" => value.to_string(),
-            Some(value) if value == "Insulin pen" => value.to_string(),
-            Some(value) if !value.trim().is_empty() => value.to_string(),
-            _ => "Other".to_string(),
-        }
+    let norm_syringe_kind = |kind: &Option<String>| match kind.as_deref() {
+        Some(value) if value == "Regular syringe" => value.to_string(),
+        Some(value) if value == "Low waste syringe" => value.to_string(),
+        Some(value) if value == "Low waste needle" => value.to_string(),
+        Some(value) if value == "Insulin syringe" => value.to_string(),
+        Some(value) if value == "Insulin pen" => value.to_string(),
+        Some(value) if !value.trim().is_empty() => value.to_string(),
+        _ => "Other".to_string(),
     };
 
     let deadspace_ul_for = |kind: &Option<String>| match kind.as_deref() {
@@ -1224,7 +2237,7 @@ fn StatsPage() -> impl IntoView {
                     unit,
                     vialId,
                     ..
-                } => (syringeKind, needleLength, *dose, unit, vialId),
+                } => (syringeKind, needleLength, dose, unit, vialId),
                 _ => continue,
             };
             let key = norm_syringe_kind(&syringe_kind);
@@ -1234,7 +2247,7 @@ fn StatsPage() -> impl IntoView {
                 .as_deref()
                 .and_then(|value| parse_needle_length_mm(value))
             {
-                if mm.is_finite() && mm > 0.0 {
+                if mm > 0.0 {
                     record.1 += mm;
                 }
             }
@@ -1249,7 +2262,7 @@ fn StatsPage() -> impl IntoView {
                     {
                         if conc > 0.0 {
                             record.3 += conc * ds_ml;
-                            if *unit == HormoneUnits::Mg && dose > 0.0 {
+                            if unit == HormoneUnits::Mg && dose > 0.0 {
                                 let dose_ml = dose / conc;
                                 record.4 += ds_ml;
                                 record.5 += ds_ml + dose_ml;
@@ -1273,9 +2286,13 @@ fn StatsPage() -> impl IntoView {
         let mut drawn_for_pct_ml = 0.0;
         for entry in injectable_records() {
             let (syringe_kind, dose, unit, vial_id) = match entry {
-                DosageHistoryEntry::InjectableEstradiol { syringeKind, dose, unit, vialId, .. } => {
-                    (syringeKind, *dose, unit, vialId)
-                }
+                DosageHistoryEntry::InjectableEstradiol {
+                    syringeKind,
+                    dose,
+                    unit,
+                    vialId,
+                    ..
+                } => (syringeKind, dose, unit, vialId),
                 _ => continue,
             };
             let Some(ds_ul) = deadspace_ul_for(&syringe_kind) else {
@@ -1293,7 +2310,7 @@ fn StatsPage() -> impl IntoView {
                 {
                     if conc > 0.0 {
                         total_mg += conc * ds_ml;
-                        if *unit == HormoneUnits::Mg && dose > 0.0 {
+                        if unit == HormoneUnits::Mg && dose > 0.0 {
                             let dose_ml = dose / conc;
                             dead_for_pct_ml += ds_ml;
                             drawn_for_pct_ml += ds_ml + dose_ml;
@@ -1304,7 +2321,15 @@ fn StatsPage() -> impl IntoView {
                 }
             }
         }
-        (total_ml, total_mg, skipped_no_kind, skipped_no_conc, counted, dead_for_pct_ml, drawn_for_pct_ml)
+        (
+            total_ml,
+            total_mg,
+            skipped_no_kind,
+            skipped_no_conc,
+            counted,
+            dead_for_pct_ml,
+            drawn_for_pct_ml,
+        )
     };
 
     let wastage_pct = move || {
@@ -1321,7 +2346,9 @@ fn StatsPage() -> impl IntoView {
         let mut skipped = 0;
         for entry in injectable_records() {
             let needle = match entry {
-                DosageHistoryEntry::InjectableEstradiol { needleLength, .. } => needleLength.clone(),
+                DosageHistoryEntry::InjectableEstradiol { needleLength, .. } => {
+                    needleLength.clone()
+                }
                 _ => None,
             };
             let Some(value) = needle else {
@@ -1346,6 +2373,16 @@ fn StatsPage() -> impl IntoView {
     };
 
     let stats_breakdown = move || settings.get().statsBreakdownBySyringeKind.unwrap_or(false);
+    let has_injection_volume = move || total_injection_ml() > 0.0;
+    let has_oral_pills = move || total_oral_pills_count() > 0.0;
+    let has_boofed_pills = move || boofed_progesterone_count() > 0.0;
+    let has_all_pills = move || total_pills_count() > 0.0;
+    let has_progesterone_total = move || total_progesterone_mg() > 0.0;
+    let has_wastage_mg = move || wastage_agg().1 > 0.0;
+    let has_wastage_notes = move || wastage_agg().2 > 0 || wastage_agg().3 > 0;
+    let has_wastage_pct = move || wastage_pct().is_finite();
+    let has_needle_skipped = move || needle_agg().1 > 0;
+    let by_kind_list = move || by_kind_agg().into_iter().collect::<Vec<_>>();
 
     page_layout(
         "Stats",
@@ -1369,7 +2406,7 @@ fn StatsPage() -> impl IntoView {
                         <p><strong>{move || fmt(total_oral_estradiol_mg(), 2)}</strong> " mg"</p>
                         <p class="muted">"Combined"</p>
                         <p><strong>{move || fmt(total_estrogen_mg(), 2)}</strong> " mg"</p>
-                        <Show when=move || total_injection_ml() > 0.0>
+                        <Show when=has_injection_volume>
                             <p class="muted">"Injection volume"</p>
                             <p>
                                 <strong>{move || fmt(total_injection_ml(), 3)}</strong>
@@ -1381,23 +2418,23 @@ fn StatsPage() -> impl IntoView {
                         <h3>"Pills"</h3>
                         <p>
                             "Estradiol pills:" <strong>{move || fmt(total_oral_pills_count(), 0)}</strong>
-                            <Show when=move || total_oral_pills_count() > 0.0>
+                            <Show when=has_oral_pills>
                                 " (" <strong>{move || fmt(total_oral_estradiol_mg(), 2)}</strong> " mg)"
                             </Show>
                         </p>
                         <p>
                             "Progesterone boofed:" <strong>{move || fmt(boofed_progesterone_count(), 0)}</strong>
-                            <Show when=move || boofed_progesterone_count() > 0.0>
+                            <Show when=has_boofed_pills>
                                 " (" <strong>{move || fmt(boofed_progesterone_mg(), 2)}</strong> " mg)"
                             </Show>
                         </p>
                         <p>
                             "All pills combined:" <strong>{move || fmt(total_pills_count(), 0)}</strong>
-                            <Show when=move || total_pills_count() > 0.0>
+                            <Show when=has_all_pills>
                                 " (" <strong>{move || fmt(total_pills_mg_combined(), 2)}</strong> " mg)"
                             </Show>
                         </p>
-                        <Show when=move || total_progesterone_mg() > 0.0>
+                        <Show when=has_progesterone_total>
                             <p class="muted">
                                 "Total progesterone: "<strong>{move || fmt(total_progesterone_mg(), 2)}</strong> " mg"
                             </p>
@@ -1419,17 +2456,18 @@ fn StatsPage() -> impl IntoView {
                             <strong>{move || fmt(needle_agg().0 / 25.4, 2)}</strong> " in)"
                         </p>
                         <p>
-                            "Wastage from dead space: "
+                                "Wastage from dead space: "
                             <strong>{move || fmt(wastage_agg().0, 3)}</strong> " mL ("
                             <strong>{move || fmt_iu_from_ml(wastage_agg().0)}</strong> " IU)"
-                            <Show when=move || wastage_agg().1 > 0.0>
-                                " · ≈ " <strong>{move || fmt(wastage_agg().1, 2)}</strong> " mg"
+                            <Show when=has_wastage_mg>
+                                " · about " <strong>{move || fmt(wastage_agg().1, 2)}</strong> " mg"
                             </Show>
-                            <Show when=move || wastage_pct().is_finite()>
+
+                            <Show when=has_wastage_pct>
                                 " · " <strong>{move || fmt(wastage_pct(), 1)}</strong> "% of drawn volume"
                             </Show>
                         </p>
-                        <Show when=move || wastage_agg().2 > 0 || wastage_agg().3 > 0>
+                        <Show when=has_wastage_notes>
                             <p class="muted">
                                 {move || {
                                     let skipped_kind = wastage_agg().2;
@@ -1446,7 +2484,7 @@ fn StatsPage() -> impl IntoView {
                                 }}
                             </p>
                         </Show>
-                        <Show when=move || needle_agg().1 > 0>
+                        <Show when=has_needle_skipped>
                             <p class="muted">
                                 {move || format!("Skipped {} injection(s) without a parsable needle length.", needle_agg().1)}
                             </p>
@@ -1480,7 +2518,7 @@ fn StatsPage() -> impl IntoView {
                     <Show when=move || stats_breakdown()>
                         <div class="card-grid">
                             <For
-                                each=move || by_kind_agg().into_iter().collect::<Vec<_>>()
+                                each=by_kind_list
                                 key=|(kind, _)| kind.clone()
                                 children=move |(kind, values)| {
                                     let (count, sum_mm, dead_ml, total_mg, dead_pct_ml, drawn_pct_ml) = values;
@@ -1489,20 +2527,24 @@ fn StatsPage() -> impl IntoView {
                                     } else {
                                         f64::NAN
                                     };
+                                    let has_sum_mm = sum_mm > 0.0;
+                                    let has_dead_ml = dead_ml > 0.0;
+                                    let has_total_mg = total_mg > 0.0;
+                                    let has_pct = pct.is_finite();
                                     view! {
                                         <div class="mini-card">
                                             <h4>{kind}</h4>
                                             <p class="muted">{format!("Count: {}", count)}</p>
-                                            <Show when=move || sum_mm > 0.0>
+                                            <Show when=move || has_sum_mm>
                                                 <p>{format!("Needle length: {} mm ({} in)", fmt(sum_mm, 1), fmt(sum_mm / 25.4, 2))}</p>
                                             </Show>
-                                            <Show when=move || dead_ml > 0.0>
+                                            <Show when=move || has_dead_ml>
                                                 <p>{format!("Wastage: {} mL ({} IU)", fmt(dead_ml, 3), fmt_iu_from_ml(dead_ml))}</p>
                                             </Show>
-                                            <Show when=move || total_mg > 0.0>
-                                                <p>{format!("≈ {} mg", fmt(total_mg, 2))}</p>
+                                            <Show when=move || has_total_mg>
+                                                <p>{format!("about {} mg", fmt(total_mg, 2))}</p>
                                             </Show>
-                                            <Show when=move || pct.is_finite()>
+                                            <Show when=move || has_pct>
                                                 <p>{format!("{}% of drawn volume", fmt(pct, 1))}</p>
                                             </Show>
                                         </div>
@@ -1521,31 +2563,264 @@ fn StatsPage() -> impl IntoView {
 #[component]
 fn BackupPage() -> impl IntoView {
     let store = use_store();
-    let data = move || store.data.get();
-    let settings = move || store.settings.get();
-    let export_text = move || {
-        let payload = serde_json::json!({
-            "data": data(),
-            "settings": settings(),
-        });
-        serde_json::to_string_pretty(&payload).unwrap_or_else(|_| "{}".to_string())
+    let settings = store.settings;
+
+    let ics_secret = create_rw_signal(settings.get().icsSecret.unwrap_or_default());
+    let ics_url = create_memo({
+        let ics_secret = ics_secret;
+        move |_| {
+            let base = store::api_base();
+            let secret = ics_secret.get();
+            if secret.trim().is_empty() {
+                format!("{}/api/ics?horizonDays=365&includePast=1", base)
+            } else {
+                format!(
+                    "{}/api/ics/{}?horizonDays=365&includePast=1",
+                    base,
+                    urlencoding::encode(secret.trim())
+                )
+            }
+        }
+    });
+
+    let on_copy_ics = move |_| {
+        let url = ics_url.get();
+        let clipboard = window().navigator().clipboard();
+        let _ = clipboard.write_text(&url);
     };
 
-    page_layout(
-        "Backup",
-        view! {
-            <p class="muted">"Export your full data + settings bundle for safekeeping."</p>
-            <textarea rows="12" readonly prop:value=export_text></textarea>
-            <div class="primary-actions">
-                <button
-                    type="button"
-                    on:click={
-                        let store = store.clone();
-                        move |_| store.save()
+    let on_save_settings = {
+        let store = store.clone();
+        let ics_secret = ics_secret;
+        move |_: leptos::ev::MouseEvent| {
+            let secret = ics_secret.get();
+            store.settings.update(|s| {
+                s.icsSecret = if secret.trim().is_empty() {
+                    None
+                } else {
+                    Some(secret)
+                };
+            });
+            store.mark_dirty();
+        }
+    };
+
+    let on_restore = {
+        let store = store.clone();
+        move |ev: leptos::ev::Event| {
+            let input: web_sys::HtmlInputElement = event_target(&ev);
+            let Some(files) = input.files() else {
+                return;
+            };
+            let Some(file) = files.get(0) else {
+                return;
+            };
+            let reader = match web_sys::FileReader::new() {
+                Ok(reader) => reader,
+                Err(_) => return,
+            };
+            let reader_clone = reader.clone();
+            let store = store.clone();
+            let onload = Closure::wrap(Box::new(move |_ev: web_sys::ProgressEvent| {
+                let Ok(result) = reader_clone.result() else {
+                    return;
+                };
+                let Some(text) = result.as_string() else {
+                    return;
+                };
+                if let Ok(payload) = serde_json::from_str::<serde_json::Value>(&text) {
+                    let data_value = if payload.get("data").is_some() {
+                        payload.get("data").cloned().unwrap_or(payload.clone())
+                    } else {
+                        payload.clone()
+                    };
+                    if let Ok(parsed) =
+                        serde_json::from_value::<hrt_shared::types::HrtData>(data_value)
+                    {
+                        store.data.set(parsed);
+                        store.mark_dirty();
                     }
-                >
-                    "Save to Disk"
-                </button>
+                    if let Some(settings_value) = payload.get("settings") {
+                        if let Ok(parsed) =
+                            serde_json::from_value::<Settings>(settings_value.clone())
+                        {
+                            store.settings.set(parsed);
+                            store.mark_dirty();
+                        }
+                    }
+                    if let Some(document) = window().document() {
+                        if let Some(element) = document.get_element_by_id("restore-file") {
+                            if let Ok(input) = element.dyn_into::<web_sys::HtmlInputElement>() {
+                                input.set_value("");
+                            }
+                        }
+                    }
+                }
+            }) as Box<dyn FnMut(_)>);
+            reader.set_onload(Some(onload.as_ref().unchecked_ref()));
+            onload.forget();
+            let _ = reader.read_as_text(&file);
+        }
+    };
+
+    let on_export = {
+        let store = store.clone();
+        move |_| {
+            let payload = serde_json::json!({
+                "data": store.data.get(),
+                "settings": store.settings.get(),
+            });
+            if let Ok(json) = serde_json::to_string_pretty(&payload) {
+                let mut parts = js_sys::Array::new();
+                parts.push(&json.into());
+                if let Ok(blob) = web_sys::Blob::new_with_str_sequence(&parts) {
+                    if let Ok(url) = web_sys::Url::create_object_url_with_blob(&blob) {
+                        if let Some(document) = window().document() {
+                            if let Ok(link) = document.create_element("a") {
+                                let link: web_sys::HtmlAnchorElement = link.unchecked_into();
+                                link.set_href(&url);
+                                link.set_download(&format!(
+                                    "hrt-data-backup-{}.json",
+                                    Local::now().format("%Y-%m-%d")
+                                ));
+                                let _ = link.click();
+                                let _ = web_sys::Url::revoke_object_url(&url);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
+
+    let auto_backfill = move || settings.get().enableAutoBackfill;
+
+    page_layout(
+        "Settings & Backup",
+        view! {
+            <div class="view-layout">
+                <div class="view-header">
+                    <div>
+                        <h2>"Settings & Backup"</h2>
+                        <p class="muted">"Manage settings, calendar feeds, and backup/restore."</p>
+                    </div>
+                </div>
+
+                <div class="card-grid">
+                    <div class="card">
+                        <h3>"Settings"</h3>
+                        <label>
+                            <input
+                                type="checkbox"
+                                on:change={
+                                    let store = store.clone();
+                                    move |ev| {
+                                        let enabled = event_target_checked(&ev);
+                                        store.settings.update(|s| s.enableAutoBackfill = enabled);
+                                        store.mark_dirty();
+                                    }
+                                }
+                                prop:checked=move || auto_backfill()
+                            />
+                            " Enable auto backfill"
+                        </label>
+                        <label>
+                            <input
+                                type="checkbox"
+                                on:change={
+                                    let store = store.clone();
+                                    move |ev| {
+                                        let enabled = event_target_checked(&ev);
+                                        store.settings.update(|s| s.enableBloodTestSchedule = Some(enabled));
+                                        store.mark_dirty();
+                                    }
+                                }
+                                prop:checked=move || store.settings.get().enableBloodTestSchedule.unwrap_or(false)
+                            />
+                            " Enable blood test schedule"
+                        </label>
+                        <label>"Blood test interval (months)"</label>
+                        <input
+                            type="number"
+                            step="1"
+                            min="1"
+                            on:input={
+                                let store = store.clone();
+                                move |ev| {
+                                    let value = event_target_value(&ev);
+                                    let parsed = value.parse::<f64>().ok();
+                                    store.settings.update(|s| s.bloodTestIntervalMonths = parsed);
+                                    store.mark_dirty();
+                                }
+                            }
+                            prop:value=move || store
+                                .settings
+                                .get()
+                                .bloodTestIntervalMonths
+                                .map(|v| v.to_string())
+                                .unwrap_or_else(|| "".to_string())
+                        />
+                        <label>"ICS URL secret (optional)"</label>
+                        <input
+                            type="text"
+                            placeholder="my-private-feed"
+                            on:input=move |ev| ics_secret.set(event_target_value(&ev))
+                            prop:value=move || ics_secret.get()
+                        />
+                        <label>"Estradiol display unit"</label>
+                        <select
+                            on:change={
+                                let store = store.clone();
+                                move |ev| {
+                                    let value = event_target_value(&ev);
+                                    let unit = match value.as_str() {
+                                        "pmol/L" => Some(HormoneUnits::E2PmolL),
+                                        "pg/mL" => Some(HormoneUnits::E2PgMl),
+                                        _ => None,
+                                    };
+                                    store.settings.update(|s| s.displayEstradiolUnit = unit);
+                                    store.mark_dirty();
+                                }
+                            }
+                        >
+                            <option value="pmol/L" selected=move || settings.get().displayEstradiolUnit == Some(HormoneUnits::E2PmolL)>
+                                "pmol/L"
+                            </option>
+                            <option value="pg/mL" selected=move || settings.get().displayEstradiolUnit == Some(HormoneUnits::E2PgMl)>
+                                "pg/mL"
+                            </option>
+                        </select>
+                        <div class="primary-actions">
+                            <button type="button" on:click=on_save_settings>
+                                "Save settings"
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <h3>"ICS Calendar"</h3>
+                        <p class="muted">"Subscribe in your calendar app using this URL."</p>
+                        <input type="text" readonly prop:value=move || ics_url.get() />
+                        <div class="primary-actions">
+                            <a href=move || ics_url.get() target="_blank" rel="noopener noreferrer">"Open"</a>
+                            <button type="button" on:click=on_copy_ics>"Copy"</button>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <h3>"Backup"</h3>
+                        <p class="muted">"Export your full data + settings bundle for safekeeping."</p>
+                        <div class="primary-actions">
+                            <button type="button" on:click=on_export>"Export to JSON"</button>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <h3>"Restore"</h3>
+                        <p class="muted">"Restore from a JSON backup file (overwrites current data)."</p>
+                        <input id="restore-file" type="file" accept=".json" on:change=on_restore />
+                    </div>
+                </div>
             </div>
         }
         .into_view(),
@@ -1730,7 +3005,7 @@ fn VialsCreatePage() -> impl IntoView {
         let mut data = store.data.get();
         data.vials.push(entry);
         store.data.set(data);
-                                    store.mark_dirty();
+        store.mark_dirty();
 
         batch_number.set("".to_string());
         ester_kind.set("".to_string());
