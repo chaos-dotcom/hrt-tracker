@@ -341,6 +341,17 @@ body {
   gap: 16px;
 }
 
+.settings-stack {
+  display: grid;
+  gap: 16px;
+}
+
+.settings-toggles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
 .card {
   background: rgba(35, 36, 58, 0.8);
   border: 1px solid rgba(243, 154, 181, 0.25);
@@ -953,6 +964,26 @@ textarea {
   font-family: inherit;
   background: var(--surface-2);
   color: var(--ink);
+}
+
+.file-input {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px dashed rgba(243, 154, 181, 0.35);
+  background: rgba(35, 36, 58, 0.65);
+  color: var(--ink);
+}
+
+.file-input::file-selector-button {
+  border: none;
+  border-radius: 999px;
+  padding: 8px 14px;
+  margin-right: 12px;
+  background: linear-gradient(120deg, #f39ab5, #ffc1d6);
+  color: #2a0f1f;
+  font-weight: 700;
+  cursor: pointer;
 }
 
 .muted {
