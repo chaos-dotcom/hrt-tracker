@@ -1,159 +1,1361 @@
+use gloo_timers::callback::Timeout;
+use js_sys::Date;
 use leptos::*;
+use leptos::window;
+use leptos_router::{use_navigate, A};
+use std::cell::RefCell;
+use std::rc::Rc;
+use wasm_bindgen::JsValue;
 
 use crate::layout::page_layout;
 use crate::store::use_store;
-use crate::utils::{parse_date_or_now, parse_hormone_unit};
+use crate::utils::{hormone_unit_label, parse_hormone_unit};
+use hrt_shared::logic::backfill_scheduled_doses;
 use hrt_shared::types::{
-    Antiandrogens, DosageHistoryEntry, HormoneUnits, InjectableEstradiols, OralEstradiols,
-    ProgesteroneRoutes, Progesterones,
+    AntiandrogenSchedule, Antiandrogens, DosageHistoryEntry, HormoneUnits, InjectableEstradiols,
+    InjectableSchedule, InjectionSites, OralEstradiols, OralSchedule, ProgesteroneRoutes,
+    ProgesteroneSchedule, Progesterones, SyringeKinds,
 };
+
+const INJECTABLE_OPTIONS: [InjectableEstradiols; 6] = [
+    InjectableEstradiols::Benzoate,
+    InjectableEstradiols::Cypionate,
+    InjectableEstradiols::Enanthate,
+    InjectableEstradiols::Undecylate,
+    InjectableEstradiols::Valerate,
+    InjectableEstradiols::PolyestradiolPhosphate,
+];
+
+const ORAL_OPTIONS: [OralEstradiols; 3] = [
+    OralEstradiols::Hemihydrate,
+    OralEstradiols::Valerate,
+    OralEstradiols::Premarin,
+];
+
+const ANTIANDROGEN_OPTIONS: [Antiandrogens; 4] = [
+    Antiandrogens::CPA,
+    Antiandrogens::Spiro,
+    Antiandrogens::Bica,
+    Antiandrogens::Finasteride,
+];
+
+const PROGESTERONE_OPTIONS: [Progesterones; 1] = [Progesterones::Micronized];
+
+const PROGESTERONE_ROUTE_OPTIONS: [ProgesteroneRoutes; 2] =
+    [ProgesteroneRoutes::Oral, ProgesteroneRoutes::Boofed];
+
+const HORMONE_UNITS: [HormoneUnits; 9] = [
+    HormoneUnits::E2PgMl,
+    HormoneUnits::E2PmolL,
+    HormoneUnits::TNgDl,
+    HormoneUnits::TNmolL,
+    HormoneUnits::Mg,
+    HormoneUnits::NgMl,
+    HormoneUnits::MIuMl,
+    HormoneUnits::MIuL,
+    HormoneUnits::UL,
+];
+
+const INJECTION_SITES: [InjectionSites; 12] = [
+    InjectionSites::StomachRight,
+    InjectionSites::StomachLeft,
+    InjectionSites::ThighRight,
+    InjectionSites::ThighLeft,
+    InjectionSites::TopThighRight,
+    InjectionSites::TopThighLeft,
+    InjectionSites::InnerThighRight,
+    InjectionSites::InnerThighLeft,
+    InjectionSites::OuterThighRight,
+    InjectionSites::OuterThighLeft,
+    InjectionSites::ButtockRight,
+    InjectionSites::ButtockLeft,
+];
+
+const SYRINGE_KINDS: [SyringeKinds; 5] = [
+    SyringeKinds::RegularSyringe,
+    SyringeKinds::LowWasteSyringe,
+    SyringeKinds::LowWasteNeedle,
+    SyringeKinds::InsulinSyringe,
+    SyringeKinds::InsulinPen,
+];
+
+fn injectable_label(kind: &InjectableEstradiols) -> &'static str {
+    match kind {
+        InjectableEstradiols::Benzoate => "Estradiol Benzoate",
+        InjectableEstradiols::Cypionate => "Estradiol Cypionate",
+        InjectableEstradiols::Enanthate => "Estradiol Enanthate",
+        InjectableEstradiols::Undecylate => "Estradiol Undecylate",
+        InjectableEstradiols::Valerate => "Estradiol Valerate",
+        InjectableEstradiols::PolyestradiolPhosphate => "Polyestradiol Phosphate",
+    }
+}
+
+fn oral_label(kind: &OralEstradiols) -> &'static str {
+    match kind {
+        OralEstradiols::Hemihydrate => "Estradiol Hemihydrate",
+        OralEstradiols::Valerate => "Estradiol Valerate",
+        OralEstradiols::Premarin => "Premarin",
+    }
+}
+
+fn antiandrogen_label(kind: &Antiandrogens) -> &'static str {
+    match kind {
+        Antiandrogens::CPA => "Cyproterone Acetate",
+        Antiandrogens::Spiro => "Spironolactone",
+        Antiandrogens::Bica => "Bicalutamide",
+        Antiandrogens::Finasteride => "Finasteride",
+    }
+}
+
+fn progesterone_label(kind: &Progesterones) -> &'static str {
+    match kind {
+        Progesterones::Micronized => "Micronized Progesterone",
+    }
+}
+
+fn progesterone_route_label(kind: &ProgesteroneRoutes) -> &'static str {
+    match kind {
+        ProgesteroneRoutes::Oral => "Oral",
+        ProgesteroneRoutes::Boofed => "Boofed",
+    }
+}
+
+fn injection_site_label(site: &InjectionSites) -> &'static str {
+    match site {
+        InjectionSites::StomachRight => "Stomach right",
+        InjectionSites::StomachLeft => "Stomach left",
+        InjectionSites::TopThighRight => "Top thigh right",
+        InjectionSites::TopThighLeft => "Top thigh left",
+        InjectionSites::InnerThighRight => "Inner thigh right",
+        InjectionSites::InnerThighLeft => "Inner thigh left",
+        InjectionSites::OuterThighRight => "Outer thigh right",
+        InjectionSites::OuterThighLeft => "Outer thigh left",
+        InjectionSites::ThighRight => "Thigh right",
+        InjectionSites::ThighLeft => "Thigh left",
+        InjectionSites::ButtockRight => "Buttock right",
+        InjectionSites::ButtockLeft => "Buttock left",
+    }
+}
+
+fn syringe_kind_label(kind: &SyringeKinds) -> &'static str {
+    match kind {
+        SyringeKinds::RegularSyringe => "Regular syringe",
+        SyringeKinds::LowWasteSyringe => "Low waste syringe",
+        SyringeKinds::LowWasteNeedle => "Low waste needle",
+        SyringeKinds::InsulinSyringe => "Insulin syringe",
+        SyringeKinds::InsulinPen => "Insulin pen",
+    }
+}
+
+fn injectable_from_label(value: &str) -> InjectableEstradiols {
+    INJECTABLE_OPTIONS
+        .iter()
+        .find(|kind| injectable_label(kind) == value)
+        .cloned()
+        .unwrap_or(InjectableEstradiols::Benzoate)
+}
+
+fn oral_from_label(value: &str) -> OralEstradiols {
+    ORAL_OPTIONS
+        .iter()
+        .find(|kind| oral_label(kind) == value)
+        .cloned()
+        .unwrap_or(OralEstradiols::Valerate)
+}
+
+fn antiandrogen_from_label(value: &str) -> Antiandrogens {
+    ANTIANDROGEN_OPTIONS
+        .iter()
+        .find(|kind| antiandrogen_label(kind) == value)
+        .cloned()
+        .unwrap_or(Antiandrogens::Spiro)
+}
+
+fn progesterone_from_label(value: &str) -> Progesterones {
+    PROGESTERONE_OPTIONS
+        .iter()
+        .find(|kind| progesterone_label(kind) == value)
+        .cloned()
+        .unwrap_or(Progesterones::Micronized)
+}
+
+fn progesterone_route_from_label(value: &str) -> ProgesteroneRoutes {
+    PROGESTERONE_ROUTE_OPTIONS
+        .iter()
+        .find(|kind| progesterone_route_label(kind) == value)
+        .cloned()
+        .unwrap_or(ProgesteroneRoutes::Oral)
+}
+
+fn injection_site_from_label(value: &str) -> Option<InjectionSites> {
+    INJECTION_SITES
+        .iter()
+        .find(|site| injection_site_label(site) == value)
+        .cloned()
+}
+
+fn to_local_input_value(ms: i64) -> String {
+    let date = Date::new(&JsValue::from_f64(ms as f64));
+    let year = date.get_full_year();
+    let month = date.get_month() + 1;
+    let day = date.get_date();
+    let hour = date.get_hours();
+    let minute = date.get_minutes();
+    format!(
+        "{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}",
+        year = year,
+        month = month,
+        day = day,
+        hour = hour,
+        minute = minute
+    )
+}
+
+fn parse_datetime_local(value: &str) -> i64 {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Date::now() as i64;
+    }
+    let parsed = Date::parse(trimmed);
+    if parsed.is_nan() {
+        Date::now() as i64
+    } else {
+        parsed as i64
+    }
+}
+
+fn parse_optional_datetime(value: &str) -> Option<i64> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let parsed = Date::parse(trimmed);
+    if parsed.is_nan() {
+        None
+    } else {
+        Some(parsed as i64)
+    }
+}
+
+fn parse_num(value: &str) -> f64 {
+    value.trim().parse::<f64>().unwrap_or(f64::NAN)
+}
+
+fn parse_optional_num(value: &str) -> Option<f64> {
+    let parsed = parse_num(value);
+    if parsed.is_finite() {
+        Some(parsed)
+    } else {
+        None
+    }
+}
+
+fn fmt(value: f64, decimals: usize) -> String {
+    if !value.is_finite() {
+        return "—".to_string();
+    }
+    let formatted = format!("{value:.decimals$}");
+    formatted
+        .trim_end_matches('0')
+        .trim_end_matches('.')
+        .to_string()
+}
+
+fn fmt_iu_from_ml(ml: f64) -> String {
+    if !ml.is_finite() {
+        return "—".to_string();
+    }
+    format!("{}", (ml * 100.0).round() as i64)
+}
+
+fn hormone_unit_labels() -> Vec<String> {
+    HORMONE_UNITS
+        .iter()
+        .map(|unit| hormone_unit_label(unit).to_string())
+        .collect()
+}
 
 #[component]
 pub fn CreateDosage() -> impl IntoView {
     let store = use_store();
-    let dosage_type = create_rw_signal("injectableEstradiol".to_string());
-    let dose_value = create_rw_signal("".to_string());
-    let unit_value = create_rw_signal("mg".to_string());
-    let medication_name = create_rw_signal("".to_string());
-    let note_value = create_rw_signal("".to_string());
-    let date_value = create_rw_signal("".to_string());
-    let error = create_rw_signal(None::<String>);
+    let navigate = use_navigate();
 
-    let on_submit = move |ev: leptos::ev::SubmitEvent| {
-        ev.prevent_default();
-        error.set(None);
-        let dose = dose_value.get().trim().parse::<f64>().ok();
-        let date = parse_date_or_now(&date_value.get());
-        let dose = match dose {
-            Some(value) => value,
-            None => {
-                error.set(Some("Dose is required.".to_string()));
+    let initial_mode = {
+        let search = window()
+            .location()
+            .search()
+            .unwrap_or_default();
+        if search.contains("mode=schedule") {
+            "schedule"
+        } else {
+            "record"
+        }
+        .to_string()
+    };
+
+    let mode = create_rw_signal(initial_mode);
+    let estrogen_method = create_rw_signal("injection".to_string());
+
+    let injectable_type = create_rw_signal(injectable_label(&InjectableEstradiols::Benzoate).to_string());
+    let oral_type = create_rw_signal(oral_label(&OralEstradiols::Valerate).to_string());
+    let estrogen_dose = create_rw_signal("0".to_string());
+    let estrogen_unit = create_rw_signal(hormone_unit_label(&HormoneUnits::Mg).to_string());
+    let injection_frequency = create_rw_signal("7".to_string());
+    let oral_frequency = create_rw_signal("1".to_string());
+    let estrogen_next_date = create_rw_signal(String::new());
+
+    let inj_conv_dose_mg = create_rw_signal("4".to_string());
+    let inj_conv_conc_mg_ml = create_rw_signal("40".to_string());
+    let inj_conv_vol_ml = create_memo(move |_| {
+        let dose = parse_num(&inj_conv_dose_mg.get());
+        let conc = parse_num(&inj_conv_conc_mg_ml.get());
+        if dose.is_finite() && conc.is_finite() && conc > 0.0 {
+            dose / conc
+        } else {
+            f64::NAN
+        }
+    });
+
+    let inj_conv_vol2_ml = create_rw_signal("0.1".to_string());
+    let inj_conv_conc2_mg_ml = create_rw_signal("40".to_string());
+    let inj_conv_dose2_mg = create_memo(move |_| {
+        let vol = parse_num(&inj_conv_vol2_ml.get());
+        let conc = parse_num(&inj_conv_conc2_mg_ml.get());
+        if vol.is_finite() && conc.is_finite() && conc > 0.0 {
+            vol * conc
+        } else {
+            f64::NAN
+        }
+    });
+
+    let aa_type = create_rw_signal(String::new());
+    let aa_dose = create_rw_signal("0".to_string());
+    let aa_unit = create_rw_signal(hormone_unit_label(&HormoneUnits::Mg).to_string());
+    let aa_frequency = create_rw_signal("1".to_string());
+    let aa_next_date = create_rw_signal(String::new());
+
+    let prog_type = create_rw_signal(String::new());
+    let prog_dose = create_rw_signal("0".to_string());
+    let prog_unit = create_rw_signal(hormone_unit_label(&HormoneUnits::Mg).to_string());
+    let prog_route = create_rw_signal(progesterone_route_label(&ProgesteroneRoutes::Oral).to_string());
+    let prog_frequency = create_rw_signal("1".to_string());
+    let prog_next_date = create_rw_signal(String::new());
+
+    let record_estrogen = create_rw_signal(true);
+    let record_aa = create_rw_signal(false);
+    let record_prog = create_rw_signal(false);
+
+    let estrogen_note = create_rw_signal(String::new());
+    let aa_note = create_rw_signal(String::new());
+    let prog_note = create_rw_signal(String::new());
+    let estrogen_pill_qty = create_rw_signal("1".to_string());
+    let prog_pill_qty = create_rw_signal("1".to_string());
+
+    let injection_site = create_rw_signal(String::new());
+    let syringe_kind = create_rw_signal(String::new());
+    let needle_length = create_rw_signal(String::new());
+    let needle_gauge = create_rw_signal(String::new());
+
+    let selected_vial_id = create_rw_signal(String::new());
+    let selected_sub_vial_id = create_rw_signal(String::new());
+
+    let record_date_time = create_rw_signal(String::new());
+
+    let schedule_feedback = create_rw_signal(false);
+    let feedback_timeout: Rc<RefCell<Option<Timeout>>> = Rc::new(RefCell::new(None));
+
+    let initialized = create_rw_signal(false);
+    create_effect({
+        let store = store.clone();
+        move |_| {
+            if initialized.get() {
                 return;
             }
-        };
+            let data = store.data.get();
+            if let Some(inj) = data.injectableEstradiol {
+                estrogen_method.set("injection".to_string());
+                injectable_type.set(injectable_label(&inj.kind).to_string());
+                estrogen_dose.set(format!("{:.3}", inj.dose));
+                estrogen_unit.set(hormone_unit_label(&inj.unit).to_string());
+                injection_frequency.set(format!("{:.2}", inj.frequency));
+                estrogen_next_date.set(
+                    inj.nextDoseDate
+                        .map(to_local_input_value)
+                        .unwrap_or_default(),
+                );
+                selected_vial_id.set(inj.vialId.unwrap_or_default());
+                selected_sub_vial_id.set(inj.subVialId.unwrap_or_default());
+                syringe_kind.set(inj.syringeKind.unwrap_or_default());
+                needle_length.set(inj.needleLength.unwrap_or_default());
+                needle_gauge.set(inj.needleGauge.unwrap_or_default());
+            } else if let Some(oral) = data.oralEstradiol {
+                estrogen_method.set("oral".to_string());
+                oral_type.set(oral_label(&oral.kind).to_string());
+                estrogen_dose.set(format!("{:.3}", oral.dose));
+                estrogen_unit.set(hormone_unit_label(&oral.unit).to_string());
+                oral_frequency.set(format!("{:.2}", oral.frequency));
+                estrogen_next_date.set(
+                    oral.nextDoseDate
+                        .map(to_local_input_value)
+                        .unwrap_or_default(),
+                );
+                selected_vial_id.set(String::new());
+                selected_sub_vial_id.set(String::new());
+                syringe_kind.set(String::new());
+                needle_length.set(String::new());
+                needle_gauge.set(String::new());
+            }
 
-        if medication_name.get().trim().is_empty() {
-            error.set(Some("Medication name is required.".to_string()));
-            return;
+            if let Some(aa) = data.antiandrogen {
+                aa_type.set(antiandrogen_label(&aa.kind).to_string());
+                aa_dose.set(format!("{:.3}", aa.dose));
+                aa_unit.set(hormone_unit_label(&aa.unit).to_string());
+                aa_frequency.set(format!("{:.2}", aa.frequency));
+                aa_next_date.set(
+                    aa.nextDoseDate
+                        .map(to_local_input_value)
+                        .unwrap_or_default(),
+                );
+            }
+
+            if let Some(prog) = data.progesterone {
+                prog_type.set(progesterone_label(&prog.kind).to_string());
+                prog_dose.set(format!("{:.3}", prog.dose));
+                prog_unit.set(hormone_unit_label(&prog.unit).to_string());
+                prog_route.set(progesterone_route_label(&prog.route).to_string());
+                prog_frequency.set(format!("{:.2}", prog.frequency));
+                prog_next_date.set(
+                    prog.nextDoseDate
+                        .map(to_local_input_value)
+                        .unwrap_or_default(),
+                );
+            }
+            initialized.set(true);
         }
+    });
 
-        let unit = parse_hormone_unit(&unit_value.get()).unwrap_or(HormoneUnits::Mg);
-        let note = if note_value.get().trim().is_empty() {
-            None
+    create_effect({
+        let record_date_time = record_date_time;
+        move |_| {
+            if mode.get() == "record" && record_date_time.get().is_empty() {
+                record_date_time.set(to_local_input_value(Date::now() as i64));
+            }
+        }
+    });
+
+    create_effect({
+        let store = store.clone();
+        let selected_sub_vial_id = selected_sub_vial_id;
+        move |_| {
+            let selected_vial = selected_vial_id.get();
+            let sub_id = selected_sub_vial_id.get();
+            if selected_vial.is_empty() {
+                selected_sub_vial_id.set(String::new());
+                return;
+            }
+            let has_sub = store
+                .data
+                .get()
+                .vials
+                .iter()
+                .find(|v| v.id == selected_vial)
+                .map(|v| v.subVials.iter().any(|s| s.id == sub_id))
+                .unwrap_or(false);
+            if !has_sub {
+                selected_sub_vial_id.set(String::new());
+            }
+        }
+    });
+
+    let estrogen_pill_total = create_memo(move |_| {
+        let dose = parse_num(&estrogen_dose.get());
+        let qty = parse_num(&estrogen_pill_qty.get());
+        if dose.is_finite() && qty.is_finite() {
+            dose * qty
         } else {
-            Some(note_value.get())
-        };
-        let entry = match dosage_type.get().as_str() {
-            "oralEstradiol" => DosageHistoryEntry::OralEstradiol {
-                date,
-                id: None,
-                kind: OralEstradiols::Hemihydrate,
-                dose,
-                unit,
-                pillQuantity: None,
-                note,
-            },
-            "antiandrogen" => DosageHistoryEntry::Antiandrogen {
-                date,
-                id: None,
-                kind: Antiandrogens::Spiro,
-                dose,
-                unit,
-                note,
-            },
-            "progesterone" => DosageHistoryEntry::Progesterone {
-                date,
-                id: None,
-                kind: Progesterones::Micronized,
-                route: ProgesteroneRoutes::Oral,
-                dose,
-                unit,
-                pillQuantity: None,
-                note,
-            },
-            _ => DosageHistoryEntry::InjectableEstradiol {
-                date,
-                id: None,
-                kind: InjectableEstradiols::Valerate,
-                dose,
-                unit,
-                note,
-                injectionSite: None,
-                vialId: None,
-                subVialId: None,
-                syringeKind: None,
-                needleLength: None,
-                needleGauge: None,
-                photos: None,
-            },
-        };
+            0.0
+        }
+    });
 
-        store.data.update(|d| d.dosageHistory.push(entry));
-        store.mark_dirty();
+    let prog_pill_total = create_memo(move |_| {
+        let dose = parse_num(&prog_dose.get());
+        let qty = parse_num(&prog_pill_qty.get());
+        if dose.is_finite() && qty.is_finite() {
+            dose * qty
+        } else {
+            0.0
+        }
+    });
 
-        dose_value.set("".to_string());
-        medication_name.set("".to_string());
-        note_value.set("".to_string());
-        date_value.set("".to_string());
+    let on_submit = {
+        let store = store.clone();
+        let navigate = navigate.clone();
+        let feedback_timeout = feedback_timeout.clone();
+        move |ev: leptos::ev::SubmitEvent| {
+            ev.prevent_default();
+            let mode_value = mode.get();
+            let estrogen_method_value = estrogen_method.get();
+
+            if mode_value == "record" {
+                let record_ms = parse_datetime_local(&record_date_time.get());
+                store.data.update(|data| {
+                    if record_estrogen.get() {
+                        let dose_value = parse_num(&estrogen_dose.get());
+                        let unit_value = parse_hormone_unit(&estrogen_unit.get())
+                            .unwrap_or(HormoneUnits::Mg);
+                        if estrogen_method_value == "injection" {
+                            let kind = injectable_from_label(&injectable_type.get());
+                            let record = DosageHistoryEntry::InjectableEstradiol {
+                                date: record_ms,
+                                id: None,
+                                kind,
+                                dose: dose_value,
+                                unit: unit_value,
+                                note: if estrogen_note.get().trim().is_empty() {
+                                    None
+                                } else {
+                                    Some(estrogen_note.get())
+                                },
+                                injectionSite: injection_site_from_label(&injection_site.get()),
+                                vialId: if selected_vial_id.get().is_empty() {
+                                    None
+                                } else {
+                                    Some(selected_vial_id.get())
+                                },
+                                subVialId: if selected_sub_vial_id.get().is_empty() {
+                                    None
+                                } else {
+                                    Some(selected_sub_vial_id.get())
+                                },
+                                syringeKind: if syringe_kind.get().is_empty() {
+                                    None
+                                } else {
+                                    Some(syringe_kind.get())
+                                },
+                                needleLength: if needle_length.get().trim().is_empty() {
+                                    None
+                                } else {
+                                    Some(needle_length.get())
+                                },
+                                needleGauge: if needle_gauge.get().trim().is_empty() {
+                                    None
+                                } else {
+                                    Some(needle_gauge.get())
+                                },
+                                photos: None,
+                            };
+                            data.dosageHistory.push(record);
+                        } else {
+                            let kind = oral_from_label(&oral_type.get());
+                            let pill_qty = parse_optional_num(&estrogen_pill_qty.get())
+                                .filter(|value| *value > 0.0);
+                            let record = DosageHistoryEntry::OralEstradiol {
+                                date: record_ms,
+                                id: None,
+                                kind,
+                                dose: dose_value,
+                                unit: unit_value,
+                                pillQuantity: pill_qty,
+                                note: if estrogen_note.get().trim().is_empty() {
+                                    None
+                                } else {
+                                    Some(estrogen_note.get())
+                                },
+                            };
+                            data.dosageHistory.push(record);
+                        }
+                    }
+
+                    if record_aa.get() && !aa_type.get().trim().is_empty() {
+                        let kind = antiandrogen_from_label(&aa_type.get());
+                        let record = DosageHistoryEntry::Antiandrogen {
+                            date: record_ms,
+                            id: None,
+                            kind,
+                            dose: parse_num(&aa_dose.get()),
+                            unit: parse_hormone_unit(&aa_unit.get()).unwrap_or(HormoneUnits::Mg),
+                            note: if aa_note.get().trim().is_empty() {
+                                None
+                            } else {
+                                Some(aa_note.get())
+                            },
+                        };
+                        data.dosageHistory.push(record);
+                    }
+
+                    if record_prog.get() && !prog_type.get().trim().is_empty() {
+                        let kind = progesterone_from_label(&prog_type.get());
+                        let pill_qty = parse_optional_num(&prog_pill_qty.get())
+                            .filter(|value| *value > 0.0);
+                        let record = DosageHistoryEntry::Progesterone {
+                            date: record_ms,
+                            id: None,
+                            kind,
+                            route: progesterone_route_from_label(&prog_route.get()),
+                            dose: parse_num(&prog_dose.get()),
+                            unit: parse_hormone_unit(&prog_unit.get()).unwrap_or(HormoneUnits::Mg),
+                            pillQuantity: pill_qty,
+                            note: if prog_note.get().trim().is_empty() {
+                                None
+                            } else {
+                                Some(prog_note.get())
+                            },
+                        };
+                        data.dosageHistory.push(record);
+                    }
+                });
+                store.mark_dirty();
+                navigate("/view", Default::default());
+                return;
+            }
+
+            store.data.update(|data| {
+                if estrogen_method_value == "injection" {
+                    let schedule = InjectableSchedule {
+                        kind: injectable_from_label(&injectable_type.get()),
+                        dose: parse_num(&estrogen_dose.get()),
+                        unit: parse_hormone_unit(&estrogen_unit.get()).unwrap_or(HormoneUnits::Mg),
+                        frequency: parse_num(&injection_frequency.get()).max(1.0),
+                        vialId: if selected_vial_id.get().is_empty() {
+                            None
+                        } else {
+                            Some(selected_vial_id.get())
+                        },
+                        subVialId: if selected_sub_vial_id.get().is_empty() {
+                            None
+                        } else {
+                            Some(selected_sub_vial_id.get())
+                        },
+                        syringeKind: if syringe_kind.get().is_empty() {
+                            None
+                        } else {
+                            Some(syringe_kind.get())
+                        },
+                        needleLength: if needle_length.get().trim().is_empty() {
+                            None
+                        } else {
+                            Some(needle_length.get())
+                        },
+                        needleGauge: if needle_gauge.get().trim().is_empty() {
+                            None
+                        } else {
+                            Some(needle_gauge.get())
+                        },
+                        nextDoseDate: parse_optional_datetime(&estrogen_next_date.get()),
+                    };
+                    data.injectableEstradiol = Some(schedule);
+                    data.oralEstradiol = None;
+                } else {
+                    let schedule = OralSchedule {
+                        kind: oral_from_label(&oral_type.get()),
+                        dose: parse_num(&estrogen_dose.get()),
+                        unit: parse_hormone_unit(&estrogen_unit.get()).unwrap_or(HormoneUnits::Mg),
+                        frequency: parse_num(&oral_frequency.get()).max(1.0),
+                        nextDoseDate: parse_optional_datetime(&estrogen_next_date.get()),
+                    };
+                    data.oralEstradiol = Some(schedule);
+                    data.injectableEstradiol = None;
+                }
+
+                if aa_type.get().trim().is_empty() {
+                    data.antiandrogen = None;
+                } else {
+                    let schedule = AntiandrogenSchedule {
+                        kind: antiandrogen_from_label(&aa_type.get()),
+                        dose: parse_num(&aa_dose.get()),
+                        unit: parse_hormone_unit(&aa_unit.get()).unwrap_or(HormoneUnits::Mg),
+                        frequency: parse_num(&aa_frequency.get()).max(1.0),
+                        nextDoseDate: parse_optional_datetime(&aa_next_date.get()),
+                    };
+                    data.antiandrogen = Some(schedule);
+                }
+
+                if prog_type.get().trim().is_empty() {
+                    data.progesterone = None;
+                } else {
+                    let schedule = ProgesteroneSchedule {
+                        kind: progesterone_from_label(&prog_type.get()),
+                        route: progesterone_route_from_label(&prog_route.get()),
+                        dose: parse_num(&prog_dose.get()),
+                        unit: parse_hormone_unit(&prog_unit.get()).unwrap_or(HormoneUnits::Mg),
+                        frequency: parse_num(&prog_frequency.get()).max(1.0),
+                        nextDoseDate: parse_optional_datetime(&prog_next_date.get()),
+                    };
+                    data.progesterone = Some(schedule);
+                }
+
+                backfill_scheduled_doses(data);
+            });
+
+            store.mark_dirty();
+            store.save();
+
+            schedule_feedback.set(true);
+            if let Some(existing) = feedback_timeout.borrow_mut().take() {
+                drop(existing);
+            }
+            let schedule_feedback = schedule_feedback.clone();
+            *feedback_timeout.borrow_mut() = Some(Timeout::new(3000, move || {
+                schedule_feedback.set(false);
+            }));
+        }
     };
 
     page_layout(
-        "Create Dosage",
+        "Set up / record dosage",
         view! {
-            <form on:submit=on_submit>
-                <label>"Date"</label>
-                <input
-                    type="date"
-                    on:input=move |ev| date_value.set(event_target_value(&ev))
-                    prop:value=move || date_value.get()
-                />
+            <div class="view-layout">
+                <div class="view-header">
+                    <div>
+                        <h2>"Set up / record dosage"</h2>
+                        <p class="muted">
+                            "Record one-off doses or configure recurring schedules."
+                        </p>
+                    </div>
+                    <div class="header-actions">
+                        <A href="/view">"View dosage history"</A>
+                    </div>
+                </div>
 
-                <label>"Medication type"</label>
-                <select
-                    on:change=move |ev| dosage_type.set(event_target_value(&ev))
-                    prop:value=move || dosage_type.get()
-                >
-                    <option value="injectableEstradiol">"Injectable Estradiol"</option>
-                    <option value="oralEstradiol">"Oral Estradiol"</option>
-                    <option value="antiandrogen">"Antiandrogen"</option>
-                    <option value="progesterone">"Progesterone"</option>
-                </select>
+                <form class="form-wide" on:submit=on_submit>
+                    <Show when=move || estrogen_method.get() == "injection">
+                        <section class="card">
+                            <h3>"Injection helper"</h3>
+                            <div class="calc-grid">
+                                <div class="calc-block">
+                                    <h4>"Dose and Concentration to Volume"</h4>
+                                    <div class="inline-equal">
+                                        <label>
+                                            "Dose (mg)"
+                                            <input
+                                                type="number"
+                                                step="any"
+                                                on:input=move |ev| inj_conv_dose_mg.set(event_target_value(&ev))
+                                                prop:value=move || inj_conv_dose_mg.get()
+                                            />
+                                        </label>
+                                        <label>
+                                            "Concentration (mg/mL)"
+                                            <input
+                                                type="number"
+                                                step="any"
+                                                on:input=move |ev| inj_conv_conc_mg_ml.set(event_target_value(&ev))
+                                                prop:value=move || inj_conv_conc_mg_ml.get()
+                                            />
+                                        </label>
+                                    </div>
+                                    <p class="muted">
+                                        "Volume = Dose ÷ Concentration = "
+                                        <strong>{move || fmt(inj_conv_vol_ml.get(), 3)}</strong>
+                                        " mL"
+                                        <Show when=move || inj_conv_vol_ml.get().is_finite()>
+                                            <span>
+                                                " (≈ "
+                                                <strong>{move || fmt_iu_from_ml(inj_conv_vol_ml.get())}</strong>
+                                                " IU)"
+                                            </span>
+                                        </Show>
+                                    </p>
+                                </div>
+                                <div class="calc-block">
+                                    <h4>"Volume and Concentration to Dose"</h4>
+                                    <div class="inline-equal">
+                                        <label>
+                                            "Volume (mL)"
+                                            <input
+                                                type="number"
+                                                step="any"
+                                                on:input=move |ev| inj_conv_vol2_ml.set(event_target_value(&ev))
+                                                prop:value=move || inj_conv_vol2_ml.get()
+                                            />
+                                        </label>
+                                        <label>
+                                            "Concentration (mg/mL)"
+                                            <input
+                                                type="number"
+                                                step="any"
+                                                on:input=move |ev| inj_conv_conc2_mg_ml.set(event_target_value(&ev))
+                                                prop:value=move || inj_conv_conc2_mg_ml.get()
+                                            />
+                                        </label>
+                                    </div>
+                                    <p class="muted">
+                                        "Dose = Volume × Concentration = "
+                                        <strong>{move || fmt(inj_conv_dose2_mg.get(), 3)}</strong>
+                                        " mg"
+                                    </p>
+                                </div>
+                            </div>
+                        </section>
+                    </Show>
 
-                <label>"Medication name"</label>
-                <input
-                    type="text"
-                    on:input=move |ev| medication_name.set(event_target_value(&ev))
-                    prop:value=move || medication_name.get()
-                />
+                    <section class="card">
+                        <h3>"Mode"</h3>
+                        <div class="option-group">
+                            <label class="toggle toggle-wide">
+                                <input
+                                    type="radio"
+                                    name="mode"
+                                    value="record"
+                                    on:change=move |_| mode.set("record".to_string())
+                                    prop:checked=move || mode.get() == "record"
+                                />
+                                <span class="toggle-track" aria-hidden="true"></span>
+                                <span class="toggle-label">"Record Dose"</span>
+                            </label>
+                            <label class="toggle toggle-wide">
+                                <input
+                                    type="radio"
+                                    name="mode"
+                                    value="schedule"
+                                    on:change=move |_| mode.set("schedule".to_string())
+                                    prop:checked=move || mode.get() == "schedule"
+                                />
+                                <span class="toggle-track" aria-hidden="true"></span>
+                                <span class="toggle-label">"Set Schedule"</span>
+                            </label>
+                        </div>
 
-                <label>"Dose"</label>
-                <input
-                    type="number"
-                    step="0.01"
-                    on:input=move |ev| dose_value.set(event_target_value(&ev))
-                    prop:value=move || dose_value.get()
-                />
+                        <Show when=move || mode.get() == "record">
+                            <label>
+                                "Date / time"
+                                <input
+                                    type="datetime-local"
+                                    on:input=move |ev| record_date_time.set(event_target_value(&ev))
+                                    prop:value=move || record_date_time.get()
+                                    required
+                                />
+                            </label>
+                        </Show>
+                    </section>
 
-                <label>"Unit"</label>
-                <select
-                    on:change=move |ev| unit_value.set(event_target_value(&ev))
-                    prop:value=move || unit_value.get()
-                >
-                    <option value="mg">"mg"</option>
-                </select>
+                    <section class="card">
+                        <h3>"Estrogen"</h3>
+                        <div class="option-group">
+                            <label class="toggle toggle-wide">
+                                <input
+                                    type="radio"
+                                    name="estrogen-method"
+                                    value="injection"
+                                    on:change=move |_| estrogen_method.set("injection".to_string())
+                                    prop:checked=move || estrogen_method.get() == "injection"
+                                />
+                                <span class="toggle-track" aria-hidden="true"></span>
+                                <span class="toggle-label">"Injection"</span>
+                            </label>
+                            <label class="toggle toggle-wide">
+                                <input
+                                    type="radio"
+                                    name="estrogen-method"
+                                    value="oral"
+                                    on:change=move |_| estrogen_method.set("oral".to_string())
+                                    prop:checked=move || estrogen_method.get() == "oral"
+                                />
+                                <span class="toggle-track" aria-hidden="true"></span>
+                                <span class="toggle-label">"Oral"</span>
+                            </label>
+                        </div>
 
-                <label>"Notes"</label>
-                <textarea
-                    rows="3"
-                    on:input=move |ev| note_value.set(event_target_value(&ev))
-                    prop:value=move || note_value.get()
-                ></textarea>
+                        <Show when=move || mode.get() == "record">
+                            <label class="toggle toggle-wide">
+                                <input
+                                    type="checkbox"
+                                    on:change=move |ev| record_estrogen.set(event_target_checked(&ev))
+                                    prop:checked=move || record_estrogen.get()
+                                />
+                                <span class="toggle-track" aria-hidden="true"></span>
+                                <span class="toggle-label">"Record Estrogen Dose"</span>
+                            </label>
+                        </Show>
 
-                <button type="submit">"Add Dose"</button>
-                <Show when=move || error.get().is_some()>
-                    <p class="error">{move || error.get().unwrap_or_default()}</p>
-                </Show>
-            </form>
+                        <Show when=move || mode.get() == "record" && record_estrogen.get()>
+                            <label>
+                                "Note (optional)"
+                                <textarea
+                                    rows="2"
+                                    on:input=move |ev| estrogen_note.set(event_target_value(&ev))
+                                    prop:value=move || estrogen_note.get()
+                                ></textarea>
+                            </label>
+                        </Show>
+
+                        <Show when=move || mode.get() == "record" && record_estrogen.get() && estrogen_method.get() == "injection">
+                            <label>
+                                "Injection site (optional)"
+                                <select
+                                    on:change=move |ev| injection_site.set(event_target_value(&ev))
+                                    prop:value=move || injection_site.get()
+                                >
+                                    <option value="">"Select injection site"</option>
+                                    <For
+                                        each=move || INJECTION_SITES.to_vec()
+                                        key=|site| injection_site_label(site).to_string()
+                                        children=move |site| {
+                                            let label = injection_site_label(&site).to_string();
+                                            view! { <option value=label.clone()>{label}</option> }
+                                        }
+                                    />
+                                </select>
+                            </label>
+                        </Show>
+
+                        <Show when=move || estrogen_method.get() == "injection">
+                            <label>
+                                "Vial (optional)"
+                                <div class="inline-equal">
+                                    <select
+                                        on:change=move |ev| selected_vial_id.set(event_target_value(&ev))
+                                        prop:value=move || selected_vial_id.get()
+                                    >
+                                        <option value="">"None"</option>
+                                        <For
+                                            each=move || {
+                                                store
+                                                    .data
+                                                    .get()
+                                                    .vials
+                                                    .into_iter()
+                                                    .filter(|v| !v.isSpent.unwrap_or(false) || v.id == selected_vial_id.get())
+                                                    .collect::<Vec<_>>()
+                                            }
+                                            key=|vial| vial.id.clone()
+                                            children=move |vial| {
+                                                let label = format!(
+                                                    "{} · {}{}",
+                                                    vial.esterKind.clone().unwrap_or_else(|| "Unknown ester".to_string()),
+                                                    vial.batchNumber.clone().unwrap_or_else(|| "batch ?".to_string()),
+                                                    vial.source
+                                                        .as_ref()
+                                                        .map(|source| format!(" · {}", source))
+                                                        .unwrap_or_default()
+                                                );
+                                                view! { <option value=vial.id.clone()>{label}</option> }
+                                            }
+                                        />
+                                    </select>
+                                    <A class="pill-button" href="/vials/create">"New..."</A>
+                                </div>
+                            </label>
+
+                            <Show when=move || !selected_vial_id.get().is_empty()>
+                                <label>
+                                    "Sub-vial / cartridge (optional)"
+                                    <select
+                                        on:change=move |ev| selected_sub_vial_id.set(event_target_value(&ev))
+                                        prop:value=move || selected_sub_vial_id.get()
+                                    >
+                                        <option value="">"None"</option>
+                                        <For
+                                            each=move || {
+                                                store
+                                                    .data
+                                                    .get()
+                                                    .vials
+                                                    .iter()
+                                                    .find(|v| v.id == selected_vial_id.get())
+                                                    .map(|v| v.subVials.clone())
+                                                    .unwrap_or_default()
+                                            }
+                                            key=|sub| sub.id.clone()
+                                            children=move |sub| {
+                                                let label = format!("#{}", sub.personalNumber);
+                                                view! { <option value=sub.id.clone()>{label}</option> }
+                                            }
+                                        />
+                                    </select>
+                                </label>
+                            </Show>
+
+                            <label>
+                                "Syringe kind (optional)"
+                                <select
+                                    on:change=move |ev| syringe_kind.set(event_target_value(&ev))
+                                    prop:value=move || syringe_kind.get()
+                                >
+                                    <option value="">"Select..."</option>
+                                    <For
+                                        each=move || SYRINGE_KINDS.to_vec()
+                                        key=|kind| syringe_kind_label(kind).to_string()
+                                        children=move |kind| {
+                                            let label = syringe_kind_label(&kind).to_string();
+                                            view! { <option value=label.clone()>{label}</option> }
+                                        }
+                                    />
+                                </select>
+                            </label>
+
+                            <label>
+                                "Needle length (optional)"
+                                <input
+                                    type="text"
+                                    placeholder="e.g., 4mm or 1\""
+                                    on:input=move |ev| needle_length.set(event_target_value(&ev))
+                                    prop:value=move || needle_length.get()
+                                />
+                            </label>
+                            <label>
+                                "Needle gauge (optional)"
+                                <input
+                                    type="text"
+                                    placeholder="e.g., 32g or 30G"
+                                    on:input=move |ev| needle_gauge.set(event_target_value(&ev))
+                                    prop:value=move || needle_gauge.get()
+                                />
+                            </label>
+                        </Show>
+
+                        <Show when=move || mode.get() == "record" && record_estrogen.get() && estrogen_method.get() == "oral">
+                            <label>
+                                "Pill quantity"
+                                <input
+                                    type="number"
+                                    min="1"
+                                    step="1"
+                                    on:input=move |ev| estrogen_pill_qty.set(event_target_value(&ev))
+                                    prop:value=move || estrogen_pill_qty.get()
+                                />
+                                <p class="muted">
+                                    "Total = "
+                                    <strong>{move || fmt(estrogen_pill_total.get(), 2)}</strong>
+                                    " mg"
+                                </p>
+                            </label>
+                        </Show>
+
+                        <Show when=move || mode.get() == "schedule">
+                            <label>
+                                "Next Dose Date"
+                                <input
+                                    type="datetime-local"
+                                    on:input=move |ev| estrogen_next_date.set(event_target_value(&ev))
+                                    prop:value=move || estrogen_next_date.get()
+                                />
+                            </label>
+                        </Show>
+
+                        <div class="calc-grid">
+                            <label>
+                                "Type"
+                                <select
+                                    on:change=move |ev| {
+                                        if estrogen_method.get() == "injection" {
+                                            injectable_type.set(event_target_value(&ev));
+                                        } else {
+                                            oral_type.set(event_target_value(&ev));
+                                        }
+                                    }
+                                    prop:value=move || {
+                                        if estrogen_method.get() == "injection" {
+                                            injectable_type.get()
+                                        } else {
+                                            oral_type.get()
+                                        }
+                                    }
+                                >
+                                    <For
+                                        each=move || {
+                                            if estrogen_method.get() == "injection" {
+                                                INJECTABLE_OPTIONS
+                                                    .iter()
+                                                    .map(|kind| injectable_label(kind).to_string())
+                                                    .collect::<Vec<_>>()
+                                            } else {
+                                                ORAL_OPTIONS
+                                                    .iter()
+                                                    .map(|kind| oral_label(kind).to_string())
+                                                    .collect::<Vec<_>>()
+                                            }
+                                        }
+                                        key=|label| label.clone()
+                                        children=move |label| {
+                                            view! { <option value=label.clone()>{label}</option> }
+                                        }
+                                    />
+                                </select>
+                            </label>
+
+                            <Show when=move || mode.get() == "schedule">
+                                <label>
+                                    "Frequency (days)"
+                                    <input
+                                        type="number"
+                                        step="1"
+                                        on:input=move |ev| {
+                                            if estrogen_method.get() == "injection" {
+                                                injection_frequency.set(event_target_value(&ev));
+                                            } else {
+                                                oral_frequency.set(event_target_value(&ev));
+                                            }
+                                        }
+                                        prop:value=move || {
+                                            if estrogen_method.get() == "injection" {
+                                                injection_frequency.get()
+                                            } else {
+                                                oral_frequency.get()
+                                            }
+                                        }
+                                    />
+                                </label>
+                            </Show>
+
+                            <label>
+                                "Dose"
+                                <input
+                                    type="number"
+                                    step="any"
+                                    on:input=move |ev| estrogen_dose.set(event_target_value(&ev))
+                                    prop:value=move || estrogen_dose.get()
+                                />
+                            </label>
+
+                            <label>
+                                "Unit"
+                                <select
+                                    on:change=move |ev| estrogen_unit.set(event_target_value(&ev))
+                                    prop:value=move || estrogen_unit.get()
+                                >
+                                    <For
+                                        each=move || hormone_unit_labels()
+                                        key=|label| label.clone()
+                                        children=move |label| view! { <option value=label.clone()>{label}</option> }
+                                    />
+                                </select>
+                            </label>
+                        </div>
+                    </section>
+
+                    <section class="card">
+                        <h3>"Antiandrogen"</h3>
+                        <Show when=move || mode.get() == "record">
+                            <label class="toggle toggle-wide">
+                                <input
+                                    type="checkbox"
+                                    on:change=move |ev| record_aa.set(event_target_checked(&ev))
+                                    prop:checked=move || record_aa.get()
+                                />
+                                <span class="toggle-track" aria-hidden="true"></span>
+                                <span class="toggle-label">"Record Antiandrogen Dose"</span>
+                            </label>
+                            <Show when=move || record_aa.get()>
+                                <label>
+                                    "Note (optional)"
+                                    <textarea
+                                        rows="2"
+                                        on:input=move |ev| aa_note.set(event_target_value(&ev))
+                                        prop:value=move || aa_note.get()
+                                    ></textarea>
+                                </label>
+                            </Show>
+                        </Show>
+
+                        <Show when=move || mode.get() == "schedule" && !aa_type.get().is_empty()>
+                            <label>
+                                "Next Dose Date"
+                                <input
+                                    type="datetime-local"
+                                    on:input=move |ev| aa_next_date.set(event_target_value(&ev))
+                                    prop:value=move || aa_next_date.get()
+                                />
+                            </label>
+                        </Show>
+
+                        <div class="calc-grid">
+                            <label>
+                                "Type"
+                                <select
+                                    on:change=move |ev| aa_type.set(event_target_value(&ev))
+                                    prop:value=move || aa_type.get()
+                                >
+                                    <option value="">"None"</option>
+                                    <For
+                                        each=move || {
+                                            ANTIANDROGEN_OPTIONS
+                                                .iter()
+                                                .map(|kind| antiandrogen_label(kind).to_string())
+                                                .collect::<Vec<_>>()
+                                        }
+                                        key=|label| label.clone()
+                                        children=move |label| view! { <option value=label.clone()>{label}</option> }
+                                    />
+                                </select>
+                            </label>
+
+                            <Show when=move || mode.get() == "schedule" && !aa_type.get().is_empty()>
+                                <label>
+                                    "Frequency (days)"
+                                    <input
+                                        type="number"
+                                        step="1"
+                                        on:input=move |ev| aa_frequency.set(event_target_value(&ev))
+                                        prop:value=move || aa_frequency.get()
+                                    />
+                                </label>
+                            </Show>
+
+                            <Show when=move || !aa_type.get().is_empty()>
+                                <label>
+                                    "Dose"
+                                    <input
+                                        type="number"
+                                        step="any"
+                                        on:input=move |ev| aa_dose.set(event_target_value(&ev))
+                                        prop:value=move || aa_dose.get()
+                                    />
+                                </label>
+                                <label>
+                                    "Unit"
+                                    <select
+                                        on:change=move |ev| aa_unit.set(event_target_value(&ev))
+                                        prop:value=move || aa_unit.get()
+                                    >
+                                        <For
+                                            each=move || hormone_unit_labels()
+                                            key=|label| label.clone()
+                                            children=move |label| view! { <option value=label.clone()>{label}</option> }
+                                        />
+                                    </select>
+                                </label>
+                            </Show>
+                        </div>
+                    </section>
+
+                    <section class="card">
+                        <h3>"Progesterone"</h3>
+                        <Show when=move || mode.get() == "record">
+                            <label class="toggle toggle-wide">
+                                <input
+                                    type="checkbox"
+                                    on:change=move |ev| record_prog.set(event_target_checked(&ev))
+                                    prop:checked=move || record_prog.get()
+                                />
+                                <span class="toggle-track" aria-hidden="true"></span>
+                                <span class="toggle-label">"Record Progesterone Dose"</span>
+                            </label>
+                            <Show when=move || record_prog.get()>
+                                <label>
+                                    "Note (optional)"
+                                    <textarea
+                                        rows="2"
+                                        on:input=move |ev| prog_note.set(event_target_value(&ev))
+                                        prop:value=move || prog_note.get()
+                                    ></textarea>
+                                </label>
+                                <label>
+                                    "Pill quantity"
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        step="1"
+                                        on:input=move |ev| prog_pill_qty.set(event_target_value(&ev))
+                                        prop:value=move || prog_pill_qty.get()
+                                    />
+                                    <p class="muted">
+                                        "Total = "
+                                        <strong>{move || fmt(prog_pill_total.get(), 2)}</strong>
+                                        " mg"
+                                    </p>
+                                </label>
+                            </Show>
+                        </Show>
+
+                        <Show when=move || mode.get() == "schedule" && !prog_type.get().is_empty()>
+                            <label>
+                                "Next Dose Date"
+                                <input
+                                    type="datetime-local"
+                                    on:input=move |ev| prog_next_date.set(event_target_value(&ev))
+                                    prop:value=move || prog_next_date.get()
+                                />
+                            </label>
+                        </Show>
+
+                        <div class="calc-grid">
+                            <label>
+                                "Type"
+                                <select
+                                    on:change=move |ev| prog_type.set(event_target_value(&ev))
+                                    prop:value=move || prog_type.get()
+                                >
+                                    <option value="">"None"</option>
+                                    <For
+                                        each=move || {
+                                            PROGESTERONE_OPTIONS
+                                                .iter()
+                                                .map(|kind| progesterone_label(kind).to_string())
+                                                .collect::<Vec<_>>()
+                                        }
+                                        key=|label| label.clone()
+                                        children=move |label| view! { <option value=label.clone()>{label}</option> }
+                                    />
+                                </select>
+                            </label>
+
+                            <Show when=move || !prog_type.get().is_empty()>
+                                <Show when=move || mode.get() == "schedule">
+                                    <label>
+                                        "Frequency (days)"
+                                        <input
+                                            type="number"
+                                            step="1"
+                                            on:input=move |ev| prog_frequency.set(event_target_value(&ev))
+                                            prop:value=move || prog_frequency.get()
+                                        />
+                                    </label>
+                                </Show>
+                                <label>
+                                    "Dose"
+                                    <input
+                                        type="number"
+                                        step="any"
+                                        on:input=move |ev| prog_dose.set(event_target_value(&ev))
+                                        prop:value=move || prog_dose.get()
+                                    />
+                                </label>
+                                <label>
+                                    "Unit"
+                                    <select
+                                        on:change=move |ev| prog_unit.set(event_target_value(&ev))
+                                        prop:value=move || prog_unit.get()
+                                    >
+                                        <For
+                                            each=move || hormone_unit_labels()
+                                            key=|label| label.clone()
+                                            children=move |label| view! { <option value=label.clone()>{label}</option> }
+                                        />
+                                    </select>
+                                </label>
+                                <label>
+                                    "Route"
+                                    <select
+                                        on:change=move |ev| prog_route.set(event_target_value(&ev))
+                                        prop:value=move || prog_route.get()
+                                    >
+                                        <For
+                                            each=move || {
+                                                PROGESTERONE_ROUTE_OPTIONS
+                                                    .iter()
+                                                    .map(|route| progesterone_route_label(route).to_string())
+                                                    .collect::<Vec<_>>()
+                                            }
+                                            key=|label| label.clone()
+                                            children=move |label| view! { <option value=label.clone()>{label}</option> }
+                                        />
+                                    </select>
+                                </label>
+                            </Show>
+                        </div>
+                    </section>
+
+                    <div class="form-actions">
+                        <button type="submit">
+                            {move || if mode.get() == "record" { "Record dosage" } else { "Save schedule" }}
+                        </button>
+                        <Show when=move || schedule_feedback.get()>
+                            <p class="muted">"Schedule saved!"</p>
+                        </Show>
+                    </div>
+                </form>
+            </div>
         }
         .into_view(),
     )

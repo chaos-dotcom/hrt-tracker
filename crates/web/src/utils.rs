@@ -27,6 +27,11 @@ pub fn parse_hormone_unit(value: &str) -> Option<HormoneUnits> {
         "pmol/L" => Some(HormoneUnits::E2PmolL),
         "ng/dL" => Some(HormoneUnits::TNgDl),
         "nmol/L" => Some(HormoneUnits::TNmolL),
+        "mg" => Some(HormoneUnits::Mg),
+        "ng/mL" => Some(HormoneUnits::NgMl),
+        "mIU/mL" => Some(HormoneUnits::MIuMl),
+        "mIU/L" => Some(HormoneUnits::MIuL),
+        "U/L" => Some(HormoneUnits::UL),
         _ => None,
     }
 }
