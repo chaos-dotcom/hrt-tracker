@@ -25,8 +25,8 @@ COPY ./entrypoint.sh ./
 RUN cargo build -p hrt-server -p hrt-shared --release
 RUN cargo leptos build --release
 
-ENV HRT_WEB_ADDR=0.0.0.0:4100
-ENV HRT_SERVER_ADDR=0.0.0.0:4200
+ENV HRT_WEB_ADDR=localhost:4100
+ENV HRT_SERVER_ADDR=localhost:4200
 
 EXPOSE 4100 4200
 RUN chmod +x ./entrypoint.sh
