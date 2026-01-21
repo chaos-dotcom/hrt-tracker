@@ -21,8 +21,9 @@ COPY crates ./crates
 COPY static ./static
 COPY ./entrypoint.sh ./
 
+
+RUN cargo build -p hrt-server -p hrt-shared --release
 RUN cargo leptos build --release
-RUN cargo build -p hrt-web -p hrt-server -p hrt-shared --release
 
 ENV HRT_WEB_ADDR=0.0.0.0:4100
 ENV HRT_SERVER_ADDR=0.0.0.0:4200
@@ -30,5 +31,3 @@ ENV HRT_SERVER_ADDR=0.0.0.0:4200
 EXPOSE 4100 4200
 RUN chmod +x ./entrypoint.sh
 ENTRYPOINT ["./entrypoint.sh"]
-
-CMD ["cargo run -p hrt-server --release & cargo leptos serve --release"]
