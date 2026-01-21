@@ -154,39 +154,43 @@ pub fn BackupPage() -> impl IntoView {
                     </div>
                 </div>
 
-                <div class="card-grid">
+                <div class="settings-stack">
                     <div class="card">
                         <h3>"Settings"</h3>
-                        <label>
-                            <input
-                                type="checkbox"
-                                on:change={
-                                    let store = store.clone();
-                                    move |ev| {
-                                        let enabled = event_target_checked(&ev);
-                                        store.settings.update(|s| s.enableAutoBackfill = enabled);
-                                        store.mark_dirty();
+                        <div class="settings-toggles">
+                            <label class="toggle toggle-wide">
+                                <input
+                                    type="checkbox"
+                                    on:change={
+                                        let store = store.clone();
+                                        move |ev| {
+                                            let enabled = event_target_checked(&ev);
+                                            store.settings.update(|s| s.enableAutoBackfill = enabled);
+                                            store.mark_dirty();
+                                        }
                                     }
-                                }
-                                prop:checked=move || auto_backfill()
-                            />
-                            " Enable auto backfill"
-                        </label>
-                        <label>
-                            <input
-                                type="checkbox"
-                                on:change={
-                                    let store = store.clone();
-                                    move |ev| {
-                                        let enabled = event_target_checked(&ev);
-                                        store.settings.update(|s| s.enableBloodTestSchedule = Some(enabled));
-                                        store.mark_dirty();
+                                    prop:checked=move || auto_backfill()
+                                />
+                                <span class="toggle-track" aria-hidden="true"></span>
+                                <span class="toggle-label">"Enable auto backfill"</span>
+                            </label>
+                            <label class="toggle toggle-wide">
+                                <input
+                                    type="checkbox"
+                                    on:change={
+                                        let store = store.clone();
+                                        move |ev| {
+                                            let enabled = event_target_checked(&ev);
+                                            store.settings.update(|s| s.enableBloodTestSchedule = Some(enabled));
+                                            store.mark_dirty();
+                                        }
                                     }
-                                }
-                                prop:checked=move || store.settings.get().enableBloodTestSchedule.unwrap_or(false)
-                            />
-                            " Enable blood test schedule"
-                        </label>
+                                    prop:checked=move || store.settings.get().enableBloodTestSchedule.unwrap_or(false)
+                                />
+                                <span class="toggle-track" aria-hidden="true"></span>
+                                <span class="toggle-label">"Enable blood test schedule"</span>
+                            </label>
+                        </div>
                         <label>"Blood test interval (months)"</label>
                         <input
                             type="number"
@@ -302,7 +306,13 @@ pub fn BackupPage() -> impl IntoView {
                     <div class="card">
                         <h3>"Restore"</h3>
                         <p class="muted">"Restore from a JSON backup file (overwrites current data)."</p>
-                        <input id="restore-file" type="file" accept=".json" on:change=on_restore />
+                        <input
+                            id="restore-file"
+                            class="file-input"
+                            type="file"
+                            accept=".json"
+                            on:change=on_restore
+                        />
                     </div>
                 </div>
             </div>
