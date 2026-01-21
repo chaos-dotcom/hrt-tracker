@@ -499,6 +499,58 @@ body {
   margin-top: 12px;
 }
 
+.note-form {
+  display: grid;
+  gap: 12px;
+}
+
+.note-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.note-items {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.note-item {
+  background: rgba(18, 18, 30, 0.7);
+  border-radius: 14px;
+  padding: 12px 14px;
+  border: 1px solid rgba(243, 154, 181, 0.18);
+}
+
+.note-display {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.note-edit {
+  display: grid;
+  gap: 10px;
+}
+
+.note-date {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.note-title {
+  font-weight: 700;
+  margin-top: 4px;
+}
+
+.note-content {
+  margin-top: 6px;
+  white-space: pre-wrap;
+}
+
 .note-card {
   background: rgba(35, 36, 58, 0.8);
   border: 1px solid rgba(243, 154, 181, 0.25);
@@ -522,6 +574,50 @@ body {
 .history-list {
   display: grid;
   gap: 12px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.history-scroll {
+  max-height: 420px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.history-item {
+  background: rgba(18, 18, 30, 0.7);
+  border-radius: 14px;
+  padding: 12px 14px;
+  border: 1px solid rgba(243, 154, 181, 0.18);
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.history-date {
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.history-meta {
+  display: grid;
+  gap: 4px;
+}
+
+.history-submeta {
+  margin-top: 6px;
+  font-size: 0.85rem;
+  color: var(--muted);
+  display: grid;
+  gap: 4px;
+}
+
+.history-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: flex-start;
 }
 
 .history-card {
@@ -786,6 +882,16 @@ section section {
   align-items: start;
 }
 
+.measurement-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.hidden-input {
+  display: none;
+}
+
 .calc-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -962,6 +1068,20 @@ section section {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+@media (max-width: 720px) {
+  .note-row {
+    grid-template-columns: 1fr;
+  }
+
+  .history-item {
+    flex-direction: column;
+  }
+
+  .history-actions {
+    justify-content: flex-start;
   }
 }
 
