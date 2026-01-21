@@ -39,9 +39,5 @@ To run this project locally, you'll need Node.js and npm (or bun) installed.
 4.  Open your browser and navigate to `http://localhost:5173`.
 
 ## Tech Stack
-
--   SvelteKit
--   Tailwind CSS
--   Vite
--   TypeScript
--   Observable Plot for charting
+- RUST
+- ESOTERIC RUST SHIT for WASM reasons
