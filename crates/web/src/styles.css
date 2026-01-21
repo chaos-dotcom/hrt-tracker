@@ -404,6 +404,14 @@ body {
   gap: 18px;
 }
 
+.view-layout + .card {
+  margin-top: 14px;
+}
+
+.card + .view-history-grid {
+  margin-top: 14px;
+}
+
 .view-chart-controls {
   display: flex;
   flex-direction: column;
@@ -980,7 +988,7 @@ section section {
   border-radius: 18px;
   padding: 20px;
   width: min(420px, 92vw);
-    box-shadow: 0 22px 45px rgba(8, 6, 16, 0.6);
+  box-shadow: 0 22px 45px rgba(8, 6, 16, 0.6);
 }
 
 .photo-grid {
