@@ -25,9 +25,12 @@ COPY ./entrypoint.sh ./
 RUN cargo build -p hrt-server -p hrt-shared --release
 RUN cargo leptos build --release
 
-ENV HRT_WEB_ADDR=localhost:4100
-ENV HRT_SERVER_ADDR=localhost:4200
+# Environment variables will be set via docker-compose.yml
+# These are defaults for development
+ENV HRT_WEB_ADDR=0.0.0.0:4100
+ENV HRT_SERVER_ADDR=127.0.0.1:4200
+ENV HRT_ALLOWED_ORIGINS=https://hrt.example.com,http://127.0.0.1:4100
 
-EXPOSE 4100 4200
+EXPOSE 4100
 RUN chmod +x ./entrypoint.sh
 ENTRYPOINT ["./entrypoint.sh"]

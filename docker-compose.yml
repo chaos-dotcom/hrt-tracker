@@ -3,11 +3,13 @@ services:
     build: .
     image: ghcr.io/chaos-dotcom/hrt-tracker:latest
     ports:
-      - "4100:4100"
-      - "4200:4200"
+      - "4100:4100"  # Only expose frontend port
+    env_file:
+      - .env  # Load environment variables from .env file
     environment:
-      HRT_WEB_ADDR: 0.0.0.0:4100
-      HRT_SERVER_ADDR: 0.0.0.0:4200
+      HRT_WEB_ADDR: ${HRT_WEB_ADDR:-0.0.0.0:4100}
+      HRT_SERVER_ADDR: ${HRT_SERVER_ADDR:-127.0.0.1:4200}
+      HRT_ALLOWED_ORIGINS: ${HRT_ALLOWED_ORIGINS:-https://hrt.example.com,http://127.0.0.1:4100}
     volumes:
       - ./data:/app/data
     restart: unless-stopped
