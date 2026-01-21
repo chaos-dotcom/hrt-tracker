@@ -1,8 +1,13 @@
 services:
   hrt-tracker:
+    build: .
     image: ghcr.io/chaos-dotcom/hrt-tracker:latest
     ports:
-      - "1109:3000"
+      - "4100:4100"
+      - "4200:4200"
+    environment:
+      HRT_WEB_ADDR: 0.0.0.0:4100
+      HRT_SERVER_ADDR: 0.0.0.0:4200
     volumes:
       - ./data:/app/data
     restart: unless-stopped

@@ -1,27 +1,30 @@
 # Git
 .git
-.gitignore
+.github
 
-# Docker
-Dockerfile
-docker-compose.yml
+# OS/editor
+.DS_Store
 
-# Node
+# Rust build output
+target
+**/target
+
+# Node/Svelte artifacts
 node_modules
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+.svelte-kit
+build
+dist
+
+# Runtime data
+data
+
+# Logs
 *.log
 
-# SvelteKit build artifacts
-.svelte-kit
-build/
-
-# Data file (mounted as volume)
-hrt-data.json
-hrt-settings.yaml
-
-# Environment variables
+# Env files
 .env
 .env.*
 !.env.example
+
+# Legacy JS build
+e.js
