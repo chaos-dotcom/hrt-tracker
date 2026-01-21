@@ -16,6 +16,7 @@ RUN cargo install cargo-leptos --locked
 RUN cargo install wasm-bindgen-cli --locked
 
 COPY Cargo.toml Cargo.lock ./
+COPY crates/web/index.html crates/web/index.html
 COPY crates/shared/Cargo.toml crates/shared/Cargo.toml
 COPY crates/server/Cargo.toml crates/server/Cargo.toml
 COPY crates/web/Cargo.toml crates/web/Cargo.toml
