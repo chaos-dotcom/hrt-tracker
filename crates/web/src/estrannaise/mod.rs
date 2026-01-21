@@ -154,6 +154,11 @@ pub fn compute_estrannaise_series(
     all_doses.sort_by_key(|(date, _, _)| *date);
 
     let series = extract_fudge_series(&data.bloodTests);
+    let base_step_entry = if series.len() > 1 {
+        series[series.len() - 2]
+    } else {
+        series[series.len() - 1]
+    };
     let step_ms = 6 * 60 * 60 * 1000;
     let mut blended = Vec::new();
     let mut stepped = Vec::new();
@@ -175,7 +180,11 @@ pub fn compute_estrannaise_series(
         while t <= forecast_end {
             let day_value = (t - start_date) as f64 / (24.0 * 60.0 * 60.0 * 1000.0);
             let blended_fudge = blend_fudge(&series, t);
-            let step_fudge = step_fudge(&series, t);
+            let step_fudge = if t >= base_step_entry.0 {
+                base_step_entry.1
+            } else {
+                step_fudge(&series, t)
+            };
             let blended_val = e2_multidose_3c(
                 day_value,
                 &dose_map,
@@ -282,6 +291,16 @@ pub fn compute_estrannaise_series(
         stepped,
         blood,
         forecast,
+        step_split_x: if forecast_enabled {
+            let split_date = base_step_entry.0;
+            Some(if axis_mode == "days" {
+                (split_date - start_date) as f64 / (24.0 * 60.0 * 60.0 * 1000.0)
+            } else {
+                split_date as f64
+            })
+        } else {
+            None
+        },
         domain_min,
         domain_max,
         y_min,

@@ -648,7 +648,7 @@ pub fn StatsPage() -> impl IntoView {
                             <h3>"Syringe Breakdown"</h3>
                             <p class="muted">"Enable to see needle and wastage details by syringe kind."</p>
                         </div>
-                        <label class="muted">
+                        <label class="toggle">
                             <input
                                 type="checkbox"
                                 on:change={
@@ -662,7 +662,8 @@ pub fn StatsPage() -> impl IntoView {
                                 }
                                 prop:checked=stats_breakdown
                             />
-                            " Break down by syringe kind"
+                            <span class="toggle-track" aria-hidden="true"></span>
+                            <span class="toggle-label">"Break down by syringe kind"</span>
                         </label>
                     </div>
                     <Show when=move || stats_breakdown()>
