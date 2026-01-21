@@ -15,18 +15,7 @@ RUN rustup target add wasm32-unknown-unknown
 RUN cargo install cargo-leptos --locked
 RUN cargo install wasm-bindgen-cli --locked
 
-COPY Cargo.toml Cargo.lock ./
-COPY crates/web/index.html crates/web/index.html
-COPY crates/shared/Cargo.toml crates/shared/Cargo.toml
-COPY crates/server/Cargo.toml crates/server/Cargo.toml
-COPY crates/web/Cargo.toml crates/web/Cargo.toml
-COPY cargo-leptos.toml ./cargo-leptos.toml
-
-# Create empty src files so cargo fetch can see the targets
-RUN mkdir -p crates/shared/src crates/server/src crates/web/src
-RUN touch crates/shared/src/lib.rs crates/server/src/lib.rs crates/server/src/main.rs crates/web/src/lib.rs
-
-RUN cargo fetch
+COPY crates crates
 
 COPY . .
 
