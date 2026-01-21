@@ -206,6 +206,7 @@ export interface Settings {
   bloodTestIntervalMonths?: number;
   statsBreakdownBySyringeKind?: boolean; // ADDED
   displayEstradiolUnit?: HormoneUnits; // ADDED
+  braSizeSystem?: string;
 }
 export interface HRTData {
   injectableEstradiol?: {

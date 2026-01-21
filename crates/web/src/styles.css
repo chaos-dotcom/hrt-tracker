@@ -1046,6 +1046,68 @@ section section {
   gap: 12px;
 }
 
+.form-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.form-section-header select {
+  min-width: 90px;
+}
+
+.bra-result {
+  border: 1px solid rgba(243, 154, 181, 0.2);
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: rgba(18, 18, 30, 0.6);
+  display: grid;
+  gap: 10px;
+}
+
+.bra-result-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.bra-result-main {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.bra-result-size {
+  font-size: 1.35rem;
+  font-weight: 700;
+}
+
+.bra-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.bra-table th,
+.bra-table td {
+  text-align: left;
+  padding: 4px 6px;
+  border-bottom: 1px solid rgba(243, 154, 181, 0.15);
+}
+
+.bra-table th {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.bra-table tr:last-child td {
+  border-bottom: none;
+}
+
 .form-actions {
   display: flex;
   justify-content: space-between;
