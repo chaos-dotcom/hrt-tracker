@@ -381,7 +381,7 @@ pub fn find_nearest_point(
         let dx = px - cursor_x;
         let dy = py - cursor_y;
         let dist = (dx * dx + dy * dy).sqrt();
-        if dist < 18.0 {
+        if dist < 48.0 {
             match best {
                 Some((best_dist, _, _, _)) if dist >= best_dist => {}
                 _ => best = Some((dist, point, px, py)),
@@ -432,15 +432,37 @@ pub fn draw_view_chart(canvas_id: &str, state: &ViewChartState, zoom: ViewZoom) 
         Err(_) => return,
     };
 
+    let label_style = ("Quicksand", 24)
+        .into_font()
+        .color(&RGBColor(200, 188, 214));
+    let axis_desc_style = ("Quicksand", 24)
+        .into_font()
+        .color(&RGBColor(200, 188, 214));
+    let bold_grid = ShapeStyle::from(&RGBColor(64, 58, 86)).stroke_width(1);
+    let light_grid = ShapeStyle::from(&RGBColor(42, 38, 60)).stroke_width(1);
+    let use_days = state.use_days;
+    let x_label_formatter = move |value: &f64| {
+        if use_days {
+            format!("Day {}", value.round() as i64)
+        } else {
+            Local
+                .timestamp_millis_opt(*value as i64)
+                .single()
+                .map(|d| d.format("%Y-%m-%d").to_string())
+                .unwrap_or_else(|| format!("{:.0}", value))
+        }
+    };
+
     chart
         .configure_mesh()
-        .disable_mesh()
-        .label_style(
-            ("Quicksand", 14)
-                .into_font()
-                .color(&RGBColor(180, 167, 198)),
-        )
-        .axis_style(&RGBColor(80, 70, 100))
+        .x_labels(6)
+        .y_labels(6)
+        .x_label_formatter(&x_label_formatter)
+        .label_style(label_style)
+        .axis_desc_style(axis_desc_style)
+        .axis_style(&RGBColor(96, 86, 120))
+        .bold_line_style(bold_grid)
+        .light_line_style(light_grid)
         .x_desc(state.x_label.clone())
         .y_desc(state.y_label.clone())
         .draw()
@@ -463,7 +485,7 @@ pub fn draw_view_chart(canvas_id: &str, state: &ViewChartState, zoom: ViewZoom) 
         chart
             .draw_series(std::iter::once(Circle::new(
                 (point.x, point.y),
-                4,
+                10,
                 point.color.filled(),
             )))
             .ok();
@@ -473,7 +495,7 @@ pub fn draw_view_chart(canvas_id: &str, state: &ViewChartState, zoom: ViewZoom) 
         chart
             .draw_series(std::iter::once(TriangleMarker::new(
                 (point.x, point.y),
-                6,
+                16,
                 point.color.filled(),
             )))
             .ok();

@@ -21,7 +21,17 @@ use hrt_shared::types::DosageHistoryEntry;
 pub fn ViewPage() -> impl IntoView {
     let store = use_store();
     let data = store.data;
-    let rows = move || data.get().dosageHistory.clone();
+    let entry_date = |entry: &DosageHistoryEntry| match entry {
+        DosageHistoryEntry::InjectableEstradiol { date, .. }
+        | DosageHistoryEntry::OralEstradiol { date, .. }
+        | DosageHistoryEntry::Antiandrogen { date, .. }
+        | DosageHistoryEntry::Progesterone { date, .. } => *date,
+    };
+    let rows = move || {
+        let mut entries = data.get().dosageHistory.clone();
+        entries.sort_by(|a, b| entry_date(b).cmp(&entry_date(a)));
+        entries
+    };
     let blood_rows = move || data.get().bloodTests.clone();
     let measurement_rows = move || data.get().measurements.clone();
     let editing_key = create_rw_signal(None::<String>);
@@ -81,6 +91,14 @@ pub fn ViewPage() -> impl IntoView {
                 show_shbg.get(),
                 show_fai.get(),
             )
+        }
+    });
+
+    create_effect({
+        let view_zoom = view_zoom;
+        move |_| {
+            x_axis_mode.get();
+            view_zoom.set(ViewZoom::default());
         }
     });
 

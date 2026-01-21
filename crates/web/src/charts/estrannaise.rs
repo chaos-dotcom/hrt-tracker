@@ -1,4 +1,6 @@
 use leptos::window;
+use chrono::{Local, TimeZone};
+use plotters::element::DashedPathElement;
 use plotters::prelude::*;
 use plotters_canvas::CanvasBackend;
 use wasm_bindgen::JsCast;
@@ -22,6 +24,7 @@ pub struct EstrannaiseSeries {
     pub stepped: Vec<EstrannaisePoint>,
     pub blood: Vec<EstrannaisePoint>,
     pub forecast: Option<(f64, f64)>,
+    pub step_split_x: Option<f64>,
     pub domain_min: f64,
     pub domain_max: f64,
     pub y_min: f64,
@@ -95,23 +98,45 @@ pub fn draw_estrannaise_chart(canvas_id: &str, series: &EstrannaiseSeries, zoom:
     let x_max = zoom.x_max.unwrap_or(series.domain_max);
     let mut chart = match ChartBuilder::on(&backend)
         .margin(CHART_MARGIN as i32)
-        .x_label_area_size(CHART_X_LABEL as i32)
-        .y_label_area_size(CHART_Y_LABEL as i32)
+        .x_label_area_size((CHART_X_LABEL * 1.1) as i32)
+        .y_label_area_size((CHART_Y_LABEL * 1.1) as i32)
         .build_cartesian_2d(x_min..x_max, series.y_min..series.y_max)
     {
         Ok(chart) => chart,
         Err(_) => return,
     };
 
+    let label_style = ("Quicksand", 24)
+        .into_font()
+        .color(&RGBColor(200, 188, 214));
+    let axis_desc_style = ("Quicksand", 24)
+        .into_font()
+        .color(&RGBColor(200, 188, 214));
+    let bold_grid = ShapeStyle::from(&RGBColor(64, 58, 86)).stroke_width(1);
+    let light_grid = ShapeStyle::from(&RGBColor(42, 38, 60)).stroke_width(1);
+    let use_days = series.use_days;
+    let x_label_formatter = move |value: &f64| {
+        if use_days {
+            format!("Day {}", value.round() as i64)
+        } else {
+            Local
+                .timestamp_millis_opt(*value as i64)
+                .single()
+                .map(|d| d.format("%Y-%m-%d").to_string())
+                .unwrap_or_else(|| format!("{:.0}", value))
+        }
+    };
+
     chart
         .configure_mesh()
-        .disable_mesh()
-        .label_style(
-            ("Quicksand", 14)
-                .into_font()
-                .color(&RGBColor(180, 167, 198)),
-        )
-        .axis_style(&RGBColor(80, 70, 100))
+        .x_labels(6)
+        .y_labels(6)
+        .x_label_formatter(&x_label_formatter)
+        .label_style(label_style)
+        .axis_desc_style(axis_desc_style)
+        .axis_style(&RGBColor(96, 86, 120))
+        .bold_line_style(bold_grid)
+        .light_line_style(light_grid)
         .x_desc(series.x_label.clone())
         .y_desc(series.y_label.clone())
         .draw()
@@ -127,16 +152,79 @@ pub fn draw_estrannaise_chart(canvas_id: &str, series: &EstrannaiseSeries, zoom:
     }
 
     if !series.blended.is_empty() {
-        let line = series.blended.iter().map(|p| (p.x, p.y));
-        chart
-            .draw_series(LineSeries::new(line, &RGBColor(46, 134, 171)))
-            .ok();
+        let blended_style = ShapeStyle::from(&RGBColor(46, 134, 171)).stroke_width(2);
+        if let Some((split_x, _)) = series.forecast {
+            let mut historical = Vec::new();
+            let mut forecast = Vec::new();
+            for point in &series.blended {
+                if point.x < split_x {
+                    historical.push((point.x, point.y));
+                } else {
+                    forecast.push((point.x, point.y));
+                }
+            }
+            if historical.len() > 1 {
+                chart
+                    .draw_series(LineSeries::new(historical, blended_style))
+                    .ok();
+            }
+            if forecast.len() > 1 {
+                chart
+                    .draw_series(LineSeries::new(forecast, blended_style))
+                    .ok();
+            }
+        } else {
+            let line = series.blended.iter().map(|p| (p.x, p.y));
+            chart
+                .draw_series(LineSeries::new(line, blended_style))
+                .ok();
+        }
     }
     if !series.stepped.is_empty() {
-        let line = series.stepped.iter().map(|p| (p.x, p.y));
-        chart
-            .draw_series(LineSeries::new(line, &RGBColor(162, 59, 114)))
-            .ok();
+        let step_style = ShapeStyle::from(&RGBColor(162, 59, 114)).stroke_width(2);
+        if let Some(split_x) = series.step_split_x {
+            let mut historical = Vec::new();
+            let mut forecast = Vec::new();
+            for point in &series.stepped {
+                if point.x < split_x {
+                    historical.push((point.x, point.y));
+                } else {
+                    forecast.push((point.x, point.y));
+                }
+            }
+            if historical.len() > 1 {
+                chart
+                    .draw_series(std::iter::once(DashedPathElement::new(
+                        historical,
+                        6,
+                        4,
+                        step_style,
+                    )))
+                    .ok();
+            }
+            if forecast.len() > 1 {
+                chart
+                    .draw_series(std::iter::once(DashedPathElement::new(
+                        forecast,
+                        2,
+                        6,
+                        step_style,
+                    )))
+                    .ok();
+            }
+        } else {
+            let line = series.stepped.iter().map(|p| (p.x, p.y)).collect::<Vec<_>>();
+            if line.len() > 1 {
+                chart
+                    .draw_series(std::iter::once(DashedPathElement::new(
+                        line,
+                        6,
+                        4,
+                        step_style,
+                    )))
+                    .ok();
+            }
+        }
     }
     for point in &series.blood {
         chart

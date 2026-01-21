@@ -19,8 +19,8 @@ pub struct DragState {
 }
 
 pub(crate) const CHART_MARGIN: f64 = 18.0;
-pub(crate) const CHART_X_LABEL: f64 = 42.0;
-pub(crate) const CHART_Y_LABEL: f64 = 52.0;
+pub(crate) const CHART_X_LABEL: f64 = 84.0;
+pub(crate) const CHART_Y_LABEL: f64 = 96.0;
 
 pub fn chart_padding() -> (f64, f64, f64, f64) {
     (
