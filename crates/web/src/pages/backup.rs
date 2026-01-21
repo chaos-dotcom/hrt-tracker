@@ -238,6 +238,42 @@ pub fn BackupPage() -> impl IntoView {
                                 "pg/mL"
                             </option>
                         </select>
+                        <label>"Bra size system"</label>
+                        <select
+                            on:change={
+                                let store = store.clone();
+                                move |ev| {
+                                    let value = event_target_value(&ev);
+                                    store.settings.update(|s| s.braSizeSystem = Some(value));
+                                    store.mark_dirty();
+                                }
+                            }
+                        >
+                            <option value="us" selected=move || settings.get().braSizeSystem.as_deref() == Some("us")>
+                                "US or CA"
+                            </option>
+                            <option value="uk" selected=move || settings.get().braSizeSystem.as_deref() == Some("uk")>
+                                "UK"
+                            </option>
+                            <option value="eu" selected=move || settings.get().braSizeSystem.as_deref() == Some("eu")>
+                                "EU under EN 13402"
+                            </option>
+                            <option value="fr" selected=move || settings.get().braSizeSystem.as_deref() == Some("fr")>
+                                "FR, BE, or ES"
+                            </option>
+                            <option value="au" selected=move || settings.get().braSizeSystem.as_deref() == Some("au")>
+                                "Australia or New Zealand"
+                            </option>
+                            <option value="us-plus4" selected=move || settings.get().braSizeSystem.as_deref() == Some("us-plus4")>
+                                "US or CA with underbust +4"
+                            </option>
+                            <option value="uk-plus4" selected=move || settings.get().braSizeSystem.as_deref() == Some("uk-plus4")>
+                                "UK with underbust +4"
+                            </option>
+                            <option value="uk-dress" selected=move || settings.get().braSizeSystem.as_deref() == Some("uk-dress")>
+                                "UK using dress code"
+                            </option>
+                        </select>
                         <div class="primary-actions">
                             <button type="button" on:click=on_save_settings>
                                 "Save settings"

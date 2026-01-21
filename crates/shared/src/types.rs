@@ -362,6 +362,8 @@ pub struct Settings {
     pub statsBreakdownBySyringeKind: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub displayEstradiolUnit: Option<HormoneUnits>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub braSizeSystem: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
