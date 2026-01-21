@@ -27,3 +27,4 @@ hrt-shared = { path = "../shared" }
 axum = "0.7"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 tower-http = { version = "0.5", features = ["fs"] }
+reqwest = { version = "0.12", features = ["json"] }

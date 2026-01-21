@@ -1,14 +1,16 @@
-use axum::routing::get;
-use axum::Router;
+use axum::routing::{get, post};
+use axum::{Router, body::Body, http::{Request, Response}};
 use tower_http::services::ServeDir;
 
 pub fn serve() {
     let addr = std::env::var("HRT_WEB_ADDR").unwrap_or_else(|_| "127.0.0.1:4100".to_string());
+    let backend_addr = std::env::var("HRT_SERVER_ADDR").unwrap_or_else(|_| "127.0.0.1:4200".to_string());
 
     let app = Router::new()
         .nest_service("/pkg", ServeDir::new("target/site/pkg"))
         .route("/", get(index_handler))
-        .fallback(get(index_handler));
+        .fallback(get(index_handler))
+        .nest("/api", api_proxy_router(backend_addr));
 
     println!("Web UI listening on http://{addr}");
     let runtime = tokio::runtime::Runtime::new().expect("Failed to start runtime");
@@ -32,4 +34,74 @@ fn read_index() -> String {
         }
     }
     "Missing index.html".to_string()
+}
+
+fn api_proxy_router(backend_addr: String) -> Router {
+    let backend_url = format!("http://{}", backend_addr);
+    
+    Router::new()
+        .route("/health", get(proxy_handler))
+        .route("/data", get(proxy_handler).post(proxy_handler))
+        .route("/settings", get(proxy_handler).post(proxy_handler))
+        .route("/convert", post(proxy_handler))
+        .route("/ics", get(proxy_handler))
+        .route("/ics/:secret", get(proxy_handler))
+        .route("/dosage-photo/:entry_id", post(proxy_handler))
+        .route("/dosage-photo/:entry_id/:filename", get(proxy_handler).delete(proxy_handler))
+        .fallback(proxy_handler)
+        .layer(axum::middleware::from_fn(move |req, next| {
+            let backend_url = backend_url.clone();
+            async move { proxy_middleware(req, next, backend_url).await }
+        }))
+}
+
+async fn proxy_handler(req: Request<Body>) -> Result<Response<Body>, axum::response::ErrorResponse> {
+    let backend_url = format!("http://{}", std::env::var("HRT_SERVER_ADDR").unwrap_or_else(|_| "127.0.0.1:4200".to_string()));
+    proxy_request(req, &backend_url).await
+}
+
+async fn proxy_middleware(
+    req: Request<Body>,
+    _next: axum::middleware::Next,
+    backend_url: String,
+) -> Result<Response<Body>, axum::response::ErrorResponse> {
+    proxy_request(req, &backend_url).await
+}
+
+async fn proxy_request(req: Request<Body>, backend_url: &str) -> Result<Response<Body>, axum::response::ErrorResponse> {
+    let path_and_query = req.uri().path_and_query().map(|pq| pq.as_str()).unwrap_or("");
+    let target_url = format!("{}{}", backend_url, path_and_query);
+    
+    let client = reqwest::Client::new();
+    let mut request_builder = client.request(req.method().clone(), &target_url);
+    
+    // Copy headers
+    for (name, value) in req.headers() {
+        request_builder = request_builder.header(name, value);
+    }
+    
+    // Copy body
+    let body_bytes = axum::body::to_bytes(req.into_body(), usize::MAX).await
+        .map_err(|_| axum::http::StatusCode::BAD_REQUEST)?;
+    request_builder = request_builder.body(body_bytes);
+    
+    let response = request_builder.send().await
+        .map_err(|_| axum::http::StatusCode::BAD_GATEWAY)?;
+    
+    let status = response.status();
+    let mut builder = Response::builder().status(status);
+    
+    // Copy response headers
+    for (name, value) in response.headers() {
+        builder = builder.header(name, value);
+    }
+    
+    let response_body = response.bytes().await
+        .map_err(|_| axum::http::StatusCode::BAD_GATEWAY)?;
+    
+    let response = builder
+        .body(Body::from(response_body))
+        .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+    
+    Ok(response)
 }
