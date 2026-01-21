@@ -32,6 +32,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY --from=builder /app/target/release/hrt-web /app/hrt-web
+COPY --from=builder /app/target/release/hrt-shared /app/hrt-shared
 COPY --from=builder /app/target/release/hrt-server /app/hrt-server
 COPY --from=builder /app/target/site /app/target/site
 COPY entrypoint.sh /app/entrypoint.sh
