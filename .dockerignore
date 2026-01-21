@@ -25,6 +25,8 @@ data
 .env
 .env.*
 !.env.example
+.json
+.yaml
 
 # Legacy JS build
 e.js

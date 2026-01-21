@@ -16,8 +16,11 @@ RUN rustup target add wasm32-unknown-unknown
 RUN cargo install cargo-leptos --locked
 RUN cargo install wasm-bindgen-cli --locked
 
-COPY . .
+COPY Cargo.toml Cargo.lock cargo-leptos.toml ./
+COPY crates ./crates
 
+
+RUN cargo fetch
 RUN cargo build -p hrt-web -p hrt-server -p hrt-shared --release
 RUN cargo leptos build --release
 
