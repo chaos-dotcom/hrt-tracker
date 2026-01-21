@@ -260,6 +260,24 @@ body {
   box-shadow: 0 14px 30px rgba(8, 6, 16, 0.3);
 }
 
+.dose-card {
+  display: grid;
+  gap: 16px;
+}
+
+.dose-card .calc-grid {
+  gap: 16px;
+}
+
+.dose-card label:not(.toggle) {
+  display: grid;
+  gap: 8px;
+}
+
+.dose-card label:not(.toggle) .muted {
+  margin: 0;
+}
+
 .mini-card {
   background: rgba(35, 36, 58, 0.8);
   border: 1px solid rgba(243, 154, 181, 0.25);
@@ -497,6 +515,7 @@ body {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+  align-items: center;
   margin-top: 12px;
 }
 
@@ -601,6 +620,7 @@ body {
   display: flex;
   justify-content: space-between;
   gap: 16px;
+  align-items: flex-start;
 }
 
 .history-date {
@@ -611,6 +631,17 @@ body {
 .history-meta {
   display: grid;
   gap: 4px;
+}
+
+.history-meta-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  align-items: baseline;
+}
+
+.history-meta-inline span {
+  white-space: nowrap;
 }
 
 .history-submeta {
@@ -625,7 +656,8 @@ body {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
-  align-items: flex-start;
+  align-items: center;
+  align-self: flex-start;
 }
 
 .history-card {
@@ -709,6 +741,14 @@ button {
   font-weight: 700;
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.action-button {
+  padding: 6px 14px;
+  font-size: 0.85rem;
+  line-height: 1.1;
+  min-width: 84px;
+  text-align: center;
 }
 
 button + button {

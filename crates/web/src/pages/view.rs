@@ -1690,10 +1690,17 @@ pub fn ViewPage() -> impl IntoView {
                                                         <div class="note-content">{note_content.get_value()}</div>
                                                     </div>
                                                     <div class="note-actions">
-                                                        <button type="button" on:click=move |_| start_edit_note(edit_note.get_value())>
+                                                        <button
+                                                            type="button"
+                                                            class="action-button"
+                                                            on:click=move |_| start_edit_note(edit_note.get_value())
+                                                        >
                                                             "Edit"
                                                         </button>
-                                                        <button type="button" on:click=move |_| {
+                                                        <button
+                                                            type="button"
+                                                            class="action-button"
+                                                            on:click=move |_| {
                                                             let delete_note = delete_note.get_value();
                                                             delete_note(note_id_value.get_value());
                                                         }>
@@ -1754,7 +1761,9 @@ pub fn ViewPage() -> impl IntoView {
                                     each=move || sorted_blood_tests.get()
                                     key=|entry| entry.date
                                     children=move |entry| {
-                                        let date_label = fmt_date_label(entry.date, &x_axis_mode.get(), first_dose_date.get());
+                                        let entry_date = entry.date;
+                                        let date_label =
+                                            move || fmt_date_label(entry_date, &x_axis_mode.get(), first_dose_date.get());
                                         let on_edit = {
                                             let entry = entry.clone();
                                             move |_| {
@@ -1785,7 +1794,7 @@ pub fn ViewPage() -> impl IntoView {
                                             <li class="history-item">
                                                 <div>
                                                     <div class="history-date">{date_label}</div>
-                                                    <div class="history-meta">
+                                                    <div class="history-meta history-meta-inline">
                                                         <Show when=move || entry.estradiolLevel.is_some()>
                                                             <span>{format!(
                                                                 "E2: {:.2} {}",
@@ -1871,7 +1880,9 @@ pub fn ViewPage() -> impl IntoView {
                                                         </Show>
                                                     </div>
                                                 </div>
-                                                <button type="button" on:click=on_edit>"Edit"</button>
+                                                <button type="button" class="action-button" on:click=on_edit>
+                                                    "Edit"
+                                                </button>
                                             </li>
                                         }
                                     }
@@ -1893,7 +1904,9 @@ pub fn ViewPage() -> impl IntoView {
                                     each=move || sorted_measurements.get()
                                     key=|entry| entry.date
                                     children=move |entry| {
-                                        let date_label = fmt_date_label(entry.date, &x_axis_mode.get(), first_dose_date.get());
+                                        let entry_date = entry.date;
+                                        let date_label =
+                                            move || fmt_date_label(entry_date, &x_axis_mode.get(), first_dose_date.get());
                                         let body_unit = StoredValue::new(entry.bodyMeasurementUnit.clone());
                                         let bra_size = StoredValue::new(entry.braSize.clone());
                                         let on_edit = {
@@ -1918,7 +1931,7 @@ pub fn ViewPage() -> impl IntoView {
                                             <li class="history-item">
                                                 <div>
                                                     <div class="history-date">{date_label}</div>
-                                                    <div class="history-meta">
+                                                    <div class="history-meta history-meta-inline">
                                                         <Show when=move || entry.weight.is_some()>
                                                             <span>{format!(
                                                                 "Weight: {:.1} {}",
@@ -2004,7 +2017,9 @@ pub fn ViewPage() -> impl IntoView {
                                                         </Show>
                                                     </div>
                                                 </div>
-                                                <button type="button" on:click=on_edit>"Edit"</button>
+                                                <button type="button" class="action-button" on:click=on_edit>
+                                                    "Edit"
+                                                </button>
                                             </li>
                                         }
                                     }
@@ -2033,7 +2048,9 @@ pub fn ViewPage() -> impl IntoView {
                                             .unwrap_or_else(|| date.to_string()),
                                     }
                                     children=move |entry| {
-                                        let date_label = fmt_date_label(dosage_entry_date(&entry), &x_axis_mode.get(), first_dose_date.get());
+                                        let entry_date = dosage_entry_date(&entry);
+                                        let date_label =
+                                            move || fmt_date_label(entry_date, &x_axis_mode.get(), first_dose_date.get());
                                         let entry_key = match &entry {
                                             DosageHistoryEntry::InjectableEstradiol { date, id, .. }
                                             | DosageHistoryEntry::OralEstradiol { date, id, .. }
@@ -2283,8 +2300,12 @@ pub fn ViewPage() -> impl IntoView {
                                                     </Show>
                                                 </div>
                                                 <div class="history-actions">
-                                                    <button type="button" on:click=on_edit>"Edit"</button>
-                                                    <button type="button" on:click=on_delete>"Delete"</button>
+                                                    <button type="button" class="action-button" on:click=on_edit>
+                                                        "Edit"
+                                                    </button>
+                                                    <button type="button" class="action-button" on:click=on_delete>
+                                                        "Delete"
+                                                    </button>
                                                 </div>
                                             </li>
                                         }
