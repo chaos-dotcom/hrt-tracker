@@ -15,8 +15,8 @@ mod utils;
 mod server;
 
 use pages::{
-    BackupPage, CalcPage, CreateBloodTest, CreateDosage, CreateMeasurement, Dashboard,
-    EstrannaisePage, StatsPage, VialsCreatePage, VialsDetailPage, VialsPage, ViewPage,
+    BackupPage, CalcPage, CreateBloodTest, CreateDosage, CreateMeasurement, EstrannaisePage,
+    StatsPage, VialsCreatePage, VialsDetailPage, VialsPage, ViewPage,
 };
 use store::StoreProvider;
 
@@ -32,7 +32,6 @@ pub fn App() -> impl IntoView {
                             <span class="brand-sub">"Get Absolutely Estrogen'd Idiot"</span>
                         </div>
                         <nav class="nav-links">
-                            <A href="/" active_class="active">"Dashboard"</A>
                             <A href="/view" active_class="active">"View"</A>
                             <A href="/stats" active_class="active">"Stats"</A>
                             <A href="/estrannaise" active_class="active">"Estrannaise"</A>
@@ -46,7 +45,7 @@ pub fn App() -> impl IntoView {
                     </header>
                     <main class="main-content">
                         <Routes>
-                            <Route path="/" view=Dashboard />
+                            <Route path="/" view=ViewPage />
                             <Route path="/create/dosage" view=CreateDosage />
                             <Route path="/create/blood-test" view=CreateBloodTest />
                             <Route path="/create/measurement" view=CreateMeasurement />

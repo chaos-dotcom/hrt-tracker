@@ -829,7 +829,7 @@ pub fn CreateDosage() -> impl IntoView {
                         </Show>
                     </section>
 
-                    <section class="card">
+                    <section class="card dose-card">
                         <h3>"Estrogen"</h3>
                         <div class="option-group">
                             <label class="toggle toggle-wide">
@@ -1124,7 +1124,7 @@ pub fn CreateDosage() -> impl IntoView {
                         </div>
                     </section>
 
-                    <section class="card">
+                    <section class="card dose-card">
                         <h3>"Antiandrogen"</h3>
                         <Show when=move || mode.get() == "record">
                             <label class="toggle toggle-wide">
@@ -1219,7 +1219,7 @@ pub fn CreateDosage() -> impl IntoView {
                         </div>
                     </section>
 
-                    <section class="card">
+                    <section class="card dose-card">
                         <h3>"Progesterone"</h3>
                         <Show when=move || mode.get() == "record">
                             <label class="toggle toggle-wide">
