@@ -14,30 +14,6 @@ A self-hosted web application (that could have been a spreadsheet) to track horm
 
 ## Getting Started
 
-To run this project locally, you'll need Node.js and npm (or bun) installed.
-
-1.  Clone this repository.
-
-2.  Install dependencies:
-    ```bash
-    npm install
-    ```
-    or if you use bun:
-    ```bash
-    bun install
-    ```
-
-3.  Run the development server:
-    ```bash
-    npm run dev
-    ```
-    or
-    ```bash
-    bun dev
-    ```
-
-4.  Open your browser and navigate to `http://localhost:5173`.
-
 ## Tech Stack
 - RUST
 - ESOTERIC RUST SHIT for WASM reasons
