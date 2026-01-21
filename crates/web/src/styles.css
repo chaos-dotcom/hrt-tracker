@@ -637,6 +637,11 @@ form {
   max-width: 560px;
 }
 
+.form-wide {
+  max-width: 100%;
+  width: 100%;
+}
+
 label {
   font-weight: 600;
 }
@@ -774,6 +779,13 @@ section section {
   gap: 8px;
 }
 
+.inline-equal {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
 .calc-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -784,6 +796,62 @@ section section {
 .calc-block {
   display: grid;
   gap: 10px;
+}
+
+.form-section {
+  display: grid;
+  gap: 12px;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.option-group {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+  align-items: stretch;
+  width: 100%;
+}
+
+.toggle-wide {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(243, 154, 181, 0.3);
+  background: rgba(35, 36, 58, 0.75);
+  justify-content: flex-start;
+}
+
+.toggle-wide .toggle-label {
+  flex: 1;
+  color: var(--ink);
+}
+
+.pill-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(243, 154, 181, 0.35);
+  background: rgba(243, 154, 181, 0.14);
+  color: var(--ink);
+  text-decoration: none;
+  font-weight: 700;
+  white-space: nowrap;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.pill-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 24px rgba(243, 154, 181, 0.28);
+  background: rgba(243, 154, 181, 0.2);
 }
 
 .calc-field {
