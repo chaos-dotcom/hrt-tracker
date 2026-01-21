@@ -18,14 +18,13 @@ RUN cargo install wasm-bindgen-cli --locked
 
 COPY . .
 
-RUN cargo leptos build --release
 RUN cargo build -p hrt-web -p hrt-server -p hrt-shared --release
-
+RUN cargo leptos build --release
 
 ENV HRT_WEB_ADDR=0.0.0.0:4100
-ENV HRT_SERVER_ADDR=0.0.0.0:4200
 
-EXPOSE 4100 4200
+EXPOSE 4100
+RUN chmod +x ./entrypoint.sh
+ENTRYPOINT ["./entrypoint.sh"]
 
-ENTRYPOINT ["tini", "--"]
-CMD ["cargo leptos serve"]
+CMD ["cargo leptos serve --release"]
