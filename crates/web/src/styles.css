@@ -242,6 +242,95 @@ body {
   padding: 6px 10px;
 }
 
+.vial-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.vial-card {
+  display: grid;
+  gap: 14px;
+}
+
+.vial-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.vial-title {
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+
+.vial-meta {
+  display: grid;
+  gap: 4px;
+  font-size: 0.9rem;
+  color: var(--muted);
+  margin-top: 6px;
+}
+
+.vial-created {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.vial-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.vial-action {
+  background: transparent;
+  border: none;
+  padding: 0;
+  border-radius: 0;
+  color: var(--accent-strong);
+  font-weight: 600;
+  font-size: 0.9rem;
+  box-shadow: none;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.vial-action:hover {
+  text-decoration: underline;
+  box-shadow: none;
+  transform: none;
+}
+
+.vial-action.danger {
+  color: #ff9ab0;
+}
+
+.vial-action.warning {
+  color: #f6c28b;
+}
+
+.vial-action.success {
+  color: #9fe3c7;
+}
+
+.vial-subvial-title {
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.subvial-add {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.subvial-add input {
+  flex: 1 1 220px;
+}
+
 .primary-actions button {
   box-shadow: 0 12px 24px rgba(243, 154, 181, 0.25);
 }
