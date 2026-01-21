@@ -1,6 +1,7 @@
 use leptos::window;
 use plotters::prelude::*;
 use plotters_canvas::CanvasBackend;
+use wasm_bindgen::JsCast;
 use web_sys::HtmlCanvasElement;
 
 use crate::charts::{

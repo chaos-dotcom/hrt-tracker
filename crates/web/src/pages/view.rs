@@ -5,6 +5,7 @@ use leptos::window;
 use leptos_router::A;
 use std::cell::RefCell;
 use std::rc::Rc;
+use wasm_bindgen::JsCast;
 use web_sys::HtmlCanvasElement;
 
 use crate::charts::{
