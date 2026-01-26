@@ -27,7 +27,7 @@ async fn index_handler() -> axum::response::Html<String> {
 }
 
 fn read_index() -> String {
-    let candidates = ["target/site/index.html", "crates/web/index.html"];
+    let candidates = ["target/site/index.html", "static/index.html"];
     for path in candidates {
         if let Ok(contents) = std::fs::read_to_string(path) {
             return contents;

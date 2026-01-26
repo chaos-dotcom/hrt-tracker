@@ -5,6 +5,7 @@
 # Generated output directory for the web build.
 site-root = "target/site"
 site-pkg-dir = "pkg"
+assets-dir = "static"
 site-addr = "127.0.0.1:4100"
 reload-port = 4102
 
