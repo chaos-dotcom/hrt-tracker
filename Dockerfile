@@ -27,7 +27,7 @@ COPY crates ./crates
 COPY static ./static
 
 RUN cargo build -p hrt-server -p hrt-web --release
-RUN cargo leptos build --release
+RUN cargo leptos build --release && cp index.html target/site/index.html
 
 FROM debian:bookworm-slim
 
