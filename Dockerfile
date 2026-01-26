@@ -22,6 +22,7 @@ RUN cargo binstall cargo-leptos
 RUN cargo binstall wasm-bindgen-cli
 
 COPY Cargo.toml Cargo.lock cargo-leptos.toml ./
+COPY index.html ./
 COPY crates ./crates
 COPY static ./static
 
