@@ -1,4 +1,4 @@
-FROM rust:1.92-bookworm
+FROM rust:1.92-bookworm AS builder
 
 WORKDIR /app
 
@@ -7,8 +7,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     clang \
     curl \
     git \
+    libfontconfig1-dev \
     libssl-dev \
-    libfontconfig \
     pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
@@ -19,11 +19,25 @@ RUN cargo install wasm-bindgen-cli --locked
 COPY Cargo.toml Cargo.lock cargo-leptos.toml ./
 COPY crates ./crates
 COPY static ./static
-COPY ./entrypoint.sh ./
 
-
-RUN cargo build -p hrt-server -p hrt-shared --release
+RUN cargo build -p hrt-server -p hrt-web --release
 RUN cargo leptos build --release
+
+FROM debian:bookworm-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    libfontconfig1 \
+    libssl3 \
+    supervisor \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /app/target/release/hrt-server /app/hrt-server
+COPY --from=builder /app/target/release/hrt-web /app/hrt-web
+COPY --from=builder /app/target/site /app/target/site
+COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 # Environment variables will be set via docker-compose.yml
 # These are defaults for development
@@ -32,5 +46,4 @@ ENV HRT_SERVER_ADDR=127.0.0.1:4200
 ENV HRT_ALLOWED_ORIGINS=https://hrt.example.com,http://127.0.0.1:4100
 
 EXPOSE 4100
-RUN chmod +x ./entrypoint.sh
-ENTRYPOINT ["./entrypoint.sh"]
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
