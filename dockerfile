@@ -12,9 +12,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
+
+RUN wget https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-x86_64-unknown-linux-musl.tgz
+RUN tar -xvf cargo-binstall-x86_64-unknown-linux-musl.tgz
+RUN cp cargo-binstall /usr/local/cargo/bin
+
 RUN rustup target add wasm32-unknown-unknown
-RUN cargo install cargo-leptos --locked
-RUN cargo install wasm-bindgen-cli --locked
+RUN cargo binstall cargo-leptos
+RUN cargo binstall wasm-bindgen-cli
 
 COPY Cargo.toml Cargo.lock cargo-leptos.toml ./
 COPY crates ./crates
