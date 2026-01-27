@@ -1,5 +1,10 @@
+use axum::extract::OriginalUri;
 use axum::routing::{get, post};
-use axum::{Router, body::Body, http::{Request, Response}};
+use axum::{
+    Router,
+    body::Body,
+    http::{Request, Response, StatusCode},
+};
 use tower_http::services::ServeDir;
 
 pub fn serve() {
@@ -56,7 +61,10 @@ fn api_proxy_router(backend_addr: String) -> Router {
 }
 
 async fn proxy_handler(req: Request<Body>) -> Result<Response<Body>, axum::response::ErrorResponse> {
-    let backend_url = format!("http://{}", std::env::var("HRT_SERVER_ADDR").unwrap_or_else(|_| "127.0.0.1:4200".to_string()));
+    let backend_url = format!(
+        "http://{}",
+        std::env::var("HRT_SERVER_ADDR").unwrap_or_else(|_| "127.0.0.1:4200".to_string())
+    );
     proxy_request(req, &backend_url).await
 }
 
@@ -68,40 +76,71 @@ async fn proxy_middleware(
     proxy_request(req, &backend_url).await
 }
 
-async fn proxy_request(req: Request<Body>, backend_url: &str) -> Result<Response<Body>, axum::response::ErrorResponse> {
-    let path_and_query = req.uri().path_and_query().map(|pq| pq.as_str()).unwrap_or("");
+async fn proxy_request(
+    req: Request<Body>,
+    backend_url: &str,
+) -> Result<Response<Body>, axum::response::ErrorResponse> {
+    let original_uri = req
+        .extensions()
+        .get::<OriginalUri>()
+        .map(|uri| uri.0.clone());
+    let path_and_query = original_uri
+        .as_ref()
+        .unwrap_or_else(|| req.uri())
+        .path_and_query()
+        .map(|pq| pq.as_str())
+        .unwrap_or("");
     let target_url = format!("{}{}", backend_url, path_and_query);
-    
+
     let client = reqwest::Client::new();
     let mut request_builder = client.request(req.method().clone(), &target_url);
-    
-    // Copy headers
+
     for (name, value) in req.headers() {
         request_builder = request_builder.header(name, value);
     }
-    
-    // Copy body
-    let body_bytes = axum::body::to_bytes(req.into_body(), usize::MAX).await
-        .map_err(|_| axum::http::StatusCode::BAD_REQUEST)?;
+
+    let body_bytes = match axum::body::to_bytes(req.into_body(), usize::MAX).await {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            return Ok(proxy_error(
+                StatusCode::BAD_REQUEST,
+                "Invalid request body",
+            ))
+        }
+    };
     request_builder = request_builder.body(body_bytes);
-    
-    let response = request_builder.send().await
-        .map_err(|_| axum::http::StatusCode::BAD_GATEWAY)?;
-    
+
+    let response = match request_builder.send().await {
+        Ok(response) => response,
+        Err(_) => return Ok(proxy_error(StatusCode::BAD_GATEWAY, "Bad gateway")),
+    };
+
     let status = response.status();
     let mut builder = Response::builder().status(status);
-    
-    // Copy response headers
+
     for (name, value) in response.headers() {
         builder = builder.header(name, value);
     }
-    
-    let response_body = response.bytes().await
-        .map_err(|_| axum::http::StatusCode::BAD_GATEWAY)?;
-    
-    let response = builder
-        .body(Body::from(response_body))
-        .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
-    
+
+    let response_body = match response.bytes().await {
+        Ok(bytes) => bytes,
+        Err(_) => return Ok(proxy_error(StatusCode::BAD_GATEWAY, "Bad gateway")),
+    };
+
+    let response = match builder.body(Body::from(response_body)) {
+        Ok(response) => response,
+        Err(_) => return Ok(proxy_error(StatusCode::INTERNAL_SERVER_ERROR, "Proxy error")),
+    };
+
     Ok(response)
+}
+
+fn proxy_error(status: StatusCode, message: &str) -> Response<Body> {
+    let mut response = Response::builder().status(status);
+    response = response.header("Content-Type", "application/json");
+    let safe_message = message.replace('"', "\\\"");
+    let body = format!("{{\"error\":\"{}\"}}", safe_message);
+    response
+        .body(Body::from(body))
+        .unwrap_or_else(|_| Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR).body(Body::from("{}")).unwrap())
 }

@@ -1,5 +1,6 @@
 use gloo_net::http::Request;
 use gloo_timers::callback::Timeout;
+use gloo_timers::future::TimeoutFuture;
 use hrt_shared::logic::{backfill_scheduled_doses, migrate_blood_tests_fudge_factor};
 use hrt_shared::types::{HormoneUnits, HrtData, Settings};
 use leptos::*;
@@ -57,21 +58,24 @@ impl AppStore {
                 Err(err) => last_error.set(Some(format!("Failed to load data: {}", err))),
             }
 
-            let settings_resp = Request::get(&format!("{}/api/settings", api_base))
-                .send()
-                .await;
-            match settings_resp {
-                Ok(resp) => match resp.json::<Value>().await {
-                    Ok(value) => {
-                        let mut parsed = default_settings();
-                        if let Ok(incoming) = serde_json::from_value::<Settings>(value) {
-                            merge_settings(&mut parsed, incoming);
-                        }
+            let mut last_settings_error: Option<String> = None;
+            for attempt in 0..3 {
+                match fetch_settings(&api_base).await {
+                    Ok(parsed) => {
                         settings.set(parsed);
+                        last_settings_error = None;
+                        break;
                     }
-                    Err(err) => last_error.set(Some(format!("Failed to parse settings: {}", err))),
-                },
-                Err(err) => last_error.set(Some(format!("Failed to load settings: {}", err))),
+                    Err(err) => {
+                        last_settings_error = Some(err);
+                        if attempt < 2 {
+                            TimeoutFuture::new(250 * (attempt + 1) as u32).await;
+                        }
+                    }
+                }
+            }
+            if let Some(err) = last_settings_error {
+                last_error.set(Some(err));
             }
             is_loading.set(false);
         });
@@ -185,6 +189,41 @@ fn merge_settings(base: &mut Settings, incoming: Settings) {
     }
 }
 
+async fn fetch_settings(api_base: &str) -> Result<Settings, String> {
+    let resp = Request::get(&format!("{}/api/settings", api_base))
+        .send()
+        .await
+        .map_err(|err| format!("Failed to load settings: {}", err))?;
+
+    if !resp.ok() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        let detail = if text.trim().is_empty() {
+            status.to_string()
+        } else {
+            format!("{}: {}", status, text.trim())
+        };
+        return Err(format!("Failed to load settings: {}", detail));
+    }
+
+    let text = resp
+        .text()
+        .await
+        .map_err(|err| format!("Failed to read settings: {}", err))?;
+
+    if text.trim().is_empty() {
+        return Ok(default_settings());
+    }
+
+    let value: Value =
+        serde_json::from_str(&text).map_err(|err| format!("Failed to parse settings: {}", err))?;
+    let mut parsed = default_settings();
+    if let Ok(incoming) = serde_json::from_value::<Settings>(value) {
+        merge_settings(&mut parsed, incoming);
+    }
+    Ok(parsed)
+}
+
 #[component]
 pub fn StoreProvider(children: Children) -> impl IntoView {
     let store = AppStore::new();
@@ -200,7 +239,14 @@ pub fn use_store() -> AppStore {
 
 pub fn api_base() -> String {
     // Use relative paths for single-port proxy setup, fallback to absolute URL for development
-    std::option_env!("HRT_API_BASE")
-        .unwrap_or("")
-        .to_string()
+    let base = std::option_env!("HRT_API_BASE").unwrap_or("").trim().to_string();
+    if base.is_empty() {
+        return String::new();
+    }
+    let trimmed = base.trim_end_matches('/');
+    if trimmed.ends_with("/api") {
+        trimmed.trim_end_matches("/api").to_string()
+    } else {
+        trimmed.to_string()
+    }
 }
