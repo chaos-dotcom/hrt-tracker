@@ -37,7 +37,11 @@ const GEARS: [Gear; 4] = [
 ];
 
 fn parse_num(value: &str) -> f64 {
-    value.trim().parse::<f64>().unwrap_or(f64::NAN)
+    value
+        .trim()
+        .replace(',', ".")
+        .parse::<f64>()
+        .unwrap_or(f64::NAN)
 }
 
 fn fmt(value: f64, decimals: usize) -> String {
@@ -249,7 +253,8 @@ pub fn CalcPage() -> impl IntoView {
                             <input
                                 type="number"
                                 min="0"
-                                step="0.1"
+                                step="0.01"
+                                inputmode="decimal"
                                 on:input=move |ev| cafe_dose_mg.set(event_target_value(&ev))
                                 prop:value=move || cafe_dose_mg.get()
                             />
@@ -259,7 +264,8 @@ pub fn CalcPage() -> impl IntoView {
                             <input
                                 type="number"
                                 min="0"
-                                step="1"
+                                step="0.1"
+                                inputmode="decimal"
                                 on:input=move |ev| cafe_freq_days.set(event_target_value(&ev))
                                 prop:value=move || cafe_freq_days.get()
                             />
@@ -269,7 +275,8 @@ pub fn CalcPage() -> impl IntoView {
                             <input
                                 type="number"
                                 min="0"
-                                step="0.1"
+                                step="0.01"
+                                inputmode="decimal"
                                 on:input=move |ev| cafe_vial_ml.set(event_target_value(&ev))
                                 prop:value=move || cafe_vial_ml.get()
                             />
@@ -279,7 +286,8 @@ pub fn CalcPage() -> impl IntoView {
                             <input
                                 type="number"
                                 min="0"
-                                step="0.1"
+                                step="0.01"
+                                inputmode="decimal"
                                 on:input=move |ev| cafe_conc_mg_ml.set(event_target_value(&ev))
                                 prop:value=move || cafe_conc_mg_ml.get()
                             />
@@ -299,21 +307,23 @@ pub fn CalcPage() -> impl IntoView {
                     </p>
                     <h3>"Estimated Vial Lifetime"</h3>
                     <div class="card-grid">
-                        <For
-                            each=move || gear_results.get()
-                            key=|result| result.name
-                            children=move |result| {
-                                view! {
-                                    <div class="mini-card">
-                                        <h4>{result.name}</h4>
-                                        <p><strong>{result.doses}</strong> " doses"</p>
-                                        <p><strong>{result.days}</strong> " days"</p>
-                                        <p><strong>{fmt_pct(result.pct_waste)}</strong> " pct waste"</p>
-                                        <p>{format!("{} uL dead space", result.dead_ul.round() as i64)}</p>
-                                    </div>
-                                }
-                            }
-                        />
+                        {move || {
+                            gear_results
+                                .get()
+                                .into_iter()
+                                .map(|result| {
+                                    view! {
+                                        <div class="mini-card">
+                                            <h4>{result.name}</h4>
+                                            <p><strong>{result.doses}</strong> " doses"</p>
+                                            <p><strong>{result.days}</strong> " days"</p>
+                                            <p><strong>{fmt_pct(result.pct_waste)}</strong> " pct waste"</p>
+                                            <p>{format!("{} uL dead space", result.dead_ul.round() as i64)}</p>
+                                        </div>
+                                    }
+                                })
+                                .collect_view()
+                        }}
                     </div>
                     <details>
                         <summary>"Notes"</summary>

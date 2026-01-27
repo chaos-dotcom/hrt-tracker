@@ -41,12 +41,6 @@ pub fn page_layout(title: &'static str, body: View) -> impl IntoView {
                         <span class="status-chip">{status_text}</span>
                     </Show>
                 </div>
-                <button
-                    on:click=move |_| store.save()
-                    prop:disabled=move || is_saving.get()
-                >
-                    "Save"
-                </button>
             </header>
             <Show when=move || is_loading.get()>
                 <p>"Loading data..."</p>
