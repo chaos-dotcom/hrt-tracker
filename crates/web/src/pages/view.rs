@@ -677,6 +677,7 @@ pub fn ViewPage() -> impl IntoView {
                 );
             });
             store.mark_dirty();
+            store.save();
             note_title.set(String::new());
             note_content.set(String::new());
             let now = Date::new_0();
@@ -696,6 +697,7 @@ pub fn ViewPage() -> impl IntoView {
                 data.notes.retain(|note| note.id != id);
             });
             store.mark_dirty();
+            store.save();
         }
     }));
 
@@ -732,6 +734,7 @@ pub fn ViewPage() -> impl IntoView {
                 }
             });
             store.mark_dirty();
+            store.save();
             editing_note_id.set(None);
         }
     }));
@@ -1197,6 +1200,7 @@ pub fn ViewPage() -> impl IntoView {
                 }
             });
             store_edit.mark_dirty();
+            store_edit.save();
             editing_key.set(None);
         }
     });
@@ -1308,6 +1312,7 @@ pub fn ViewPage() -> impl IntoView {
                         }
                     });
                     store.mark_dirty();
+                    store.save();
                 }
                 input_clone.set_value("");
                 upload_busy.set(false);
@@ -1351,6 +1356,7 @@ pub fn ViewPage() -> impl IntoView {
                     }
                 });
                 store.mark_dirty();
+                store.save();
             });
         }
     }));
@@ -2075,7 +2081,8 @@ pub fn ViewPage() -> impl IntoView {
                                                         d.dosageHistory.retain(|item| !entry_matches(item, &entry_key));
                                                     });
                                                     store.mark_dirty();
-                                                })));
+                                                    store.save();
+                                                }))); 
                                             }
                                         };
                                         let on_edit = {
@@ -2867,6 +2874,32 @@ pub fn ViewPage() -> impl IntoView {
                         <div class="modal-actions">
                             <button type="button" on:click={
                                 let store = store_blood_modal.clone();
+                                let confirm_delete = confirm_delete;
+                                let confirm_title = confirm_title;
+                                let confirm_action = confirm_action;
+                                let edit_blood_date = edit_blood_date;
+                                move |_: leptos::ev::MouseEvent| {
+                                    let date = match edit_blood_date.get() {
+                                        Some(value) => value,
+                                        None => return,
+                                    };
+                                    confirm_title.set("Delete blood test?".to_string());
+                                    confirm_delete.set(Some(format!("blood-{date}")));
+                                    let store = store.clone();
+                                    confirm_action.set(Some(Rc::new(move || {
+                                        store.data.update(|d| {
+                                            d.bloodTests.retain(|entry| entry.date != date);
+                                        });
+                                        store.mark_dirty();
+                                        store.save();
+                                        edit_blood_date.set(None);
+                                    })));
+                                }
+                            }>
+                                "Delete"
+                            </button>
+                            <button type="button" on:click={
+                                let store = store_blood_modal.clone();
                                 move |_: leptos::ev::MouseEvent| {
                                     let date = match edit_blood_date.get() {
                                         Some(value) => value,
@@ -2962,6 +2995,7 @@ pub fn ViewPage() -> impl IntoView {
                                         }
                                     });
                                     store.mark_dirty();
+                                    store.save();
                                     edit_blood_date.set(None);
                                 }
                             }>
@@ -3105,6 +3139,32 @@ pub fn ViewPage() -> impl IntoView {
                         <div class="modal-actions">
                             <button type="button" on:click={
                                 let store = store_measure_modal.clone();
+                                let confirm_delete = confirm_delete;
+                                let confirm_title = confirm_title;
+                                let confirm_action = confirm_action;
+                                let edit_measurement_date = edit_measurement_date;
+                                move |_: leptos::ev::MouseEvent| {
+                                    let date = match edit_measurement_date.get() {
+                                        Some(value) => value,
+                                        None => return,
+                                    };
+                                    confirm_title.set("Delete measurement?".to_string());
+                                    confirm_delete.set(Some(format!("measurement-{date}")));
+                                    let store = store.clone();
+                                    confirm_action.set(Some(Rc::new(move || {
+                                        store.data.update(|d| {
+                                            d.measurements.retain(|entry| entry.date != date);
+                                        });
+                                        store.mark_dirty();
+                                        store.save();
+                                        edit_measurement_date.set(None);
+                                    })));
+                                }
+                            }>
+                                "Delete"
+                            </button>
+                            <button type="button" on:click={
+                                let store = store_measure_modal.clone();
                                 move |_: leptos::ev::MouseEvent| {
                                     let date = match edit_measurement_date.get() {
                                         Some(value) => value,
@@ -3145,6 +3205,7 @@ pub fn ViewPage() -> impl IntoView {
                                         }
                                     });
                                     store.mark_dirty();
+                                    store.save();
                                     edit_measurement_date.set(None);
                                 }
                             }>
