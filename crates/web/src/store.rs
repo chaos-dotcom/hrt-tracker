@@ -100,8 +100,11 @@ impl AppStore {
     }
 
     pub fn save(&self) {
-        let data_value = self.data.get();
         let settings_value = self.settings.get();
+        if settings_value.enableAutoBackfill {
+            self.data.update(|data| backfill_scheduled_doses(data));
+        }
+        let data_value = self.data.get();
         let is_saving = self.is_saving;
         let is_dirty = self.is_dirty;
         let last_saved = self.last_saved;
