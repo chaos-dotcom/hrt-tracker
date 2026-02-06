@@ -359,7 +359,7 @@ pub fn EstrannaisePage() -> impl IntoView {
                         <label class="muted">"Dose"</label>
                         <input
                             type="number"
-                            step="0.1"
+                            step="any"
                             min="0"
                             class="chart-input"
                             placeholder="auto"

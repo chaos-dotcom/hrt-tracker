@@ -166,6 +166,7 @@ fn default_settings() -> Settings {
         bloodTestIntervalMonths: Some(3.0),
         statsBreakdownBySyringeKind: Some(false),
         displayEstradiolUnit: Some(HormoneUnits::E2PmolL),
+        displayInjectableInIU: Some(false),
         braSizeSystem: Some("uk".to_string()),
     }
 }
@@ -186,6 +187,9 @@ fn merge_settings(base: &mut Settings, incoming: Settings) {
     }
     if incoming.displayEstradiolUnit.is_some() {
         base.displayEstradiolUnit = incoming.displayEstradiolUnit;
+    }
+    if incoming.displayInjectableInIU.is_some() {
+        base.displayInjectableInIU = incoming.displayInjectableInIU;
     }
     if incoming.braSizeSystem.is_some() {
         base.braSizeSystem = incoming.braSizeSystem;

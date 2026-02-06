@@ -365,6 +365,8 @@ pub struct Settings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub displayEstradiolUnit: Option<HormoneUnits>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub displayInjectableInIU: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub braSizeSystem: Option<String>,
 }
 

@@ -1,5 +1,5 @@
 use chrono::{Local, TimeZone};
-use hrt_shared::types::{HormoneUnits, LengthUnit};
+use hrt_shared::types::{HormoneUnits, HrtData, LengthUnit};
 use js_sys::Date;
 
 pub fn parse_date_or_now(value: &str) -> i64 {
@@ -129,6 +129,57 @@ pub fn fmt_decimal(value: f64, max_decimals: usize) -> String {
 
 pub fn fmt_blood_value(value: f64) -> String {
     fmt_decimal(value, 4)
+}
+
+fn vial_concentration_mg_ml(data: &HrtData, vial_id: &str) -> Option<f64> {
+    data.vials
+        .iter()
+        .find(|vial| vial.id == vial_id)
+        .and_then(|vial| vial.concentrationMgPerMl)
+        .filter(|conc| *conc > 0.0)
+}
+
+pub fn injectable_iu_from_dose(
+    data: &HrtData,
+    dose: f64,
+    unit: &HormoneUnits,
+    vial_id: Option<&String>,
+    schedule_vial_id: Option<&String>,
+) -> Option<f64> {
+    if *unit != HormoneUnits::Mg || !dose.is_finite() || dose <= 0.0 {
+        return None;
+    }
+    let conc = vial_id
+        .and_then(|id| vial_concentration_mg_ml(data, id))
+        .or_else(|| schedule_vial_id.and_then(|id| vial_concentration_mg_ml(data, id)));
+    let conc = conc?;
+    let ml = dose / conc;
+    let iu = ml * 100.0;
+    if iu.is_finite() && iu > 0.0 {
+        Some(iu)
+    } else {
+        None
+    }
+}
+
+pub fn format_injectable_dose(
+    data: &HrtData,
+    dose: f64,
+    unit: &HormoneUnits,
+    vial_id: Option<&String>,
+    schedule_vial_id: Option<&String>,
+    use_iu: bool,
+) -> String {
+    if !dose.is_finite() {
+        return "-".to_string();
+    }
+    if !use_iu || *unit != HormoneUnits::Mg {
+        return format!("{} {}", fmt_decimal(dose, 3), hormone_unit_label(unit));
+    }
+    if let Some(iu) = injectable_iu_from_dose(data, dose, unit, vial_id, schedule_vial_id) {
+        return format!("{} IU ({} mg)", iu.round() as i64, fmt_decimal(dose, 3));
+    }
+    format!("{} {}", fmt_decimal(dose, 3), hormone_unit_label(unit))
 }
 
 pub fn compute_fudge_factor(

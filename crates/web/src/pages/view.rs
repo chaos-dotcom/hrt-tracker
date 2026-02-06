@@ -17,8 +17,8 @@ use crate::charts::view::{compute_view_chart_state, draw_view_chart, find_neares
 use crate::layout::page_layout;
 use crate::store::use_store;
 use crate::utils::{
-    compute_fudge_factor, fmt_blood_value, fmt_date_label, hormone_unit_label, parse_date_or_now,
-    parse_hormone_unit, parse_length_unit,
+    compute_fudge_factor, fmt_blood_value, fmt_date_label, format_injectable_dose,
+    hormone_unit_label, parse_date_or_now, parse_hormone_unit, parse_length_unit,
 };
 use hrt_shared::logic::{predict_e2_pg_ml, snap_to_next_injection_boundary};
 use hrt_shared::types::{
@@ -262,7 +262,14 @@ fn get_last_dose_date_for_type(data: &HrtData, med_type: RegimenKey) -> Option<i
     let mut dates = Vec::new();
     for entry in &data.dosageHistory {
         match (med_type, entry) {
-            (RegimenKey::InjectableEstradiol, DosageHistoryEntry::InjectableEstradiol { date, .. })
+            (
+                RegimenKey::InjectableEstradiol,
+                DosageHistoryEntry::InjectableEstradiol { date, bonusDose, .. },
+            ) => {
+                if !bonusDose.unwrap_or(false) {
+                    dates.push(*date);
+                }
+            }
             | (RegimenKey::OralEstradiol, DosageHistoryEntry::OralEstradiol { date, .. })
             | (RegimenKey::Antiandrogen, DosageHistoryEntry::Antiandrogen { date, .. })
             | (RegimenKey::Progesterone, DosageHistoryEntry::Progesterone { date, .. }) => {
@@ -317,17 +324,22 @@ fn get_next_scheduled_date_for(data: &HrtData, med_type: RegimenKey) -> Option<i
     }
 }
 
-fn get_next_scheduled_candidate(data: &HrtData) -> Option<NextDoseCandidate> {
+fn get_next_scheduled_candidate(data: &HrtData, use_iu: bool) -> Option<NextDoseCandidate> {
     let mut options: Vec<(RegimenKey, i64, String)> = Vec::new();
     if let Some(cfg) = data.injectableEstradiol.as_ref() {
         if let Some(date) = get_next_scheduled_date_for(data, RegimenKey::InjectableEstradiol) {
+            let dose_label = format_injectable_dose(
+                data,
+                cfg.dose,
+                &cfg.unit,
+                cfg.vialId.as_ref(),
+                cfg.vialId.as_ref(),
+                use_iu,
+            );
             options.push((
                 RegimenKey::InjectableEstradiol,
                 date,
-                format!(
-                    "Injection: {:?}, {:.2} {:?}",
-                    cfg.kind, cfg.dose, cfg.unit
-                ),
+                format!("Injection: {:?}, {dose_label}", cfg.kind),
             ));
         }
     }
@@ -610,7 +622,8 @@ pub fn ViewPage() -> impl IntoView {
 
     let next_scheduled_candidate = create_memo(move |_| {
         let data_value = data.get();
-        get_next_scheduled_candidate(&data_value)
+        let use_iu = store.settings.get().displayInjectableInIU.unwrap_or(false);
+        get_next_scheduled_candidate(&data_value, use_iu)
     });
 
     let sorted_notes = create_memo(move |_| {
@@ -1462,13 +1475,28 @@ pub fn ViewPage() -> impl IntoView {
                         <Show when=move || store.data.get().injectableEstradiol.is_some()>
                             <p>
                                 <strong>"Injectable Estradiol: "</strong>
-                                {move || store
-                                    .data
-                                    .get()
-                                    .injectableEstradiol
-                                    .as_ref()
-                                    .map(|cfg| format!("{:?}, {:.2} {:?} every {:.1} days", cfg.kind, cfg.dose, cfg.unit, cfg.frequency))
-                                    .unwrap_or_default()}
+                                {move || {
+                                    let data_value = store.data.get();
+                                    let use_iu = store.settings.get().displayInjectableInIU.unwrap_or(false);
+                                    data_value
+                                        .injectableEstradiol
+                                        .as_ref()
+                                        .map(|cfg| {
+                                            let dose_label = format_injectable_dose(
+                                                &data_value,
+                                                cfg.dose,
+                                                &cfg.unit,
+                                                cfg.vialId.as_ref(),
+                                                cfg.vialId.as_ref(),
+                                                use_iu,
+                                            );
+                                            format!(
+                                                "{:?}, {dose_label} every {:.1} days",
+                                                cfg.kind, cfg.frequency
+                                            )
+                                        })
+                                        .unwrap_or_default()
+                                }}
                             </p>
                         </Show>
                         <Show when=move || store.data.get().oralEstradiol.is_some()>
@@ -2259,7 +2287,21 @@ pub fn ViewPage() -> impl IntoView {
                                         };
                                         let (summary, details, meta) = match &entry {
                                             DosageHistoryEntry::InjectableEstradiol { kind, dose, unit, bonusDose, injectionSite, vialId, subVialId, syringeKind, needleLength, needleGauge, note, .. } => {
-                                                let summary = format!("Injection · {:?} · {:.2} {:?}", kind, dose, unit);
+                                                let use_iu = store.settings.get().displayInjectableInIU.unwrap_or(false);
+                                                let data_value = store.data.get();
+                                                let schedule_vial_id = data_value
+                                                    .injectableEstradiol
+                                                    .as_ref()
+                                                    .and_then(|cfg| cfg.vialId.as_ref());
+                                                let dose_label = format_injectable_dose(
+                                                    &data_value,
+                                                    *dose,
+                                                    unit,
+                                                    vialId.as_ref(),
+                                                    schedule_vial_id,
+                                                    use_iu,
+                                                );
+                                                let summary = format!("Injection · {:?} · {dose_label}", kind);
                                                 let mut details = Vec::new();
                                                 if bonusDose.unwrap_or(false) {
                                                     details.push("Bonus dose".to_string());

@@ -2,6 +2,7 @@ use leptos::*;
 
 use crate::layout::page_layout;
 use crate::store::use_store;
+use crate::utils::injectable_iu_from_dose;
 use hrt_shared::types::{DosageHistoryEntry, HormoneUnits, ProgesteroneRoutes};
 
 #[component]
@@ -59,6 +60,29 @@ pub fn StatsPage() -> impl IntoView {
                     }
                 }
                 _ => 0.0,
+            })
+            .sum::<f64>()
+    };
+
+    let total_injectable_iu = move || {
+        let data_value = data.get();
+        let schedule_vial_id = data_value
+            .injectableEstradiol
+            .as_ref()
+            .and_then(|cfg| cfg.vialId.as_ref());
+        injectable_records()
+            .iter()
+            .filter_map(|entry| match entry {
+                DosageHistoryEntry::InjectableEstradiol {
+                    dose, unit, vialId, ..
+                } => injectable_iu_from_dose(
+                    &data_value,
+                    *dose,
+                    unit,
+                    vialId.as_ref(),
+                    schedule_vial_id,
+                ),
+                _ => None,
             })
             .sum::<f64>()
     };
@@ -255,9 +279,6 @@ pub fn StatsPage() -> impl IntoView {
             .sum::<f64>()
     };
 
-    let total_pills_count = move || total_oral_pills_count() + boofed_progesterone_count();
-    let total_pills_mg_combined = move || total_oral_estradiol_mg() + boofed_progesterone_mg();
-
     let fmt = |value: f64, decimals: usize| {
         if !value.is_finite() {
             "-".to_string()
@@ -267,6 +288,24 @@ pub fn StatsPage() -> impl IntoView {
                 .trim_end_matches('0')
                 .trim_end_matches('.')
                 .to_string()
+        }
+    };
+
+    let total_pills_count = move || total_oral_pills_count() + boofed_progesterone_count();
+    let total_pills_mg_combined = move || total_oral_estradiol_mg() + boofed_progesterone_mg();
+
+    let display_injectable_iu = move || settings.get().displayInjectableInIU.unwrap_or(false);
+    let injectable_total_label = move || {
+        let mg = total_injectable_estradiol_mg();
+        if display_injectable_iu() {
+            let iu = total_injectable_iu();
+            if iu.is_finite() && iu > 0.0 {
+                format!("{} IU ({} mg)", fmt(iu, 0), fmt(mg, 2))
+            } else {
+                format!("{} mg", fmt(mg, 2))
+            }
+        } else {
+            format!("{} mg", fmt(mg, 2))
         }
     };
 
@@ -551,7 +590,7 @@ pub fn StatsPage() -> impl IntoView {
                     <div class="card">
                         <h3>"Total Estrogen Taken"</h3>
                         <p class="muted">"Injectable total"</p>
-                        <p><strong>{move || fmt(total_injectable_estradiol_mg(), 2)}</strong> " mg"</p>
+                        <p><strong>{move || injectable_total_label()}</strong></p>
                         <p class="muted">"Oral total"</p>
                         <p><strong>{move || fmt(total_oral_estradiol_mg(), 2)}</strong> " mg"</p>
                         <p class="muted">"Combined"</p>

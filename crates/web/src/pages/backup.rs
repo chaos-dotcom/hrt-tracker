@@ -190,6 +190,22 @@ pub fn BackupPage() -> impl IntoView {
                                 <span class="toggle-track" aria-hidden="true"></span>
                                 <span class="toggle-label">"Enable blood test schedule"</span>
                             </label>
+                            <label class="toggle toggle-wide">
+                                <input
+                                    type="checkbox"
+                                    on:change={
+                                        let store = store.clone();
+                                        move |ev| {
+                                            let enabled = event_target_checked(&ev);
+                                            store.settings.update(|s| s.displayInjectableInIU = Some(enabled));
+                                            store.mark_dirty();
+                                        }
+                                    }
+                                    prop:checked=move || store.settings.get().displayInjectableInIU.unwrap_or(false)
+                                />
+                                <span class="toggle-track" aria-hidden="true"></span>
+                                <span class="toggle-label">"Show injectable doses in IU"</span>
+                            </label>
                         </div>
                         <label>"Blood test interval (months)"</label>
                         <input
