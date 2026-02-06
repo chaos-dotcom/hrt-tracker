@@ -171,7 +171,7 @@ pub fn CalcPage() -> impl IntoView {
                                     <input
                                         type="number"
                                         min="0"
-                                        step="0.01"
+                                        step="any"
                                         on:input=move |ev| tfs_dose_mg.set(event_target_value(&ev))
                                         prop:value=move || tfs_dose_mg.get()
                                     />
@@ -181,7 +181,7 @@ pub fn CalcPage() -> impl IntoView {
                                     <input
                                         type="number"
                                         min="0"
-                                        step="0.1"
+                                        step="any"
                                         on:input=move |ev| tfs_conc_mg_ml.set(event_target_value(&ev))
                                         prop:value=move || tfs_conc_mg_ml.get()
                                     />
@@ -208,7 +208,7 @@ pub fn CalcPage() -> impl IntoView {
                                     <input
                                         type="number"
                                         min="0"
-                                        step="0.01"
+                                        step="any"
                                         on:input=move |ev| tfs_vol2_ml.set(event_target_value(&ev))
                                         prop:value=move || tfs_vol2_ml.get()
                                     />
@@ -218,7 +218,7 @@ pub fn CalcPage() -> impl IntoView {
                                     <input
                                         type="number"
                                         min="0"
-                                        step="0.1"
+                                        step="any"
                                         on:input=move |ev| tfs_conc2_mg_ml.set(event_target_value(&ev))
                                         prop:value=move || tfs_conc2_mg_ml.get()
                                     />
@@ -253,7 +253,7 @@ pub fn CalcPage() -> impl IntoView {
                             <input
                                 type="number"
                                 min="0"
-                                step="0.01"
+                                step="any"
                                 inputmode="decimal"
                                 on:input=move |ev| cafe_dose_mg.set(event_target_value(&ev))
                                 prop:value=move || cafe_dose_mg.get()
@@ -264,7 +264,7 @@ pub fn CalcPage() -> impl IntoView {
                             <input
                                 type="number"
                                 min="0"
-                                step="0.1"
+                                step="any"
                                 inputmode="decimal"
                                 on:input=move |ev| cafe_freq_days.set(event_target_value(&ev))
                                 prop:value=move || cafe_freq_days.get()
@@ -275,7 +275,7 @@ pub fn CalcPage() -> impl IntoView {
                             <input
                                 type="number"
                                 min="0"
-                                step="0.01"
+                                step="any"
                                 inputmode="decimal"
                                 on:input=move |ev| cafe_vial_ml.set(event_target_value(&ev))
                                 prop:value=move || cafe_vial_ml.get()
@@ -286,7 +286,7 @@ pub fn CalcPage() -> impl IntoView {
                             <input
                                 type="number"
                                 min="0"
-                                step="0.01"
+                                step="any"
                                 inputmode="decimal"
                                 on:input=move |ev| cafe_conc_mg_ml.set(event_target_value(&ev))
                                 prop:value=move || cafe_conc_mg_ml.get()

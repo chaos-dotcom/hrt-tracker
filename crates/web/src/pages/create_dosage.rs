@@ -343,6 +343,7 @@ pub fn CreateDosage() -> impl IntoView {
     let record_estrogen = create_rw_signal(true);
     let record_aa = create_rw_signal(false);
     let record_prog = create_rw_signal(false);
+    let bonus_dose = create_rw_signal(false);
 
     let estrogen_note = create_rw_signal(String::new());
     let aa_note = create_rw_signal(String::new());
@@ -515,6 +516,7 @@ pub fn CreateDosage() -> impl IntoView {
                                 } else {
                                     Some(estrogen_note.get())
                                 },
+                                bonusDose: if bonus_dose.get() { Some(true) } else { None },
                                 injectionSite: injection_site_from_label(&injection_site.get()),
                                 vialId: if selected_vial_id.get().is_empty() {
                                     None
@@ -875,6 +877,18 @@ pub fn CreateDosage() -> impl IntoView {
                                     on:input=move |ev| estrogen_note.set(event_target_value(&ev))
                                     prop:value=move || estrogen_note.get()
                                 ></textarea>
+                            </label>
+                        </Show>
+
+                        <Show when=move || mode.get() == "record" && record_estrogen.get() && estrogen_method.get() == "injection">
+                            <label class="toggle toggle-wide">
+                                <input
+                                    type="checkbox"
+                                    on:change=move |ev| bonus_dose.set(event_target_checked(&ev))
+                                    prop:checked=move || bonus_dose.get()
+                                />
+                                <span class="toggle-track" aria-hidden="true"></span>
+                                <span class="toggle-label">"Bonus dose (doesn't move schedule)"</span>
                             </label>
                         </Show>
 
