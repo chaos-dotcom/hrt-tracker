@@ -232,7 +232,7 @@ pub fn CreateBloodTest() -> impl IntoView {
     let ocr_busy = create_rw_signal(false);
     let ocr_status = create_rw_signal(String::new());
     let ocr_error = create_rw_signal(None::<String>);
-    let ocr_input_ref = create_node_ref::<HtmlInputElement>();
+    let ocr_input_ref: NodeRef<html::Input> = create_node_ref();
     let show_feedback = create_rw_signal(false);
     let feedback_timeout: Rc<RefCell<Option<Timeout>>> = Rc::new(RefCell::new(None));
 
@@ -287,6 +287,7 @@ pub fn CreateBloodTest() -> impl IntoView {
             ocr_error.set(None);
             ocr_status.set("Reading image...".to_string());
             let onloadend = Closure::wrap(Box::new(move |_ev: web_sys::Event| {
+                let input_for_task = input_clone.clone();
                 let data_url = reader_clone
                     .result()
                     .ok()
@@ -339,7 +340,7 @@ pub fn CreateBloodTest() -> impl IntoView {
                             ocr_error.set(Some("OCR failed to process the image.".to_string()));
                             ocr_status.set(String::new());
                             ocr_busy.set(false);
-                            input_clone.set_value("");
+                            input_for_task.set_value("");
                             return;
                         }
                     };
@@ -352,7 +353,7 @@ pub fn CreateBloodTest() -> impl IntoView {
                         ocr_error.set(Some("OCR did not find any text.".to_string()));
                         ocr_status.set(String::new());
                         ocr_busy.set(false);
-                        input_clone.set_value("");
+                        input_for_task.set_value("");
                         return;
                     }
                     let extracted = extract_ocr_values(&text);
@@ -419,7 +420,7 @@ pub fn CreateBloodTest() -> impl IntoView {
                         ));
                     }
                     ocr_busy.set(false);
-                    input_clone.set_value("");
+                    input_for_task.set_value("");
                 });
             }) as Box<dyn FnMut(_)>);
             reader.set_onloadend(Some(onloadend.as_ref().unchecked_ref()));
