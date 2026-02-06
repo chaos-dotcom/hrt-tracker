@@ -892,6 +892,7 @@ dependencies = [
  "tower-http 0.5.2",
  "urlencoding",
  "wasm-bindgen",
+ "wasm-bindgen-futures",
  "web-sys",
 ]
 

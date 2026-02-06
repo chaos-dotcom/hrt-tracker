@@ -11,7 +11,8 @@ use web_sys::{FileReader, HtmlInputElement};
 
 use crate::layout::page_layout;
 use crate::store::use_store;
-use crate::utils::{hormone_unit_label, parse_hormone_unit};
+use crate::utils::{compute_fudge_factor, hormone_unit_label, parse_hormone_unit};
+use hrt_shared::logic::predict_e2_pg_ml;
 use hrt_shared::types::{BloodTest, HormoneUnits};
 
 #[derive(Clone, PartialEq)]
@@ -474,21 +475,15 @@ pub fn CreateBloodTest() -> impl IntoView {
                     value
                 }
             });
-            let predicted_e2 = estrannaise_value.map(|value| {
+            let predicted_input = estrannaise_value.map(|value| {
                 if estrannaise_unit_value == HormoneUnits::E2PmolL {
                     value / 3.671
                 } else {
                     value
                 }
             });
-            let fudge_factor = match (measured_e2, predicted_e2) {
-                (Some(measured), Some(predicted))
-                    if predicted.is_finite() && predicted > 0.0 && measured.is_finite() =>
-                {
-                    Some((measured / predicted * 1000.0).round() / 1000.0)
-                }
-                _ => None,
-            };
+            let predicted_model = predict_e2_pg_ml(&store.data.get(), date);
+            let fudge_factor = compute_fudge_factor(measured_e2, predicted_model.or(predicted_input));
 
             let entry = BloodTest {
                 date,
@@ -507,7 +502,7 @@ pub fn CreateBloodTest() -> impl IntoView {
                 shbgLevel: shbg_value,
                 shbgUnit: Some(shbg_unit_value),
                 freeAndrogenIndex: free_androgen_value,
-                estrannaiseNumber: predicted_e2,
+                estrannaiseNumber: predicted_input,
                 fudgeFactor: fudge_factor,
                 notes: if notes.get().trim().is_empty() {
                     None

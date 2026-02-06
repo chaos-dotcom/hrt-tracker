@@ -1,27 +1,105 @@
 use chrono::{Local, TimeZone, Timelike};
 
-use crate::types::{DosageHistoryEntry, HormoneUnits, HrtData, ProgesteroneSchedule, UnixTime};
+use crate::estrannaise::e2_multidose_3c;
+use crate::types::{
+    DosageHistoryEntry, EstrannaiseModel, HormoneUnits, HrtData, InjectableEstradiols,
+    ProgesteroneSchedule, UnixTime,
+};
 
 const DAY_MS: i64 = 24 * 60 * 60 * 1000;
 
+fn map_estrannaise_model(kind: &InjectableEstradiols) -> Option<EstrannaiseModel> {
+    match kind {
+        InjectableEstradiols::Benzoate => Some(EstrannaiseModel::EbIm),
+        InjectableEstradiols::Valerate => Some(EstrannaiseModel::EvIm),
+        InjectableEstradiols::Enanthate => Some(EstrannaiseModel::EEnIm),
+        InjectableEstradiols::Cypionate => Some(EstrannaiseModel::EcIm),
+        InjectableEstradiols::Undecylate => Some(EstrannaiseModel::EUnIm),
+        InjectableEstradiols::PolyestradiolPhosphate => None,
+    }
+}
+
+pub fn predict_e2_pg_ml(data: &HrtData, date: i64) -> Option<f64> {
+    let mut dose_history: Vec<_> = data
+        .dosageHistory
+        .iter()
+        .filter_map(|entry| match entry {
+            DosageHistoryEntry::InjectableEstradiol {
+                date, kind, dose, ..
+            } => Some((*date, kind.clone(), *dose)),
+            _ => None,
+        })
+        .collect();
+    if dose_history.is_empty() {
+        return None;
+    }
+    dose_history.sort_by_key(|(date, _, _)| *date);
+    let start_date = dose_history.first().map(|(date, _, _)| *date)?;
+    if date < start_date {
+        return None;
+    }
+    let mut time_map = Vec::new();
+    let mut dose_map = Vec::new();
+    let mut model_map = Vec::new();
+    for (dose_date, kind, dose) in dose_history {
+        if let Some(model) = map_estrannaise_model(&kind) {
+            time_map.push((dose_date - start_date) as f64 / DAY_MS as f64);
+            dose_map.push(dose);
+            model_map.push(model);
+        }
+    }
+    if model_map.is_empty() {
+        return None;
+    }
+    let t = (date - start_date) as f64 / DAY_MS as f64;
+    let predicted = e2_multidose_3c(t, &dose_map, &time_map, &model_map, 1.0, false);
+    if predicted.is_finite() && predicted > 0.0 {
+        Some(predicted)
+    } else {
+        None
+    }
+}
+
 pub fn migrate_blood_tests_fudge_factor(data: &mut HrtData) -> bool {
+    if data.bloodTests.is_empty() {
+        return false;
+    }
+    let predicted_values: Vec<Option<f64>> = data
+        .bloodTests
+        .iter()
+        .map(|test| predict_e2_pg_ml(data, test.date))
+        .collect();
     let mut migrated = false;
-    for test in &mut data.bloodTests {
+    for (idx, test) in data.bloodTests.iter_mut().enumerate() {
         if test.fudgeFactor.is_some() {
             continue;
         }
-        let (estradiol_level, estrannaise) = match (test.estradiolLevel, test.estrannaiseNumber) {
-            (Some(level), Some(number)) if number > 0.0 => (level, number),
-            _ => continue,
+        let Some(estradiol_level) = test.estradiolLevel else {
+            continue;
         };
         let measured = match test.estradiolUnit {
             Some(HormoneUnits::E2PmolL) => estradiol_level / 3.671,
             _ => estradiol_level,
         };
-        if measured.is_finite() {
-            test.fudgeFactor = Some((measured / estrannaise * 1000.0).round() / 1000.0);
-            migrated = true;
+        if !measured.is_finite() {
+            continue;
         }
+        let predicted = predicted_values
+            .get(idx)
+            .and_then(|value| *value)
+            .or_else(|| test.estrannaiseNumber);
+        let fudge_factor = if let Some(predicted) = predicted.filter(|value| *value > 0.0) {
+            let ratio = measured / predicted;
+            if ratio.is_finite() {
+                (ratio * 1000.0).round() / 1000.0
+            } else {
+                1.0
+            }
+        } else {
+            1.0
+        };
+        test.fudgeFactor = Some(fudge_factor);
+        migrated = true;
     }
     migrated
 }
