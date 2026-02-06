@@ -18,6 +18,7 @@ gloo-timers = { version = "0.3", features = ["futures"] }
 urlencoding = "2"
 chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
 js-sys = "0.3"
+wasm-bindgen-futures = "0.4"
 web-sys = { version = "0.3", features = ["Blob", "Clipboard", "Document", "Element", "EventTarget", "File", "FileList", "FileReader", "FormData", "HtmlAnchorElement", "HtmlCanvasElement", "HtmlDivElement", "HtmlElement", "HtmlInputElement", "Location", "MouseEvent", "Navigator", "ProgressEvent", "Url", "Window"] }
 plotters = "0.3"
 plotters-canvas = "0.3"

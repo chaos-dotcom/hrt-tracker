@@ -116,6 +116,21 @@ pub fn convert_progesterone_to_ng_ml(value: f64, unit: &HormoneUnits) -> f64 {
     }
 }
 
+pub fn fmt_decimal(value: f64, max_decimals: usize) -> String {
+    if !value.is_finite() {
+        return "-".to_string();
+    }
+    let formatted = format!("{value:.precision$}", precision = max_decimals);
+    formatted
+        .trim_end_matches('0')
+        .trim_end_matches('.')
+        .to_string()
+}
+
+pub fn fmt_blood_value(value: f64) -> String {
+    fmt_decimal(value, 4)
+}
+
 pub fn fmt_date_label(date_ms: i64, axis_mode: &str, first_dose: Option<i64>) -> String {
     const DAY_MS: i64 = 24 * 60 * 60 * 1000;
     if axis_mode == "days" {

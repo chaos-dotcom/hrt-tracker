@@ -17,8 +17,8 @@ use crate::charts::view::{compute_view_chart_state, draw_view_chart, find_neares
 use crate::layout::page_layout;
 use crate::store::use_store;
 use crate::utils::{
-    fmt_date_label, hormone_unit_label, parse_date_or_now, parse_hormone_unit,
-    parse_length_unit,
+    fmt_blood_value, fmt_date_label, hormone_unit_label, parse_date_or_now,
+    parse_hormone_unit, parse_length_unit,
 };
 use hrt_shared::logic::snap_to_next_injection_boundary;
 use hrt_shared::types::{
@@ -1768,6 +1768,14 @@ pub fn ViewPage() -> impl IntoView {
                                     key=|entry| entry.date
                                     children=move |entry| {
                                         let entry_date = entry.date;
+                                        let e2_default_label = {
+                                            let unit = store
+                                                .settings
+                                                .get()
+                                                .displayEstradiolUnit
+                                                .unwrap_or(HormoneUnits::E2PmolL);
+                                            hormone_unit_label(&unit)
+                                        };
                                         let date_label =
                                             move || fmt_date_label(entry_date, &x_axis_mode.get(), first_dose_date.get());
                                         let on_edit = {
@@ -1776,23 +1784,64 @@ pub fn ViewPage() -> impl IntoView {
                                                 let date_text = to_local_input_value(entry.date);
                                                 edit_blood_date.set(Some(entry.date));
                                                 edit_blood_date_text.set(date_text);
-                                                edit_blood_e2.set(entry.estradiolLevel.map(|v| format!("{:.2}", v)).unwrap_or_default());
-                                                edit_blood_e2_unit.set(entry.estradiolUnit.as_ref().map(|u| hormone_unit_label(u).to_string()).unwrap_or_else(|| "pg/mL".to_string()));
-                                                edit_blood_estrannaise.set(entry.estrannaiseNumber.map(|v| format!("{:.2}", v)).unwrap_or_default());
+                                                edit_blood_e2.set(entry.estradiolLevel.map(fmt_blood_value).unwrap_or_default());
+                                                let e2_default = store
+                                                    .settings
+                                                    .get()
+                                                    .displayEstradiolUnit
+                                                    .unwrap_or(HormoneUnits::E2PmolL);
+                                                edit_blood_e2_unit.set(
+                                                    entry
+                                                        .estradiolUnit
+                                                        .as_ref()
+                                                        .map(|u| hormone_unit_label(u).to_string())
+                                                        .unwrap_or_else(|| hormone_unit_label(&e2_default).to_string()),
+                                                );
+                                                edit_blood_estrannaise.set(entry.estrannaiseNumber.map(fmt_blood_value).unwrap_or_default());
                                                 edit_blood_estrannaise_unit.set("pg/mL".to_string());
-                                                edit_blood_t.set(entry.testLevel.map(|v| format!("{:.2}", v)).unwrap_or_default());
-                                                edit_blood_t_unit.set(entry.testUnit.as_ref().map(|u| hormone_unit_label(u).to_string()).unwrap_or_else(|| "ng/dL".to_string()));
-                                                edit_blood_prog.set(entry.progesteroneLevel.map(|v| format!("{:.2}", v)).unwrap_or_default());
-                                                edit_blood_prog_unit.set(entry.progesteroneUnit.as_ref().map(|u| hormone_unit_label(u).to_string()).unwrap_or_else(|| "ng/mL".to_string()));
-                                                edit_blood_fsh.set(entry.fshLevel.map(|v| format!("{:.2}", v)).unwrap_or_default());
-                                                edit_blood_fsh_unit.set(entry.fshUnit.as_ref().map(|u| hormone_unit_label(u).to_string()).unwrap_or_else(|| "mIU/mL".to_string()));
-                                                edit_blood_lh.set(entry.lhLevel.map(|v| format!("{:.2}", v)).unwrap_or_default());
-                                                edit_blood_lh_unit.set(entry.lhUnit.as_ref().map(|u| hormone_unit_label(u).to_string()).unwrap_or_else(|| "mIU/mL".to_string()));
-                                                edit_blood_prolactin.set(entry.prolactinLevel.map(|v| format!("{:.2}", v)).unwrap_or_default());
-                                                edit_blood_prolactin_unit.set(entry.prolactinUnit.as_ref().map(|u| hormone_unit_label(u).to_string()).unwrap_or_else(|| "ng/mL".to_string()));
-                                                edit_blood_shbg.set(entry.shbgLevel.map(|v| format!("{:.2}", v)).unwrap_or_default());
+                                                edit_blood_t.set(entry.testLevel.map(fmt_blood_value).unwrap_or_default());
+                                                edit_blood_t_unit.set(
+                                                    entry
+                                                        .testUnit
+                                                        .as_ref()
+                                                        .map(|u| hormone_unit_label(u).to_string())
+                                                        .unwrap_or_else(|| "nmol/L".to_string()),
+                                                );
+                                                edit_blood_prog.set(entry.progesteroneLevel.map(fmt_blood_value).unwrap_or_default());
+                                                edit_blood_prog_unit.set(
+                                                    entry
+                                                        .progesteroneUnit
+                                                        .as_ref()
+                                                        .map(|u| hormone_unit_label(u).to_string())
+                                                        .unwrap_or_else(|| "nmol/L".to_string()),
+                                                );
+                                                edit_blood_fsh.set(entry.fshLevel.map(fmt_blood_value).unwrap_or_default());
+                                                edit_blood_fsh_unit.set(
+                                                    entry
+                                                        .fshUnit
+                                                        .as_ref()
+                                                        .map(|u| hormone_unit_label(u).to_string())
+                                                        .unwrap_or_else(|| "U/L".to_string()),
+                                                );
+                                                edit_blood_lh.set(entry.lhLevel.map(fmt_blood_value).unwrap_or_default());
+                                                edit_blood_lh_unit.set(
+                                                    entry
+                                                        .lhUnit
+                                                        .as_ref()
+                                                        .map(|u| hormone_unit_label(u).to_string())
+                                                        .unwrap_or_else(|| "U/L".to_string()),
+                                                );
+                                                edit_blood_prolactin.set(entry.prolactinLevel.map(fmt_blood_value).unwrap_or_default());
+                                                edit_blood_prolactin_unit.set(
+                                                    entry
+                                                        .prolactinUnit
+                                                        .as_ref()
+                                                        .map(|u| hormone_unit_label(u).to_string())
+                                                        .unwrap_or_else(|| "mIU/L".to_string()),
+                                                );
+                                                edit_blood_shbg.set(entry.shbgLevel.map(fmt_blood_value).unwrap_or_default());
                                                 edit_blood_shbg_unit.set(entry.shbgUnit.as_ref().map(|u| hormone_unit_label(u).to_string()).unwrap_or_else(|| "nmol/L".to_string()));
-                                                edit_blood_fai.set(entry.freeAndrogenIndex.map(|v| format!("{:.2}", v)).unwrap_or_default());
+                                                edit_blood_fai.set(entry.freeAndrogenIndex.map(fmt_blood_value).unwrap_or_default());
                                                 edit_blood_notes.set(entry.notes.clone().unwrap_or_default());
                                             }
                                         };
@@ -1803,74 +1852,74 @@ pub fn ViewPage() -> impl IntoView {
                                                     <div class="history-meta history-meta-inline">
                                                         <Show when=move || entry.estradiolLevel.is_some()>
                                                             <span>{format!(
-                                                                "E2: {:.2} {}",
-                                                                entry.estradiolLevel.unwrap_or_default(),
+                                                                "E2: {} {}",
+                                                                fmt_blood_value(entry.estradiolLevel.unwrap_or_default()),
                                                                 entry
                                                                     .estradiolUnit
                                                                     .as_ref()
                                                                     .map(|u| hormone_unit_label(u))
-                                                                    .unwrap_or("pg/mL")
+                                                                    .unwrap_or(e2_default_label)
                                                             )}</span>
                                                         </Show>
                                                         <Show when=move || entry.testLevel.is_some()>
                                                             <span>{format!(
-                                                                "T: {:.2} {}",
-                                                                entry.testLevel.unwrap_or_default(),
+                                                                "T: {} {}",
+                                                                fmt_blood_value(entry.testLevel.unwrap_or_default()),
                                                                 entry
                                                                     .testUnit
                                                                     .as_ref()
                                                                     .map(|u| hormone_unit_label(u))
-                                                                    .unwrap_or("ng/dL")
+                                                                    .unwrap_or("nmol/L")
                                                             )}</span>
                                                         </Show>
                                                         <Show when=move || entry.progesteroneLevel.is_some()>
                                                             <span>{format!(
-                                                                "Prog: {:.2} {}",
-                                                                entry.progesteroneLevel.unwrap_or_default(),
+                                                                "Prog: {} {}",
+                                                                fmt_blood_value(entry.progesteroneLevel.unwrap_or_default()),
                                                                 entry
                                                                     .progesteroneUnit
                                                                     .as_ref()
                                                                     .map(|u| hormone_unit_label(u))
-                                                                    .unwrap_or("ng/mL")
+                                                                    .unwrap_or("nmol/L")
                                                             )}</span>
                                                         </Show>
                                                         <Show when=move || entry.fshLevel.is_some()>
                                                             <span>{format!(
-                                                                "FSH: {:.2} {}",
-                                                                entry.fshLevel.unwrap_or_default(),
+                                                                "FSH: {} {}",
+                                                                fmt_blood_value(entry.fshLevel.unwrap_or_default()),
                                                                 entry
                                                                     .fshUnit
                                                                     .as_ref()
                                                                     .map(|u| hormone_unit_label(u))
-                                                                    .unwrap_or("mIU/mL")
+                                                                    .unwrap_or("U/L")
                                                             )}</span>
                                                         </Show>
                                                         <Show when=move || entry.lhLevel.is_some()>
                                                             <span>{format!(
-                                                                "LH: {:.2} {}",
-                                                                entry.lhLevel.unwrap_or_default(),
+                                                                "LH: {} {}",
+                                                                fmt_blood_value(entry.lhLevel.unwrap_or_default()),
                                                                 entry
                                                                     .lhUnit
                                                                     .as_ref()
                                                                     .map(|u| hormone_unit_label(u))
-                                                                    .unwrap_or("mIU/mL")
+                                                                    .unwrap_or("U/L")
                                                             )}</span>
                                                         </Show>
                                                         <Show when=move || entry.prolactinLevel.is_some()>
                                                             <span>{format!(
-                                                                "PRL: {:.2} {}",
-                                                                entry.prolactinLevel.unwrap_or_default(),
+                                                                "PRL: {} {}",
+                                                                fmt_blood_value(entry.prolactinLevel.unwrap_or_default()),
                                                                 entry
                                                                     .prolactinUnit
                                                                     .as_ref()
                                                                     .map(|u| hormone_unit_label(u))
-                                                                    .unwrap_or("ng/mL")
+                                                                    .unwrap_or("mIU/L")
                                                             )}</span>
                                                         </Show>
                                                         <Show when=move || entry.shbgLevel.is_some()>
                                                             <span>{format!(
-                                                                "SHBG: {:.2} {}",
-                                                                entry.shbgLevel.unwrap_or_default(),
+                                                                "SHBG: {} {}",
+                                                                fmt_blood_value(entry.shbgLevel.unwrap_or_default()),
                                                                 entry
                                                                     .shbgUnit
                                                                     .as_ref()
@@ -1879,7 +1928,10 @@ pub fn ViewPage() -> impl IntoView {
                                                             )}</span>
                                                         </Show>
                                                         <Show when=move || entry.freeAndrogenIndex.is_some()>
-                                                            <span>{format!("FAI: {:.2}", entry.freeAndrogenIndex.unwrap_or_default())}</span>
+                                                            <span>{format!(
+                                                                "FAI: {}",
+                                                                fmt_blood_value(entry.freeAndrogenIndex.unwrap_or_default())
+                                                            )}</span>
                                                         </Show>
                                                         <Show when=move || entry.fudgeFactor.is_some()>
                                                             <span>{format!("FF: {:.3}", entry.fudgeFactor.unwrap_or_default())}</span>
@@ -2612,7 +2664,7 @@ pub fn ViewPage() -> impl IntoView {
             </Show>
 
             <Show when=move || confirm_delete.get().is_some()>
-                <div class="modal-backdrop" on:click=move |_| confirm_delete.set(None)>
+                <div class="modal-backdrop modal-backdrop-top" on:click=move |_| confirm_delete.set(None)>
                     <div class="modal" on:click=move |ev| ev.stop_propagation()>
                         <h3>{move || confirm_title.get()}</h3>
                         <p>"This action cannot be undone."</p>
@@ -2917,26 +2969,31 @@ pub fn ViewPage() -> impl IntoView {
                                     let prolactin_value = parse_optional_num(&edit_blood_prolactin.get());
                                     let shbg_value = parse_optional_num(&edit_blood_shbg.get());
                                     let fai_value = parse_optional_num(&edit_blood_fai.get());
+                                    let e2_default = store
+                                        .settings
+                                        .get()
+                                        .displayEstradiolUnit
+                                        .unwrap_or(HormoneUnits::E2PmolL);
                                     let e2_unit =
                                         parse_hormone_unit(&edit_blood_e2_unit.get())
-                                            .unwrap_or(HormoneUnits::E2PgMl);
+                                            .unwrap_or(e2_default);
                                     let estrannaise_unit =
                                         parse_hormone_unit(&edit_blood_estrannaise_unit.get())
                                             .unwrap_or(HormoneUnits::E2PgMl);
                                     let t_unit = parse_hormone_unit(&edit_blood_t_unit.get())
-                                        .unwrap_or(HormoneUnits::TNgDl);
+                                        .unwrap_or(HormoneUnits::TNmolL);
                                     let prog_unit =
                                         parse_hormone_unit(&edit_blood_prog_unit.get())
-                                            .unwrap_or(HormoneUnits::NgMl);
+                                            .unwrap_or(HormoneUnits::TNmolL);
                                     let fsh_unit =
                                         parse_hormone_unit(&edit_blood_fsh_unit.get())
-                                            .unwrap_or(HormoneUnits::MIuMl);
+                                            .unwrap_or(HormoneUnits::UL);
                                     let lh_unit =
                                         parse_hormone_unit(&edit_blood_lh_unit.get())
-                                            .unwrap_or(HormoneUnits::MIuMl);
+                                            .unwrap_or(HormoneUnits::UL);
                                     let prolactin_unit =
                                         parse_hormone_unit(&edit_blood_prolactin_unit.get())
-                                            .unwrap_or(HormoneUnits::NgMl);
+                                            .unwrap_or(HormoneUnits::MIuL);
                                     let shbg_unit =
                                         parse_hormone_unit(&edit_blood_shbg_unit.get())
                                             .unwrap_or(HormoneUnits::TNmolL);
