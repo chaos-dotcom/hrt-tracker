@@ -17,10 +17,10 @@ use crate::charts::view::{compute_view_chart_state, draw_view_chart, find_neares
 use crate::layout::page_layout;
 use crate::store::use_store;
 use crate::utils::{
-    fmt_blood_value, fmt_date_label, hormone_unit_label, parse_date_or_now,
+    compute_fudge_factor, fmt_blood_value, fmt_date_label, hormone_unit_label, parse_date_or_now,
     parse_hormone_unit, parse_length_unit,
 };
-use hrt_shared::logic::snap_to_next_injection_boundary;
+use hrt_shared::logic::{predict_e2_pg_ml, snap_to_next_injection_boundary};
 use hrt_shared::types::{
     DiaryEntry, DosageHistoryEntry, DosagePhoto, HormoneUnits, HrtData, InjectionSites,
     InjectableEstradiols, LengthUnit, ProgesteroneRoutes, SyringeKinds, WeightUnit,
@@ -3005,23 +3005,16 @@ pub fn ViewPage() -> impl IntoView {
                                             value
                                         }
                                     });
-                                    let predicted_e2 = estrannaise_value.map(|value| {
+                                    let predicted_input = estrannaise_value.map(|value| {
                                         if estrannaise_unit == HormoneUnits::E2PmolL {
                                             value / 3.671
                                         } else {
                                             value
                                         }
                                     });
-                                    let fudge_factor = match (measured_e2, predicted_e2) {
-                                        (Some(measured), Some(predicted))
-                                            if predicted.is_finite()
-                                                && predicted > 0.0
-                                                && measured.is_finite() =>
-                                        {
-                                            Some((measured / predicted * 1000.0).round() / 1000.0)
-                                        }
-                                        _ => None,
-                                    };
+                                    let predicted_model = predict_e2_pg_ml(&store.data.get(), snapped_date);
+                                    let fudge_factor =
+                                        compute_fudge_factor(measured_e2, predicted_model.or(predicted_input));
                                     store.data.update(|d| {
                                         for entry in &mut d.bloodTests {
                                             if entry.date == date {
@@ -3041,7 +3034,7 @@ pub fn ViewPage() -> impl IntoView {
                                                 entry.shbgLevel = shbg_value;
                                                 entry.shbgUnit = Some(shbg_unit.clone());
                                                 entry.freeAndrogenIndex = fai_value;
-                                                entry.estrannaiseNumber = predicted_e2;
+                                                entry.estrannaiseNumber = predicted_input;
                                                 entry.fudgeFactor = fudge_factor;
                                                 entry.notes = if notes.trim().is_empty() {
                                                     None

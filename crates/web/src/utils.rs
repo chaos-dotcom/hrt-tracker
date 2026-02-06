@@ -131,6 +131,30 @@ pub fn fmt_blood_value(value: f64) -> String {
     fmt_decimal(value, 4)
 }
 
+pub fn compute_fudge_factor(
+    measured_pg_ml: Option<f64>,
+    predicted_pg_ml: Option<f64>,
+) -> Option<f64> {
+    let Some(measured) = measured_pg_ml else {
+        return None;
+    };
+    if !measured.is_finite() {
+        return None;
+    }
+    let predicted = predicted_pg_ml.filter(|value| value.is_finite() && *value > 0.0);
+    let fudge = if let Some(predicted) = predicted {
+        let ratio = measured / predicted;
+        if ratio.is_finite() {
+            ratio
+        } else {
+            1.0
+        }
+    } else {
+        1.0
+    };
+    Some((fudge * 1000.0).round() / 1000.0)
+}
+
 pub fn fmt_date_label(date_ms: i64, axis_mode: &str, first_dose: Option<i64>) -> String {
     const DAY_MS: i64 = 24 * 60 * 60 * 1000;
     if axis_mode == "days" {
