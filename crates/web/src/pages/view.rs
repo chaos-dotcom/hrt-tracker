@@ -478,6 +478,7 @@ pub fn ViewPage() -> impl IntoView {
     let editing_syringe_kind = create_rw_signal(String::new());
     let editing_needle_length = create_rw_signal(String::new());
     let editing_needle_gauge = create_rw_signal(String::new());
+    let editing_bonus = create_rw_signal(false);
     let upload_busy = create_rw_signal(false);
     let photo_input_ref: NodeRef<html::Input> = create_node_ref();
     let confirm_delete = create_rw_signal(None::<String>);
@@ -758,6 +759,7 @@ pub fn ViewPage() -> impl IntoView {
                                 dose: cfg.dose,
                                 unit: cfg.unit.clone(),
                                 note: None,
+                                bonusDose: None,
                                 injectionSite: None,
                                 vialId: cfg.vialId.clone(),
                                 subVialId: cfg.subVialId.clone(),
@@ -1113,6 +1115,7 @@ pub fn ViewPage() -> impl IntoView {
                                 dose,
                                 unit,
                                 note,
+                                bonusDose,
                                 injectionSite,
                                 vialId,
                                 subVialId,
@@ -1125,6 +1128,7 @@ pub fn ViewPage() -> impl IntoView {
                                 *dose = dose_value;
                                 *unit = unit_value.clone();
                                 *note = note_value.clone();
+                                *bonusDose = if editing_bonus.get() { Some(true) } else { None };
                                 *injectionSite =
                                     injection_site_from_label(&editing_injection_site.get());
                                 *vialId = if editing_vial_id.get().trim().is_empty() {
@@ -2216,8 +2220,10 @@ pub fn ViewPage() -> impl IntoView {
                                                 editing_syringe_kind.set(String::new());
                                                 editing_needle_length.set(String::new());
                                                 editing_needle_gauge.set(String::new());
+                                                editing_bonus.set(false);
                                                 match &entry {
                                                     DosageHistoryEntry::InjectableEstradiol {
+                                                        bonusDose,
                                                         injectionSite,
                                                         vialId,
                                                         subVialId,
@@ -2226,6 +2232,7 @@ pub fn ViewPage() -> impl IntoView {
                                                         needleGauge,
                                                         ..
                                                     } => {
+                                                        editing_bonus.set(bonusDose.unwrap_or(false));
                                                         editing_injection_site.set(
                                                             injectionSite
                                                                 .as_ref()
@@ -2251,9 +2258,12 @@ pub fn ViewPage() -> impl IntoView {
                                             }
                                         };
                                         let (summary, details, meta) = match &entry {
-                                            DosageHistoryEntry::InjectableEstradiol { kind, dose, unit, injectionSite, vialId, subVialId, syringeKind, needleLength, needleGauge, note, .. } => {
+                                            DosageHistoryEntry::InjectableEstradiol { kind, dose, unit, bonusDose, injectionSite, vialId, subVialId, syringeKind, needleLength, needleGauge, note, .. } => {
                                                 let summary = format!("Injection · {:?} · {:.2} {:?}", kind, dose, unit);
                                                 let mut details = Vec::new();
+                                                if bonusDose.unwrap_or(false) {
+                                                    details.push("Bonus dose".to_string());
+                                                }
                                                 if let Some(site) = injectionSite {
                                                     details.push(format!("Site: {}", injection_site_label(site)));
                                                 }
@@ -2461,6 +2471,15 @@ pub fn ViewPage() -> impl IntoView {
                             prop:value=move || editing_note.get()
                         ></textarea>
                         <Show when=is_injectable>
+                            <label class="toggle toggle-wide">
+                                <input
+                                    type="checkbox"
+                                    on:change=move |ev| editing_bonus.set(event_target_checked(&ev))
+                                    prop:checked=move || editing_bonus.get()
+                                />
+                                <span class="toggle-track" aria-hidden="true"></span>
+                                <span class="toggle-label">"Bonus dose (doesn't move schedule)"</span>
+                            </label>
                             <label>"Injection site (optional)"</label>
                             <select
                                 on:change=move |ev| editing_injection_site.set(event_target_value(&ev))

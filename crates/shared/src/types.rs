@@ -153,6 +153,8 @@ pub enum DosageHistoryEntry {
         #[serde(skip_serializing_if = "Option::is_none")]
         note: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
+        bonusDose: Option<bool>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         injectionSite: Option<InjectionSites>,
         #[serde(skip_serializing_if = "Option::is_none")]
         vialId: Option<String>,

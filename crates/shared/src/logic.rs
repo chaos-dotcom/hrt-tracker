@@ -121,7 +121,15 @@ pub fn snap_to_next_injection_boundary(data: &HrtData, ts: UnixTime) -> UnixTime
         .dosageHistory
         .iter()
         .filter_map(|d| match d {
-            DosageHistoryEntry::InjectableEstradiol { date, .. } => Some(*date),
+            DosageHistoryEntry::InjectableEstradiol {
+                date, bonusDose, ..
+            } => {
+                if bonusDose.unwrap_or(false) {
+                    None
+                } else {
+                    Some(*date)
+                }
+            }
             _ => None,
         })
         .collect();
@@ -186,10 +194,14 @@ pub fn backfill_scheduled_doses(data: &mut HrtData) {
         let last_taken_dates: Vec<i64> = dosage_history
             .iter()
             .filter_map(|d| match d {
-                DosageHistoryEntry::InjectableEstradiol { date, .. }
-                    if medication_type == "injectableEstradiol" =>
-                {
-                    Some(*date)
+                DosageHistoryEntry::InjectableEstradiol {
+                    date, bonusDose, ..
+                } if medication_type == "injectableEstradiol" => {
+                    if bonusDose.unwrap_or(false) {
+                        None
+                    } else {
+                        Some(*date)
+                    }
                 }
                 DosageHistoryEntry::OralEstradiol { date, .. }
                     if medication_type == "oralEstradiol" =>
