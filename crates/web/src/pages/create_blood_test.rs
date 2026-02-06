@@ -1,10 +1,13 @@
 use gloo_timers::callback::Timeout;
-use js_sys::Date;
+use js_sys::{Date, Object, Reflect};
 use leptos::*;
 use leptos_router::A;
 use std::cell::RefCell;
 use std::rc::Rc;
-use wasm_bindgen::JsValue;
+use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::{closure::Closure, JsCast, JsValue};
+use wasm_bindgen_futures::JsFuture;
+use web_sys::{FileReader, HtmlInputElement};
 
 use crate::layout::page_layout;
 use crate::store::use_store;
@@ -27,6 +30,30 @@ const UNIT_OPTIONS: [HormoneUnits; 9] = [
     HormoneUnits::MIuL,
     HormoneUnits::UL,
 ];
+
+#[derive(Clone, Debug)]
+struct OcrValue {
+    value: String,
+    unit: Option<String>,
+}
+
+#[derive(Clone, Debug, Default)]
+struct OcrExtraction {
+    estradiol: Option<OcrValue>,
+    testosterone: Option<OcrValue>,
+    progesterone: Option<OcrValue>,
+    fsh: Option<OcrValue>,
+    lh: Option<OcrValue>,
+    prolactin: Option<OcrValue>,
+    shbg: Option<OcrValue>,
+    fai: Option<OcrValue>,
+}
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_namespace = Tesseract, js_name = recognize)]
+    fn tesseract_recognize(image: JsValue, lang: &str, options: JsValue) -> js_sys::Promise;
+}
 
 fn to_local_input_value(ms: i64) -> String {
     let date = Date::new(&JsValue::from_f64(ms as f64));
@@ -69,6 +96,105 @@ fn unit_or_default(value: &str, fallback: HormoneUnits) -> HormoneUnits {
     parse_hormone_unit(value).unwrap_or(fallback)
 }
 
+fn parse_ocr_number(token: &str) -> Option<String> {
+    let trimmed = token.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let trimmed = trimmed.trim_matches(|c: char| c == '<' || c == '>' || c == '=');
+    let mut cleaned = String::new();
+    for c in trimmed.chars() {
+        if c.is_ascii_digit() {
+            cleaned.push(c);
+        } else if c == '.' {
+            cleaned.push(c);
+        } else if c == ',' {
+            cleaned.push('.');
+        }
+    }
+    if cleaned.ends_with('.') {
+        cleaned.pop();
+    }
+    if cleaned.is_empty() {
+        None
+    } else {
+        Some(cleaned)
+    }
+}
+
+fn normalize_ocr_unit(token: &str) -> Option<String> {
+    let trimmed = token.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let mut cleaned = trimmed
+        .trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '/' && c != '|' && c != '\\')
+        .to_lowercase();
+    cleaned = cleaned.replace('|', "/").replace('\\', "/");
+    cleaned = cleaned.replace("/i", "/l").replace("/1", "/l");
+    cleaned = cleaned.replace("mlu", "miu");
+    match cleaned.as_str() {
+        "pmol/l" => Some("pmol/L".to_string()),
+        "pg/ml" => Some("pg/mL".to_string()),
+        "ng/dl" => Some("ng/dL".to_string()),
+        "nmol/l" => Some("nmol/L".to_string()),
+        "ng/ml" => Some("ng/mL".to_string()),
+        "miu/l" => Some("mIU/L".to_string()),
+        "miu/ml" => Some("mIU/mL".to_string()),
+        "u/l" | "iu/l" | "ui/l" => Some("U/L".to_string()),
+        _ => None,
+    }
+}
+
+fn extract_ocr_value(text: &str, labels: &[&str]) -> Option<OcrValue> {
+    let lower = text.to_lowercase();
+    for label in labels {
+        if let Some(idx) = lower.find(label) {
+            let start = idx + label.len();
+            let end = (start + 220).min(lower.len());
+            let window = &lower[start..end];
+            let tokens: Vec<&str> = window.split_whitespace().collect();
+            for (index, token) in tokens.iter().enumerate() {
+                if let Some(value) = parse_ocr_number(token) {
+                    let mut unit = None;
+                    for candidate in tokens.iter().skip(index + 1).take(4) {
+                        if let Some(normalized) = normalize_ocr_unit(candidate) {
+                            unit = Some(normalized);
+                            break;
+                        }
+                    }
+                    return Some(OcrValue { value, unit });
+                }
+            }
+        }
+    }
+    None
+}
+
+fn extract_ocr_values(text: &str) -> OcrExtraction {
+    let cleaned = text.replace('\r', "\n");
+    OcrExtraction {
+        estradiol: extract_ocr_value(&cleaned, &["oestradiol", "estradiol"]),
+        testosterone: extract_ocr_value(&cleaned, &["testosterone"]),
+        progesterone: extract_ocr_value(&cleaned, &["progesterone"]),
+        fsh: extract_ocr_value(
+            &cleaned,
+            &[
+                "follicle stimulating hormone",
+                "follicle-stimulating hormone",
+                "fsh",
+            ],
+        ),
+        lh: extract_ocr_value(
+            &cleaned,
+            &["luteinising hormone", "luteinizing hormone", "lh"],
+        ),
+        prolactin: extract_ocr_value(&cleaned, &["prolactin"]),
+        shbg: extract_ocr_value(&cleaned, &["sex hormone binding globulin", "shbg"]),
+        fai: extract_ocr_value(&cleaned, &["free androgen index", "fai"]),
+    }
+}
+
 #[component]
 pub fn CreateBloodTest() -> impl IntoView {
     let store = use_store();
@@ -81,25 +207,232 @@ pub fn CreateBloodTest() -> impl IntoView {
 
     let test_date_time = create_rw_signal(to_local_input_value(Date::now() as i64));
     let estradiol_level = create_rw_signal("0".to_string());
-    let estradiol_unit = create_rw_signal(hormone_unit_label(&HormoneUnits::E2PgMl).to_string());
+    let default_e2_unit = store
+        .settings
+        .get()
+        .displayEstradiolUnit
+        .unwrap_or(HormoneUnits::E2PmolL);
+    let estradiol_unit = create_rw_signal(hormone_unit_label(&default_e2_unit).to_string());
     let estrannaise_number = create_rw_signal("0".to_string());
     let estrannaise_unit = create_rw_signal(hormone_unit_label(&HormoneUnits::E2PgMl).to_string());
     let test_level = create_rw_signal("0".to_string());
-    let test_unit = create_rw_signal(hormone_unit_label(&HormoneUnits::TNgDl).to_string());
+    let test_unit = create_rw_signal(hormone_unit_label(&HormoneUnits::TNmolL).to_string());
     let progesterone_level = create_rw_signal("0".to_string());
-    let progesterone_unit = create_rw_signal(hormone_unit_label(&HormoneUnits::NgMl).to_string());
+    let progesterone_unit = create_rw_signal(hormone_unit_label(&HormoneUnits::TNmolL).to_string());
     let fsh_level = create_rw_signal("0".to_string());
-    let fsh_unit = create_rw_signal(hormone_unit_label(&HormoneUnits::MIuMl).to_string());
+    let fsh_unit = create_rw_signal(hormone_unit_label(&HormoneUnits::UL).to_string());
     let lh_level = create_rw_signal("0".to_string());
-    let lh_unit = create_rw_signal(hormone_unit_label(&HormoneUnits::MIuMl).to_string());
+    let lh_unit = create_rw_signal(hormone_unit_label(&HormoneUnits::UL).to_string());
     let prolactin_level = create_rw_signal("0".to_string());
-    let prolactin_unit = create_rw_signal(hormone_unit_label(&HormoneUnits::NgMl).to_string());
+    let prolactin_unit = create_rw_signal(hormone_unit_label(&HormoneUnits::MIuL).to_string());
     let shbg_level = create_rw_signal("0".to_string());
     let shbg_unit = create_rw_signal(hormone_unit_label(&HormoneUnits::TNmolL).to_string());
     let free_androgen_index = create_rw_signal("0".to_string());
     let notes = create_rw_signal(String::new());
+    let ocr_busy = create_rw_signal(false);
+    let ocr_status = create_rw_signal(String::new());
+    let ocr_error = create_rw_signal(None::<String>);
+    let ocr_input_ref = create_node_ref::<HtmlInputElement>();
     let show_feedback = create_rw_signal(false);
     let feedback_timeout: Rc<RefCell<Option<Timeout>>> = Rc::new(RefCell::new(None));
+
+    let open_ocr_picker = {
+        let ocr_input_ref = ocr_input_ref;
+        move |_| {
+            if ocr_busy.get() {
+                return;
+            }
+            if let Some(input) = ocr_input_ref.get() {
+                input.click();
+            }
+        }
+    };
+
+    let on_ocr_change = {
+        let estradiol_level = estradiol_level;
+        let estradiol_unit = estradiol_unit;
+        let test_level = test_level;
+        let test_unit = test_unit;
+        let progesterone_level = progesterone_level;
+        let progesterone_unit = progesterone_unit;
+        let fsh_level = fsh_level;
+        let fsh_unit = fsh_unit;
+        let lh_level = lh_level;
+        let lh_unit = lh_unit;
+        let prolactin_level = prolactin_level;
+        let prolactin_unit = prolactin_unit;
+        let shbg_level = shbg_level;
+        let shbg_unit = shbg_unit;
+        let free_androgen_index = free_androgen_index;
+        move |ev: leptos::ev::Event| {
+            if ocr_busy.get() {
+                return;
+            }
+            let input: HtmlInputElement = event_target(&ev);
+            let Some(files) = input.files() else {
+                return;
+            };
+            let Some(file) = files.get(0) else {
+                return;
+            };
+            let Ok(reader) = FileReader::new() else {
+                ocr_error.set(Some("Could not read the image file.".to_string()));
+                ocr_status.set(String::new());
+                return;
+            };
+            let input_clone = input.clone();
+            let input_reset = input.clone();
+            let reader_clone = reader.clone();
+            ocr_busy.set(true);
+            ocr_error.set(None);
+            ocr_status.set("Reading image...".to_string());
+            let onloadend = Closure::wrap(Box::new(move |_ev: web_sys::Event| {
+                let data_url = reader_clone
+                    .result()
+                    .ok()
+                    .and_then(|value| value.as_string())
+                    .unwrap_or_default();
+                if data_url.trim().is_empty() {
+                    ocr_error.set(Some("Failed to read image data.".to_string()));
+                    ocr_status.set(String::new());
+                    ocr_busy.set(false);
+                    input_clone.set_value("");
+                    return;
+                }
+                let tesseract_loaded =
+                    Reflect::has(&js_sys::global(), &JsValue::from_str("Tesseract"))
+                        .unwrap_or(false);
+                if !tesseract_loaded {
+                    ocr_error.set(Some("OCR library did not load. Try refreshing.".to_string()));
+                    ocr_status.set(String::new());
+                    ocr_busy.set(false);
+                    input_clone.set_value("");
+                    return;
+                }
+                ocr_status.set("Running OCR...".to_string());
+                spawn_local(async move {
+                    let options = Object::new();
+                    let _ = Reflect::set(
+                        &options,
+                        &JsValue::from_str("workerPath"),
+                        &JsValue::from_str("/ocr/worker.min.js"),
+                    );
+                    let _ = Reflect::set(
+                        &options,
+                        &JsValue::from_str("corePath"),
+                        &JsValue::from_str("/ocr/tesseract-core.wasm.js"),
+                    );
+                    let _ = Reflect::set(
+                        &options,
+                        &JsValue::from_str("langPath"),
+                        &JsValue::from_str("/ocr"),
+                    );
+                    let result = JsFuture::from(tesseract_recognize(
+                        JsValue::from_str(&data_url),
+                        "eng",
+                        options.into(),
+                    ))
+                    .await;
+                    let value = match result {
+                        Ok(value) => value,
+                        Err(_) => {
+                            ocr_error.set(Some("OCR failed to process the image.".to_string()));
+                            ocr_status.set(String::new());
+                            ocr_busy.set(false);
+                            input_clone.set_value("");
+                            return;
+                        }
+                    };
+                    let text = Reflect::get(&value, &JsValue::from_str("data"))
+                        .ok()
+                        .and_then(|data| Reflect::get(&data, &JsValue::from_str("text")).ok())
+                        .and_then(|value| value.as_string())
+                        .unwrap_or_default();
+                    if text.trim().is_empty() {
+                        ocr_error.set(Some("OCR did not find any text.".to_string()));
+                        ocr_status.set(String::new());
+                        ocr_busy.set(false);
+                        input_clone.set_value("");
+                        return;
+                    }
+                    let extracted = extract_ocr_values(&text);
+                    let mut filled = 0;
+                    if let Some(value) = extracted.estradiol {
+                        estradiol_level.set(value.value);
+                        if let Some(unit) = value.unit {
+                            estradiol_unit.set(unit);
+                        }
+                        filled += 1;
+                    }
+                    if let Some(value) = extracted.testosterone {
+                        test_level.set(value.value);
+                        if let Some(unit) = value.unit {
+                            test_unit.set(unit);
+                        }
+                        filled += 1;
+                    }
+                    if let Some(value) = extracted.progesterone {
+                        progesterone_level.set(value.value);
+                        if let Some(unit) = value.unit {
+                            progesterone_unit.set(unit);
+                        }
+                        filled += 1;
+                    }
+                    if let Some(value) = extracted.fsh {
+                        fsh_level.set(value.value);
+                        if let Some(unit) = value.unit {
+                            fsh_unit.set(unit);
+                        }
+                        filled += 1;
+                    }
+                    if let Some(value) = extracted.lh {
+                        lh_level.set(value.value);
+                        if let Some(unit) = value.unit {
+                            lh_unit.set(unit);
+                        }
+                        filled += 1;
+                    }
+                    if let Some(value) = extracted.prolactin {
+                        prolactin_level.set(value.value);
+                        if let Some(unit) = value.unit {
+                            prolactin_unit.set(unit);
+                        }
+                        filled += 1;
+                    }
+                    if let Some(value) = extracted.shbg {
+                        shbg_level.set(value.value);
+                        if let Some(unit) = value.unit {
+                            shbg_unit.set(unit);
+                        }
+                        filled += 1;
+                    }
+                    if let Some(value) = extracted.fai {
+                        free_androgen_index.set(value.value);
+                        filled += 1;
+                    }
+                    if filled == 0 {
+                        ocr_error.set(Some("OCR ran, but no lab values were found.".to_string()));
+                        ocr_status.set(String::new());
+                    } else {
+                        ocr_status.set(format!(
+                            "Autofilled {filled} fields from OCR. Review before saving."
+                        ));
+                    }
+                    ocr_busy.set(false);
+                    input_clone.set_value("");
+                });
+            }) as Box<dyn FnMut(_)>);
+            reader.set_onloadend(Some(onloadend.as_ref().unchecked_ref()));
+            if reader.read_as_data_url(&file).is_err() {
+                ocr_error.set(Some("Failed to read the image file.".to_string()));
+                ocr_status.set(String::new());
+                ocr_busy.set(false);
+                input_reset.set_value("");
+                return;
+            }
+            onloadend.forget();
+        }
+    };
 
     let on_submit = {
         let feedback_timeout = feedback_timeout.clone();
@@ -117,14 +450,18 @@ pub fn CreateBloodTest() -> impl IntoView {
             let shbg_value = parse_optional(&shbg_level.get());
             let free_androgen_value = parse_optional(&free_androgen_index.get());
 
-            let estradiol_unit_value =
-                unit_or_default(&estradiol_unit.get(), HormoneUnits::E2PgMl);
-            let test_unit_value = unit_or_default(&test_unit.get(), HormoneUnits::TNgDl);
+            let default_e2_unit = store
+                .settings
+                .get()
+                .displayEstradiolUnit
+                .unwrap_or(HormoneUnits::E2PmolL);
+            let estradiol_unit_value = unit_or_default(&estradiol_unit.get(), default_e2_unit);
+            let test_unit_value = unit_or_default(&test_unit.get(), HormoneUnits::TNmolL);
             let progesterone_unit_value =
-                unit_or_default(&progesterone_unit.get(), HormoneUnits::NgMl);
-            let fsh_unit_value = unit_or_default(&fsh_unit.get(), HormoneUnits::MIuMl);
-            let lh_unit_value = unit_or_default(&lh_unit.get(), HormoneUnits::MIuMl);
-            let prolactin_unit_value = unit_or_default(&prolactin_unit.get(), HormoneUnits::NgMl);
+                unit_or_default(&progesterone_unit.get(), HormoneUnits::TNmolL);
+            let fsh_unit_value = unit_or_default(&fsh_unit.get(), HormoneUnits::UL);
+            let lh_unit_value = unit_or_default(&lh_unit.get(), HormoneUnits::UL);
+            let prolactin_unit_value = unit_or_default(&prolactin_unit.get(), HormoneUnits::MIuL);
             let shbg_unit_value = unit_or_default(&shbg_unit.get(), HormoneUnits::TNmolL);
 
             let estrannaise_unit_value =
@@ -179,7 +516,13 @@ pub fn CreateBloodTest() -> impl IntoView {
                 estrogenType: None,
             };
 
-            store.data.update(|d| d.bloodTests.push(entry));
+            store.data.update(|d| {
+                if let Some(existing) = d.bloodTests.iter_mut().find(|item| item.date == date) {
+                    *existing = entry;
+                } else {
+                    d.bloodTests.push(entry);
+                }
+            });
             store.mark_dirty();
 
             show_feedback.set(true);
@@ -227,6 +570,37 @@ pub fn CreateBloodTest() -> impl IntoView {
                             prop:value=move || test_date_time.get()
                         />
                     </label>
+
+                    <div class="form-section">
+                        <h3>"Import from screenshot"</h3>
+                        <div class="inline-equal">
+                            <div>
+                                <input
+                                    type="file"
+                                    accept="image/*"
+                                    node_ref=ocr_input_ref
+                                    on:change=on_ocr_change
+                                    class="hidden-input"
+                                />
+                                <button
+                                    type="button"
+                                    on:click=open_ocr_picker
+                                    prop:disabled=move || ocr_busy.get()
+                                >
+                                    {move || if ocr_busy.get() { "Running OCR..." } else { "Upload lab screenshot" }}
+                                </button>
+                                <p class="muted">"PNG/JPEG/WEBP · Cropped results work best."</p>
+                            </div>
+                            <div>
+                                <Show when=move || !ocr_status.get().is_empty()>
+                                    <p class="muted">{move || ocr_status.get()}</p>
+                                </Show>
+                                <Show when=move || ocr_error.get().is_some()>
+                                    <p class="muted">{move || ocr_error.get().unwrap_or_default()}</p>
+                                </Show>
+                            </div>
+                        </div>
+                    </div>
 
                     <div class="form-section">
                         <h3>"Hormone levels"</h3>

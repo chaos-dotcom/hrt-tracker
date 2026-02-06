@@ -1210,6 +1210,10 @@ section section {
   z-index: 20;
 }
 
+.modal-backdrop.modal-backdrop-top {
+  z-index: 40;
+}
+
 .modal {
   background: linear-gradient(160deg, rgba(35, 36, 58, 0.96), rgba(26, 26, 42, 0.98));
   border-radius: 18px;

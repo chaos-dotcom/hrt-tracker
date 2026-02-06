@@ -11,7 +11,7 @@ use crate::charts::{
 };
 use crate::utils::{
     convert_estradiol_to_display, convert_fsh_to_miu_ml, convert_lh_to_miu_ml,
-    convert_progesterone_to_ng_ml, convert_testosterone_to_ng_dl, fmt_date_label,
+    convert_progesterone_to_ng_ml, convert_testosterone_to_ng_dl, fmt_blood_value, fmt_date_label,
     hormone_unit_label,
 };
 use hrt_shared::types::{DosageHistoryEntry, HormoneUnits, HrtData, Settings};
@@ -100,20 +100,25 @@ pub fn compute_view_chart_state(
         };
         if show_e2 {
             if let Some(value) = test.estradiolLevel {
-                let raw_unit = test.estradiolUnit.clone().unwrap_or(HormoneUnits::E2PgMl);
+                let raw_unit = test.estradiolUnit.clone().unwrap_or(display_unit.clone());
                 let plot_val = convert_estradiol_to_display(value, &raw_unit, &display_unit);
                 let unit_label = hormone_unit_label(&display_unit);
                 let tooltip = if raw_unit != display_unit {
                     format!(
-                        "Estradiol: {:.2} {} -> {:.2} {} ({})",
-                        value,
+                        "Estradiol: {} {} -> {} {} ({})",
+                        fmt_blood_value(value),
                         hormone_unit_label(&raw_unit),
-                        plot_val,
+                        fmt_blood_value(plot_val),
                         unit_label,
                         date_short
                     )
                 } else {
-                    format!("Estradiol: {:.2} {} ({})", plot_val, unit_label, date_short)
+                    format!(
+                        "Estradiol: {} {} ({})",
+                        fmt_blood_value(plot_val),
+                        unit_label,
+                        date_short
+                    )
                 };
                 points.push(ViewChartPoint {
                     x,
@@ -127,20 +132,25 @@ pub fn compute_view_chart_state(
         }
         if show_t {
             if let Some(value) = test.testLevel {
-                let raw_unit = test.testUnit.clone().unwrap_or(HormoneUnits::TNgDl);
+                let raw_unit = test.testUnit.clone().unwrap_or(HormoneUnits::TNmolL);
                 let plot_val = convert_testosterone_to_ng_dl(value, &raw_unit);
                 let unit_label = "ng/dL";
                 let tooltip = if raw_unit != HormoneUnits::TNgDl {
                     format!(
-                        "Testosterone: {:.2} {} -> {:.2} {} ({})",
-                        value,
+                        "Testosterone: {} {} -> {} {} ({})",
+                        fmt_blood_value(value),
                         hormone_unit_label(&raw_unit),
-                        plot_val,
+                        fmt_blood_value(plot_val),
                         unit_label,
                         date_short
                     )
                 } else {
-                    format!("Testosterone: {:.2} {} ({})", plot_val, unit_label, date_short)
+                    format!(
+                        "Testosterone: {} {} ({})",
+                        fmt_blood_value(plot_val),
+                        unit_label,
+                        date_short
+                    )
                 };
                 points.push(ViewChartPoint {
                     x,
@@ -154,9 +164,16 @@ pub fn compute_view_chart_state(
         }
         if show_prog {
             if let Some(value) = test.progesteroneLevel {
-                let raw_unit = test.progesteroneUnit.clone().unwrap_or(HormoneUnits::NgMl);
+                let raw_unit = test
+                    .progesteroneUnit
+                    .clone()
+                    .unwrap_or(HormoneUnits::TNmolL);
                 let plot_val = convert_progesterone_to_ng_ml(value, &raw_unit);
-                let tooltip = format!("Progesterone: {:.2} ng/mL ({})", plot_val, date_short);
+                let tooltip = format!(
+                    "Progesterone: {} ng/mL ({})",
+                    fmt_blood_value(plot_val),
+                    date_short
+                );
                 points.push(ViewChartPoint {
                     x,
                     y: plot_val,
@@ -169,9 +186,9 @@ pub fn compute_view_chart_state(
         }
         if show_fsh {
             if let Some(value) = test.fshLevel {
-                let raw_unit = test.fshUnit.clone().unwrap_or(HormoneUnits::MIuMl);
+                let raw_unit = test.fshUnit.clone().unwrap_or(HormoneUnits::UL);
                 let plot_val = convert_fsh_to_miu_ml(value, &raw_unit);
-                let tooltip = format!("FSH: {:.2} mIU/mL ({})", plot_val, date_short);
+                let tooltip = format!("FSH: {} mIU/mL ({})", fmt_blood_value(plot_val), date_short);
                 points.push(ViewChartPoint {
                     x,
                     y: plot_val,
@@ -184,9 +201,9 @@ pub fn compute_view_chart_state(
         }
         if show_lh {
             if let Some(value) = test.lhLevel {
-                let raw_unit = test.lhUnit.clone().unwrap_or(HormoneUnits::MIuMl);
+                let raw_unit = test.lhUnit.clone().unwrap_or(HormoneUnits::UL);
                 let plot_val = convert_lh_to_miu_ml(value, &raw_unit);
-                let tooltip = format!("LH: {:.2} mIU/mL ({})", plot_val, date_short);
+                let tooltip = format!("LH: {} mIU/mL ({})", fmt_blood_value(plot_val), date_short);
                 points.push(ViewChartPoint {
                     x,
                     y: plot_val,
@@ -199,9 +216,14 @@ pub fn compute_view_chart_state(
         }
         if show_prolactin {
             if let Some(value) = test.prolactinLevel {
-                let raw_unit = test.prolactinUnit.clone().unwrap_or(HormoneUnits::NgMl);
+                let raw_unit = test.prolactinUnit.clone().unwrap_or(HormoneUnits::MIuL);
                 let unit_label = hormone_unit_label(&raw_unit);
-                let tooltip = format!("Prolactin: {:.2} {} ({})", value, unit_label, date_short);
+                let tooltip = format!(
+                    "Prolactin: {} {} ({})",
+                    fmt_blood_value(value),
+                    unit_label,
+                    date_short
+                );
                 points.push(ViewChartPoint {
                     x,
                     y: value,
@@ -216,7 +238,12 @@ pub fn compute_view_chart_state(
             if let Some(value) = test.shbgLevel {
                 let raw_unit = test.shbgUnit.clone().unwrap_or(HormoneUnits::TNmolL);
                 let unit_label = hormone_unit_label(&raw_unit);
-                let tooltip = format!("SHBG: {:.2} {} ({})", value, unit_label, date_short);
+                let tooltip = format!(
+                    "SHBG: {} {} ({})",
+                    fmt_blood_value(value),
+                    unit_label,
+                    date_short
+                );
                 points.push(ViewChartPoint {
                     x,
                     y: value,
@@ -229,7 +256,7 @@ pub fn compute_view_chart_state(
         }
         if show_fai {
             if let Some(value) = test.freeAndrogenIndex {
-                let tooltip = format!("FAI: {:.2} ({})", value, date_short);
+                let tooltip = format!("FAI: {} ({})", fmt_blood_value(value), date_short);
                 points.push(ViewChartPoint {
                     x,
                     y: value,
@@ -270,7 +297,12 @@ pub fn compute_view_chart_state(
                 DosageHistoryEntry::OralEstradiol {
                     kind, dose, unit, ..
                 } => (
-                    format!("Oral E: {:?}, {:.2} {}", kind, dose, hormone_unit_label(unit)),
+                    format!(
+                        "Oral E: {:?}, {:.2} {}",
+                        kind,
+                        dose,
+                        hormone_unit_label(unit)
+                    ),
                     (*dose * 10.0).min(200.0),
                     RGBColor(46, 139, 87),
                 ),

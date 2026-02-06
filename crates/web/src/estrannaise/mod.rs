@@ -1,10 +1,11 @@
 use hrt_shared::estrannaise::e2_multidose_3c;
-use hrt_shared::types::{BloodTest, EstrannaiseModel, HormoneUnits, HrtData, InjectableEstradiols, Settings};
+use hrt_shared::types::{
+    BloodTest, EstrannaiseModel, HormoneUnits, HrtData, InjectableEstradiols, Settings,
+};
 
 use crate::charts::estrannaise::{EstrannaisePoint, EstrannaiseSeries};
 use crate::utils::{
-    convert_estradiol_to_display, estradiol_conversion_factor, fmt_date_label,
-    hormone_unit_label,
+    convert_estradiol_to_display, estradiol_conversion_factor, fmt_date_label, hormone_unit_label,
 };
 
 fn map_estrannaise_model(kind: &InjectableEstradiols) -> Option<EstrannaiseModel> {
@@ -231,7 +232,7 @@ pub fn compute_estrannaise_series(
                 .map(|value| (test.date, value, test.estradiolUnit.clone()))
         })
         .map(|(date, value, unit)| {
-            let raw_unit = unit.unwrap_or(HormoneUnits::E2PgMl);
+            let raw_unit = unit.unwrap_or(display_unit.clone());
             let plot_val = convert_estradiol_to_display(value, &raw_unit, &display_unit);
             let x = if axis_mode == "days" {
                 (date - first_dose) as f64 / (24.0 * 60.0 * 60.0 * 1000.0)
