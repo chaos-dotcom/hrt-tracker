@@ -5,14 +5,21 @@ use axum::{
     body::Body,
     http::{Request, Response, StatusCode},
 };
+use std::path::Path;
 use tower_http::services::ServeDir;
 
 pub fn serve() {
     let addr = std::env::var("HRT_WEB_ADDR").unwrap_or_else(|_| "127.0.0.1:4100".to_string());
     let backend_addr = std::env::var("HRT_SERVER_ADDR").unwrap_or_else(|_| "127.0.0.1:4200".to_string());
 
+    let ocr_dir = if Path::new("target/site/ocr").exists() {
+        "target/site/ocr"
+    } else {
+        "static/ocr"
+    };
     let app = Router::new()
         .nest_service("/pkg", ServeDir::new("target/site/pkg"))
+        .nest_service("/ocr", ServeDir::new(ocr_dir))
         .route("/", get(index_handler))
         .fallback(get(index_handler))
         .nest("/api", api_proxy_router(backend_addr));
