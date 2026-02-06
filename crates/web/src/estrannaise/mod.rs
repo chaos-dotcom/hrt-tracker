@@ -82,12 +82,15 @@ pub fn compute_estrannaise_series(
     forecast_weeks: i64,
     forecast_dose_override: Option<f64>,
     forecast_freq_override: Option<f64>,
+    stepped_fudge_override: Option<f64>,
 ) -> EstrannaiseSeries {
     let display_unit = settings
         .displayEstradiolUnit
         .clone()
         .unwrap_or(HormoneUnits::E2PmolL);
     let conversion = estradiol_conversion_factor(&display_unit);
+    let stepped_fudge_override =
+        stepped_fudge_override.filter(|value| value.is_finite() && *value > 0.0);
     let dose_history: Vec<_> = data
         .dosageHistory
         .iter()
@@ -181,7 +184,9 @@ pub fn compute_estrannaise_series(
         while t <= forecast_end {
             let day_value = (t - start_date) as f64 / (24.0 * 60.0 * 60.0 * 1000.0);
             let blended_fudge = blend_fudge(&series, t);
-            let step_fudge = if t >= base_step_entry.0 {
+            let step_fudge = if let Some(override_value) = stepped_fudge_override {
+                override_value
+            } else if t >= base_step_entry.0 {
                 base_step_entry.1
             } else {
                 step_fudge(&series, t)
@@ -292,7 +297,7 @@ pub fn compute_estrannaise_series(
         stepped,
         blood,
         forecast,
-        step_split_x: if forecast_enabled {
+        step_split_x: if forecast_enabled && stepped_fudge_override.is_none() {
             let split_date = base_step_entry.0;
             Some(if axis_mode == "days" {
                 (split_date - start_date) as f64 / (24.0 * 60.0 * 60.0 * 1000.0)
