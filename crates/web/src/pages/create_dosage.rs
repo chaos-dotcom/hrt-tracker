@@ -1,7 +1,7 @@
 use gloo_timers::callback::Timeout;
 use js_sys::Date;
-use leptos::*;
 use leptos::window;
+use leptos::*;
 use leptos_router::{use_navigate, A};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -281,10 +281,7 @@ pub fn CreateDosage() -> impl IntoView {
     let navigate = use_navigate();
 
     let initial_mode = {
-        let search = window()
-            .location()
-            .search()
-            .unwrap_or_default();
+        let search = window().location().search().unwrap_or_default();
         if search.contains("mode=schedule") {
             "schedule"
         } else {
@@ -296,7 +293,8 @@ pub fn CreateDosage() -> impl IntoView {
     let mode = create_rw_signal(initial_mode);
     let estrogen_method = create_rw_signal("injection".to_string());
 
-    let injectable_type = create_rw_signal(injectable_label(&InjectableEstradiols::Benzoate).to_string());
+    let injectable_type =
+        create_rw_signal(injectable_label(&InjectableEstradiols::Benzoate).to_string());
     let oral_type = create_rw_signal(oral_label(&OralEstradiols::Valerate).to_string());
     let estrogen_dose = create_rw_signal("0".to_string());
     let estrogen_unit = create_rw_signal(hormone_unit_label(&HormoneUnits::Mg).to_string());
@@ -337,7 +335,8 @@ pub fn CreateDosage() -> impl IntoView {
     let prog_type = create_rw_signal(String::new());
     let prog_dose = create_rw_signal("0".to_string());
     let prog_unit = create_rw_signal(hormone_unit_label(&HormoneUnits::Mg).to_string());
-    let prog_route = create_rw_signal(progesterone_route_label(&ProgesteroneRoutes::Oral).to_string());
+    let prog_route =
+        create_rw_signal(progesterone_route_label(&ProgesteroneRoutes::Oral).to_string());
     let prog_frequency = create_rw_signal("1".to_string());
     let prog_next_date = create_rw_signal(String::new());
 
@@ -501,8 +500,8 @@ pub fn CreateDosage() -> impl IntoView {
                 store.data.update(|data| {
                     if record_estrogen.get() {
                         let dose_value = parse_num(&estrogen_dose.get());
-                        let unit_value = parse_hormone_unit(&estrogen_unit.get())
-                            .unwrap_or(HormoneUnits::Mg);
+                        let unit_value =
+                            parse_hormone_unit(&estrogen_unit.get()).unwrap_or(HormoneUnits::Mg);
                         if estrogen_method_value == "injection" {
                             let kind = injectable_from_label(&injectable_type.get());
                             let record = DosageHistoryEntry::InjectableEstradiol {
@@ -585,8 +584,8 @@ pub fn CreateDosage() -> impl IntoView {
 
                     if record_prog.get() && !prog_type.get().trim().is_empty() {
                         let kind = progesterone_from_label(&prog_type.get());
-                        let pill_qty = parse_optional_num(&prog_pill_qty.get())
-                            .filter(|value| *value > 0.0);
+                        let pill_qty =
+                            parse_optional_num(&prog_pill_qty.get()).filter(|value| *value > 0.0);
                         let record = DosageHistoryEntry::Progesterone {
                             date: record_ms,
                             id: None,
@@ -1010,7 +1009,7 @@ pub fn CreateDosage() -> impl IntoView {
                                 <input
                                     type="number"
                                     min="1"
-                                    step="1"
+                                    step="any"
                                     on:input=move |ev| estrogen_pill_qty.set(event_target_value(&ev))
                                     prop:value=move || estrogen_pill_qty.get()
                                 />
@@ -1079,7 +1078,7 @@ pub fn CreateDosage() -> impl IntoView {
                                     "Frequency (days)"
                                     <input
                                         type="number"
-                                        step="1"
+                                        step="any"
                                         on:input=move |ev| {
                                             if estrogen_method.get() == "injection" {
                                                 injection_frequency.set(event_target_value(&ev));
@@ -1185,7 +1184,7 @@ pub fn CreateDosage() -> impl IntoView {
                                     "Frequency (days)"
                                     <input
                                         type="number"
-                                        step="1"
+                                        step="any"
                                         on:input=move |ev| aa_frequency.set(event_target_value(&ev))
                                         prop:value=move || aa_frequency.get()
                                     />
@@ -1245,7 +1244,7 @@ pub fn CreateDosage() -> impl IntoView {
                                     <input
                                         type="number"
                                         min="1"
-                                        step="1"
+                                        step="any"
                                         on:input=move |ev| prog_pill_qty.set(event_target_value(&ev))
                                         prop:value=move || prog_pill_qty.get()
                                     />
@@ -1296,7 +1295,7 @@ pub fn CreateDosage() -> impl IntoView {
                                         "Frequency (days)"
                                         <input
                                             type="number"
-                                            step="1"
+                                            step="any"
                                             on:input=move |ev| prog_frequency.set(event_target_value(&ev))
                                             prop:value=move || prog_frequency.get()
                                         />

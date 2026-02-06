@@ -1,6 +1,6 @@
 use chrono::Local;
-use leptos::*;
 use leptos::window;
+use leptos::*;
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
 
@@ -194,7 +194,7 @@ pub fn BackupPage() -> impl IntoView {
                         <label>"Blood test interval (months)"</label>
                         <input
                             type="number"
-                            step="1"
+                            step="any"
                             min="1"
                             on:input={
                                 let store = store.clone();

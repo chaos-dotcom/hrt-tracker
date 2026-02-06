@@ -1,18 +1,21 @@
 use gloo_events::EventListener;
-use leptos::*;
 use leptos::window;
+use leptos::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
 use web_sys::HtmlCanvasElement;
 
+use crate::charts::estrannaise::{draw_estrannaise_chart, find_nearest_estrannaise_point};
 use crate::charts::{
     chart_padding, clamp_zoom, compute_chart_bounds, ChartTooltip, DragState, ViewZoom,
 };
-use crate::charts::estrannaise::{draw_estrannaise_chart, find_nearest_estrannaise_point};
 use crate::estrannaise::compute_estrannaise_series;
 use crate::layout::page_layout;
 use crate::store::use_store;
+use crate::utils::{compute_fudge_factor, fmt_blood_value, fmt_date_label, hormone_unit_label};
+use hrt_shared::logic::predict_e2_pg_ml;
+use hrt_shared::types::{BloodTest, HormoneUnits};
 
 #[component]
 pub fn EstrannaisePage() -> impl IntoView {
@@ -22,8 +25,69 @@ pub fn EstrannaisePage() -> impl IntoView {
     let forecast_weeks = create_rw_signal(8_i64);
     let forecast_dose_override = create_rw_signal(String::new());
     let forecast_frequency_override = create_rw_signal(String::new());
+    let selected_blood_test = create_rw_signal(String::new());
     let estrannaise_zoom = create_rw_signal(ViewZoom::default());
     let estrannaise_tooltip = create_rw_signal(None::<ChartTooltip>);
+
+    let blood_test_options = create_memo({
+        let settings = store.settings;
+        move |_| {
+            let data_value = store.data.get();
+            let display_unit = settings
+                .get()
+                .displayEstradiolUnit
+                .unwrap_or(HormoneUnits::E2PmolL);
+            let fallback_label = hormone_unit_label(&display_unit);
+            let mut tests: Vec<&BloodTest> = data_value
+                .bloodTests
+                .iter()
+                .filter(|test| test.estradiolLevel.is_some())
+                .collect();
+            tests.sort_by_key(|test| test.date);
+            tests.reverse();
+            tests
+                .into_iter()
+                .map(|test| {
+                    let date_label = fmt_date_label(test.date, "date", None);
+                    let value_label = test
+                        .estradiolLevel
+                        .map(fmt_blood_value)
+                        .unwrap_or_else(|| "-".to_string());
+                    let unit_label = test
+                        .estradiolUnit
+                        .as_ref()
+                        .map(hormone_unit_label)
+                        .unwrap_or(fallback_label);
+                    (
+                        test.date.to_string(),
+                        format!("{date_label} · E2 {value_label} {unit_label}"),
+                    )
+                })
+                .collect::<Vec<_>>()
+        }
+    });
+
+    let selected_fudge_factor = create_memo({
+        let store = store.clone();
+        move |_| {
+            let selected = selected_blood_test.get();
+            if selected.trim().is_empty() {
+                return None;
+            }
+            let date = selected.trim().parse::<i64>().ok()?;
+            let data_value = store.data.get();
+            let test = data_value
+                .bloodTests
+                .iter()
+                .find(|test| test.date == date)?;
+            if let Some(fudge) = test.fudgeFactor {
+                return Some(fudge);
+            }
+            let measured = measured_e2_pg_ml(test);
+            let predicted = predict_e2_pg_ml(&data_value, test.date);
+            compute_fudge_factor(measured, predicted)
+        }
+    });
 
     let estrannaise_series = create_memo({
         let settings = store.settings;
@@ -40,6 +104,7 @@ pub fn EstrannaisePage() -> impl IntoView {
                 forecast_weeks.get(),
                 dose_override,
                 freq_override,
+                selected_fudge_factor.get(),
             )
         }
     });
@@ -306,13 +371,31 @@ pub fn EstrannaisePage() -> impl IntoView {
                         <label class="muted">"Every (days)"</label>
                         <input
                             type="number"
-                            step="1"
+                            step="any"
                             min="1"
                             class="chart-input"
                             placeholder="auto"
                             on:input=move |ev| forecast_frequency_override.set(event_target_value(&ev))
                             prop:value=move || forecast_frequency_override.get()
                         />
+                    </div>
+                    <div class="chart-toolbar-group">
+                        <label class="muted">"Pink line"</label>
+                        <select
+                            on:change=move |ev| selected_blood_test.set(event_target_value(&ev))
+                            prop:value=move || selected_blood_test.get()
+                        >
+                            <option value="">"Auto (use all tests)"</option>
+                            <For
+                                each=move || blood_test_options.get()
+                                key=|entry| entry.0.clone()
+                                children=move |entry| {
+                                    let value = entry.0.clone();
+                                    let label = entry.1.clone();
+                                    view! { <option value=value.clone()>{label}</option> }
+                                }
+                            />
+                        </select>
                     </div>
                     <div class="chart-toolbar-group">
                         <button on:click=reset_zoom disabled=move || estrannaise_zoom.get().x_min.is_none()>
@@ -361,10 +444,30 @@ pub fn EstrannaisePage() -> impl IntoView {
                         <p>"* Pink dashed line steps to each test's fudge factor."</p>
                         <p>"* Orange points show measured E2 in display units."</p>
                         <p>"* Shaded region is forecasted schedule window."</p>
+                        <Show when=move || selected_fudge_factor.get().is_some()>
+                            <p>{move || {
+                                let value = selected_fudge_factor.get().unwrap_or(1.0);
+                                format!("* Selected test fudge factor: {:.3}", value)
+                            }}</p>
+                        </Show>
                     </div>
                 </div>
             </div>
         }
         .into_view(),
     )
+}
+fn measured_e2_pg_ml(test: &BloodTest) -> Option<f64> {
+    let value = test.estradiolLevel?;
+    let unit = test.estradiolUnit.clone().unwrap_or(HormoneUnits::E2PgMl);
+    let measured = if unit == HormoneUnits::E2PmolL {
+        value / 3.671
+    } else {
+        value
+    };
+    if measured.is_finite() {
+        Some(measured)
+    } else {
+        None
+    }
 }

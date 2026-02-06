@@ -2441,7 +2441,7 @@ pub fn ViewPage() -> impl IntoView {
                                 <input
                                     type="number"
                                     min="1"
-                                    step="1"
+                                    step="any"
                                     on:input=move |ev| editing_pill_qty.set(event_target_value(&ev))
                                     prop:value=move || editing_pill_qty.get()
                                 />
