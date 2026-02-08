@@ -1,14 +1,14 @@
 use chrono::{Local, TimeZone};
 use js_sys::Date;
-use leptos::*;
 use leptos::window;
+use leptos::*;
 use leptos_router::{use_navigate, use_params_map, A};
 use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::layout::page_layout;
 use crate::store::use_store;
-use crate::utils::parse_date_or_now;
+use crate::utils::{fmt_decimal, parse_date_or_now};
 use hrt_shared::types::{InjectableEstradiols, SubVial, Vial};
 
 const ESTER_OPTIONS: [InjectableEstradiols; 6] = [
@@ -61,6 +61,7 @@ pub fn VialsPage() -> impl IntoView {
     let store = use_store();
     let vials = move || store.data.get().vials.clone();
     let new_sub_numbers = create_rw_signal(HashMap::<String, String>::new());
+    let new_sub_iu = create_rw_signal(HashMap::<String, String>::new());
 
     let update_sub_number = {
         let new_sub_numbers = new_sub_numbers;
@@ -72,18 +73,36 @@ pub fn VialsPage() -> impl IntoView {
     };
     let update_sub_number = StoredValue::new(Rc::new(update_sub_number));
 
+    let update_sub_iu = {
+        let new_sub_iu = new_sub_iu;
+        move |vial_id: String, value: String| {
+            new_sub_iu.update(|map| {
+                map.insert(vial_id, value);
+            });
+        }
+    };
+    let update_sub_iu = StoredValue::new(Rc::new(update_sub_iu));
+
     let add_sub_vial = {
         let store = store.clone();
         let new_sub_numbers = new_sub_numbers;
+        let new_sub_iu = new_sub_iu;
         move |vial_id: String| {
+            let reset_id = vial_id.clone();
             let value = new_sub_numbers
                 .get()
                 .get(&vial_id)
                 .cloned()
                 .unwrap_or_default();
+            let iu_value = new_sub_iu.get().get(&vial_id).cloned().unwrap_or_default();
             if value.trim().is_empty() {
                 return;
             }
+            let initial_iu = iu_value
+                .trim()
+                .parse::<f64>()
+                .ok()
+                .filter(|v| v.is_finite() && *v >= 0.0);
             let created_at = Date::now() as i64;
             store.data.update(|data| {
                 if let Some(vial) = data.vials.iter_mut().find(|v| v.id == vial_id) {
@@ -92,13 +111,17 @@ pub fn VialsPage() -> impl IntoView {
                         personalNumber: value.trim().to_string(),
                         createdAt: created_at,
                         notes: None,
+                        initialIu: initial_iu,
                     };
                     vial.subVials.push(sub);
                 }
             });
             store.mark_dirty();
             new_sub_numbers.update(|map| {
-                map.insert(vial_id, String::new());
+                map.insert(reset_id.clone(), String::new());
+            });
+            new_sub_iu.update(|map| {
+                map.insert(reset_id, String::new());
             });
         }
     };
@@ -116,6 +139,26 @@ pub fn VialsPage() -> impl IntoView {
         }
     };
     let delete_sub_vial = StoredValue::new(Rc::new(delete_sub_vial));
+
+    let update_sub_initial_iu = {
+        let store = store.clone();
+        move |vial_id: String, sub_id: String, value: String| {
+            let parsed = value
+                .trim()
+                .parse::<f64>()
+                .ok()
+                .filter(|v| v.is_finite() && *v >= 0.0);
+            store.data.update(|data| {
+                if let Some(vial) = data.vials.iter_mut().find(|v| v.id == vial_id) {
+                    if let Some(sub) = vial.subVials.iter_mut().find(|s| s.id == sub_id) {
+                        sub.initialIu = parsed;
+                    }
+                }
+            });
+            store.mark_dirty();
+        }
+    };
+    let update_sub_initial_iu = StoredValue::new(Rc::new(update_sub_initial_iu));
 
     let mark_spent = {
         let store = store.clone();
@@ -160,7 +203,9 @@ pub fn VialsPage() -> impl IntoView {
     let delete_vial = {
         let store = store.clone();
         move |vial_id: String| {
-            let confirmed = window().confirm_with_message("Delete this vial?").unwrap_or(false);
+            let confirmed = window()
+                .confirm_with_message("Delete this vial?")
+                .unwrap_or(false);
             if !confirmed {
                 return;
             }
@@ -225,6 +270,13 @@ pub fn VialsPage() -> impl IntoView {
                                 let sub_vials = StoredValue::new(vial.subVials.clone());
                                 let sub_input_value = move || {
                                     new_sub_numbers
+                                        .get()
+                                        .get(&vial_id.get_value())
+                                        .cloned()
+                                        .unwrap_or_default()
+                                };
+                                let sub_iu_input_value = move || {
+                                    new_sub_iu
                                         .get()
                                         .get(&vial_id.get_value())
                                         .cloned()
@@ -301,21 +353,48 @@ pub fn VialsPage() -> impl IntoView {
                                                         children=move |sub| {
                                                             let sub_id = sub.id.clone();
                                                             let created = format_date(sub.createdAt);
+                                                            let initial_value = sub
+                                                                .initialIu
+                                                                .map(|v| fmt_decimal(v, 2))
+                                                                .unwrap_or_default();
                                                             view! {
                                                                 <li>
                                                                     <span>
                                                                         {format!("#{}", sub.personalNumber)}
                                                                         <span class="muted">{format!(" ({created})")}</span>
                                                                     </span>
+                                                                    <label class="subvial-meta">
+                                                                        "Starting IU"
+                                                                        <input
+                                                                            type="number"
+                                                                            step="any"
+                                                                            min="0"
+                                                                            value=initial_value
+                                                                            on:input={
+                                                                                let sub_id = sub_id.clone();
+                                                                                move |ev| {
+                                                                                    let update_sub_initial_iu = update_sub_initial_iu.get_value();
+                                                                                    update_sub_initial_iu(
+                                                                                        vial_id.get_value(),
+                                                                                        sub_id.clone(),
+                                                                                        event_target_value(&ev),
+                                                                                    )
+                                                                                }
+                                                                            }
+                                                                        />
+                                                                    </label>
                                                                     <button
                                                                         type="button"
                                                                         class="vial-action danger"
-                                                                        on:click=move |_| {
-                                                                            let delete_sub_vial = delete_sub_vial.get_value();
-                                                                            delete_sub_vial(
-                                                                                vial_id.get_value(),
-                                                                                sub_id.clone(),
-                                                                            )
+                                                                        on:click={
+                                                                            let sub_id = sub_id.clone();
+                                                                            move |_| {
+                                                                                let delete_sub_vial = delete_sub_vial.get_value();
+                                                                                delete_sub_vial(
+                                                                                    vial_id.get_value(),
+                                                                                    sub_id.clone(),
+                                                                                )
+                                                                            }
                                                                         }
                                                                     >
                                                                         "Delete"
@@ -338,6 +417,20 @@ pub fn VialsPage() -> impl IntoView {
                                                         )
                                                     }
                                                     prop:value=sub_input_value
+                                                />
+                                                <input
+                                                    type="number"
+                                                    step="any"
+                                                    min="0"
+                                                    placeholder="Starting IU"
+                                                    on:input=move |ev| {
+                                                        let update_sub_iu = update_sub_iu.get_value();
+                                                        update_sub_iu(
+                                                            vial_id.get_value(),
+                                                            event_target_value(&ev),
+                                                        )
+                                                    }
+                                                    prop:value=sub_iu_input_value
                                                 />
                                                 <button
                                                     type="button"
@@ -377,6 +470,7 @@ pub fn VialsCreatePage() -> impl IntoView {
     let created_date = create_rw_signal(Local::now().format("%Y-%m-%d").to_string());
     let use_by = create_rw_signal(String::new());
     let first_sub_number = create_rw_signal(String::new());
+    let first_sub_iu = create_rw_signal(String::new());
 
     let on_submit = move |ev: leptos::ev::SubmitEvent| {
         ev.prevent_default();
@@ -396,6 +490,12 @@ pub fn VialsCreatePage() -> impl IntoView {
             .parse::<f64>()
             .ok()
             .filter(|v| v.is_finite() && *v > 0.0);
+        let first_sub_initial = first_sub_iu
+            .get()
+            .trim()
+            .parse::<f64>()
+            .ok()
+            .filter(|v| v.is_finite() && *v >= 0.0);
         let mut sub_vials = Vec::new();
         if !first_sub_number.get().trim().is_empty() {
             let sub_created = Date::now() as i64;
@@ -404,6 +504,7 @@ pub fn VialsCreatePage() -> impl IntoView {
                 personalNumber: first_sub_number.get().trim().to_string(),
                 createdAt: sub_created,
                 notes: None,
+                initialIu: first_sub_initial,
             });
         }
         let entry = Vial {
@@ -556,6 +657,17 @@ pub fn VialsCreatePage() -> impl IntoView {
                         prop:value=move || first_sub_number.get()
                     />
                 </label>
+                <label>
+                    "Starting IU in first cartridge (optional)"
+                    <input
+                        type="number"
+                        step="any"
+                        min="0"
+                        placeholder="e.g., 200"
+                        on:input=move |ev| first_sub_iu.set(event_target_value(&ev))
+                        prop:value=move || first_sub_iu.get()
+                    />
+                </label>
                 <button type="submit">"Create"</button>
             </form>
         }
@@ -571,12 +683,7 @@ pub fn VialsDetailPage() -> impl IntoView {
     let vial_id = move || params.with(|p| p.get("id").cloned().unwrap_or_else(|| "".into()));
     let vial = move || {
         let id = vial_id();
-        store
-            .data
-            .get()
-            .vials
-            .into_iter()
-            .find(|v| v.id == id)
+        store.data.get().vials.into_iter().find(|v| v.id == id)
     };
     let ester_kind = create_rw_signal(String::new());
     let custom_ester = create_rw_signal(String::new());
