@@ -150,6 +150,56 @@ pub fn StatsPage() -> impl IntoView {
             .sum::<f64>()
     };
 
+    let cartridge_usage = move || {
+        let data_value = data.get();
+        let mut items = Vec::new();
+        for vial in &data_value.vials {
+            for sub in &vial.subVials {
+                let initial = sub.initialIu;
+                let mut used = 0.0;
+                let mut skipped = 0;
+                for entry in &data_value.dosageHistory {
+                    let (dose, unit, sub_id, entry_vial) = match entry {
+                        DosageHistoryEntry::InjectableEstradiol {
+                            dose,
+                            unit,
+                            subVialId,
+                            vialId,
+                            ..
+                        } => (dose, unit, subVialId.as_ref(), vialId.as_ref()),
+                        _ => continue,
+                    };
+                    if sub_id != Some(&sub.id) {
+                        continue;
+                    }
+                    let iu = injectable_iu_from_dose(
+                        &data_value,
+                        *dose,
+                        unit,
+                        entry_vial.or(Some(&vial.id)),
+                        Some(&vial.id),
+                    );
+                    if let Some(value) = iu {
+                        used += value;
+                    } else {
+                        skipped += 1;
+                    }
+                }
+                if initial.is_some() || used > 0.0 || skipped > 0 {
+                    let label = format!(
+                        "{} · #{}",
+                        vial.esterKind
+                            .clone()
+                            .unwrap_or_else(|| "Unknown".to_string()),
+                        sub.personalNumber
+                    );
+                    items.push((label, initial, used, initial.map(|v| v - used), skipped));
+                }
+            }
+        }
+        items
+    };
+
     let oral_estradiol_records = move || {
         hist()
             .into_iter()
@@ -601,6 +651,39 @@ pub fn StatsPage() -> impl IntoView {
                                 <strong>{move || fmt(total_injection_ml(), 3)}</strong>
                                 " mL (" <strong>{move || fmt_iu_from_ml(total_injection_ml())}</strong> " IU)"
                             </p>
+                        </Show>
+                    </div>
+                    <div class="card">
+                        <h3>"Cartridge Balance"</h3>
+                        <Show
+                            when=move || !cartridge_usage().is_empty()
+                            fallback=move || view! { <p class="muted">"No cartridge tracking yet."</p> }
+                        >
+                            <ul class="muted">
+                                <For
+                                    each=cartridge_usage
+                                    key=|(label, _, _, _, _)| label.clone()
+                                    children=move |(label, initial, used, remaining, skipped)| {
+                                        let initial_label = initial
+                                            .map(|v| format!("{} IU", fmt(v, 0)))
+                                            .unwrap_or_else(|| "Set starting IU".to_string());
+                                        let used_label = format!("{} IU used", fmt(used, 0));
+                                        let remaining_label = remaining
+                                            .map(|v| format!("{} IU left", fmt(v, 0)))
+                                            .unwrap_or_else(|| "Unknown remaining".to_string());
+                                        let skipped_label = if skipped > 0 {
+                                            format!(" · {skipped} entry(s) missing concentration")
+                                        } else {
+                                            "".to_string()
+                                        };
+                                        view! {
+                                            <li>
+                                                {format!("{label}: {initial_label} · {used_label} · {remaining_label}{skipped_label}")}
+                                            </li>
+                                        }
+                                    }
+                                />
+                            </ul>
                         </Show>
                     </div>
                     <div class="card">
