@@ -1,8 +1,10 @@
+name: hrt-tracker
 services:
   hrt-tracker:
     build:
       context: .
       dockerfile: Dockerfile
+    container_name: hrt-tracker
     image: ghcr.io/chaos-dotcom/hrt-tracker:latest
     ports:
       - "4100:4100"  # Only expose frontend port
