@@ -59,7 +59,18 @@ fn parse_optional_date(value: &str) -> Option<i64> {
 #[component]
 pub fn VialsPage() -> impl IntoView {
     let store = use_store();
-    let vials = move || store.data.get().vials.clone();
+    let show_spent = create_rw_signal(false);
+    let vials = move || {
+        let items = store.data.get().vials.clone();
+        if show_spent.get() {
+            items
+        } else {
+            items
+                .into_iter()
+                .filter(|vial| !vial.isSpent.unwrap_or(false))
+                .collect()
+        }
+    };
     let new_sub_numbers = create_rw_signal(HashMap::<String, String>::new());
     let new_sub_iu = create_rw_signal(HashMap::<String, String>::new());
 
@@ -227,6 +238,15 @@ pub fn VialsPage() -> impl IntoView {
                         <p class="muted">"Track vial metadata and sub-vials."</p>
                     </div>
                     <div class="header-actions">
+                        <label class="toggle">
+                            <input
+                                type="checkbox"
+                                on:change=move |ev| show_spent.set(event_target_checked(&ev))
+                                prop:checked=move || show_spent.get()
+                            />
+                            <span class="toggle-track" aria-hidden="true"></span>
+                            <span class="toggle-label">"Show spent"</span>
+                        </label>
                         <A href="/vials/create">"Create New Vial"</A>
                     </div>
                 </div>
