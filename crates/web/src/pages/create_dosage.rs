@@ -373,6 +373,7 @@ pub fn CreateDosage() -> impl IntoView {
 
     let selected_vial_id = create_rw_signal(String::new());
     let selected_sub_vial_id = create_rw_signal(String::new());
+    let estrogen_dose_in_iu = create_rw_signal(false);
 
     let injectable_dose_field_in_iu = create_memo({
         let store = store.clone();
@@ -401,6 +402,67 @@ pub fn CreateDosage() -> impl IntoView {
         }
     });
 
+    create_effect({
+        let store = store.clone();
+        move |_| {
+            let target_iu_mode = injectable_dose_field_in_iu.get();
+            let current_iu_mode = estrogen_dose_in_iu.get();
+            if target_iu_mode == current_iu_mode {
+                return;
+            }
+
+            let value = parse_optional_num(&estrogen_dose.get());
+            let Some(current_value) = value else {
+                if !target_iu_mode {
+                    estrogen_dose_in_iu.set(false);
+                }
+                return;
+            };
+
+            let data_value = store.data.get();
+            let selected_vial = selected_vial_id.get();
+            let selected_vial_id = if selected_vial.trim().is_empty() {
+                None
+            } else {
+                Some(&selected_vial)
+            };
+            let schedule_vial_id = data_value
+                .injectableEstradiol
+                .as_ref()
+                .and_then(|cfg| cfg.vialId.as_ref());
+            let converted = if target_iu_mode {
+                injectable_iu_from_dose(
+                    &data_value,
+                    current_value,
+                    &HormoneUnits::Mg,
+                    selected_vial_id,
+                    schedule_vial_id,
+                )
+            } else {
+                injectable_dose_from_iu(
+                    &data_value,
+                    current_value,
+                    selected_vial_id,
+                    schedule_vial_id,
+                )
+            };
+
+            if let Some(next_value) = converted {
+                estrogen_dose.set(if target_iu_mode {
+                    fmt(next_value, 0)
+                } else {
+                    fmt(next_value, 3)
+                });
+                estrogen_dose_in_iu.set(target_iu_mode);
+            } else if target_iu_mode {
+                estrogen_dose_in_iu.set(false);
+            } else {
+                estrogen_dose.set(String::new());
+                estrogen_dose_in_iu.set(false);
+            }
+        }
+    });
+
     let record_date_time = create_rw_signal(String::new());
 
     let schedule_feedback = create_rw_signal(false);
@@ -417,9 +479,17 @@ pub fn CreateDosage() -> impl IntoView {
             if let Some(inj) = data.injectableEstradiol.as_ref() {
                 estrogen_method.set("injection".to_string());
                 injectable_type.set(injectable_label(&inj.kind).to_string());
-                let dose_label = if settings.get().displayInjectableInIU.unwrap_or(false)
+                let dose_in_iu = settings.get().displayInjectableInIU.unwrap_or(false)
                     && inj.unit == HormoneUnits::Mg
-                {
+                    && injectable_iu_from_dose(
+                        &data,
+                        inj.dose,
+                        &inj.unit,
+                        inj.vialId.as_ref(),
+                        inj.vialId.as_ref(),
+                    )
+                    .is_some();
+                let dose_label = if dose_in_iu {
                     injectable_iu_from_dose(
                         &data,
                         inj.dose,
@@ -433,6 +503,7 @@ pub fn CreateDosage() -> impl IntoView {
                     format!("{:.3}", inj.dose)
                 };
                 estrogen_dose.set(dose_label);
+                estrogen_dose_in_iu.set(dose_in_iu);
                 estrogen_unit.set(hormone_unit_label(&inj.unit).to_string());
                 injection_frequency.set(format!("{:.2}", inj.frequency));
                 estrogen_next_date.set(
@@ -449,6 +520,7 @@ pub fn CreateDosage() -> impl IntoView {
                 estrogen_method.set("oral".to_string());
                 oral_type.set(oral_label(&oral.kind).to_string());
                 estrogen_dose.set(format!("{:.3}", oral.dose));
+                estrogen_dose_in_iu.set(false);
                 estrogen_unit.set(hormone_unit_label(&oral.unit).to_string());
                 oral_frequency.set(format!("{:.2}", oral.frequency));
                 estrogen_next_date.set(
@@ -557,7 +629,7 @@ pub fn CreateDosage() -> impl IntoView {
                 parse_hormone_unit(&estrogen_unit.get()).unwrap_or(HormoneUnits::Mg);
             let estrogen_dose_value = if estrogen_method_value == "injection"
                 && estrogen_unit_value == HormoneUnits::Mg
-                && injectable_dose_field_in_iu.get()
+                && estrogen_dose_in_iu.get()
             {
                 let data_value = store.data.get();
                 let selected_vial = selected_vial_id.get();
@@ -1226,7 +1298,7 @@ pub fn CreateDosage() -> impl IntoView {
                                 {move || {
                                     if estrogen_method.get() != "injection" {
                                         "Dose"
-                                    } else if injectable_dose_field_in_iu.get() {
+                                    } else if estrogen_dose_in_iu.get() {
                                         "Dose (IU)"
                                     } else {
                                         "Dose (mg)"
@@ -1245,7 +1317,7 @@ pub fn CreateDosage() -> impl IntoView {
                                     estrogen_method.get() == "injection"
                                         && settings.get().displayInjectableInIU.unwrap_or(false)
                                         && parse_hormone_unit(&estrogen_unit.get()) == Some(HormoneUnits::Mg)
-                                        && !injectable_dose_field_in_iu.get()
+                                        && !estrogen_dose_in_iu.get()
                                 }
                             >
                                 <p class="muted">
