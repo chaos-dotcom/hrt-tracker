@@ -16,6 +16,7 @@ pub fn BackupPage() -> impl IntoView {
     let settings = store.settings;
 
     let ics_secret = create_rw_signal(settings.get().icsSecret.unwrap_or_default());
+    let pdf_password = create_rw_signal(settings.get().pdfPassword.unwrap_or_default());
     let blood_test_interval_months = create_rw_signal(
         settings
             .get()
@@ -48,15 +49,22 @@ pub fn BackupPage() -> impl IntoView {
     let on_save_settings = {
         let store = store.clone();
         let ics_secret = ics_secret;
+        let pdf_password = pdf_password;
         let blood_test_interval_months = blood_test_interval_months;
         move |_: leptos::ev::MouseEvent| {
             let secret = ics_secret.get();
+            let password = pdf_password.get();
             let interval = parse_decimal(&blood_test_interval_months.get());
             store.settings.update(|s| {
                 s.icsSecret = if secret.trim().is_empty() {
                     None
                 } else {
                     Some(secret)
+                };
+                s.pdfPassword = if password.trim().is_empty() {
+                    None
+                } else {
+                    Some(password)
                 };
                 s.bloodTestIntervalMonths = interval;
             });
@@ -241,6 +249,13 @@ pub fn BackupPage() -> impl IntoView {
                             placeholder="my-private-feed"
                             on:input=move |ev| ics_secret.set(event_target_value(&ev))
                             prop:value=move || ics_secret.get()
+                        />
+                        <label>"PDF password (optional)"</label>
+                        <input
+                            type="password"
+                            placeholder="password for encrypted lab PDFs"
+                            on:input=move |ev| pdf_password.set(event_target_value(&ev))
+                            prop:value=move || pdf_password.get()
                         />
                         <label>"Estradiol display unit"</label>
                         <select

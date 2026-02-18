@@ -64,6 +64,11 @@ fn api_proxy_router(backend_addr: String) -> Router {
             "/dosage-photo/:entry_id/:filename",
             get(proxy_handler).delete(proxy_handler),
         )
+        .route("/bloodtest-pdf", post(proxy_handler))
+        .route(
+            "/bloodtest-pdf/:filename",
+            get(proxy_handler).delete(proxy_handler),
+        )
         .fallback(proxy_handler)
         .layer(axum::middleware::from_fn(move |req, next| {
             let backend_url = backend_url.clone();

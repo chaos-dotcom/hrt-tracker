@@ -1,6 +1,7 @@
 use leptos::*;
 
 use crate::layout::page_layout;
+use crate::store::use_store;
 use crate::utils::parse_decimal_or_nan;
 
 #[derive(Clone, Copy)]
@@ -104,15 +105,30 @@ fn calc_for(gear: Gear, dose: f64, freq: f64, vial_ml: f64, conc: f64) -> GearRe
 
 #[component]
 pub fn CalcPage() -> impl IntoView {
+    let store = use_store();
+    let settings = store.settings;
+
     let tfs_dose_mg = create_rw_signal("4".to_string());
     let tfs_conc_mg_ml = create_rw_signal("40".to_string());
-    let tfs_vol_ml = create_memo(move |_| {
-        let dose = parse_num(&tfs_dose_mg.get());
-        let conc = parse_num(&tfs_conc_mg_ml.get());
-        if dose.is_finite() && conc.is_finite() && conc > 0.0 {
-            dose / conc
-        } else {
-            f64::NAN
+    let tfs_vol_ml = create_memo({
+        let settings = settings;
+        move |_| {
+            let dose = parse_num(&tfs_dose_mg.get());
+            let conc = parse_num(&tfs_conc_mg_ml.get());
+            let dose_mg = if settings.get().displayInjectableInIU.unwrap_or(false) {
+                if dose.is_finite() && conc.is_finite() && conc > 0.0 {
+                    (dose / 100.0) * conc
+                } else {
+                    f64::NAN
+                }
+            } else {
+                dose
+            };
+            if dose_mg.is_finite() && conc.is_finite() && conc > 0.0 {
+                dose_mg / conc
+            } else {
+                f64::NAN
+            }
         }
     });
 
@@ -132,25 +148,49 @@ pub fn CalcPage() -> impl IntoView {
     let cafe_freq_days = create_rw_signal("7".to_string());
     let cafe_vial_ml = create_rw_signal("10".to_string());
     let cafe_conc_mg_ml = create_rw_signal("40".to_string());
-    let inj_vol_ml = create_memo(move |_| {
-        let dose = parse_num(&cafe_dose_mg.get());
-        let conc = parse_num(&cafe_conc_mg_ml.get());
-        if dose.is_finite() && conc.is_finite() && conc > 0.0 {
-            dose / conc
-        } else {
-            f64::NAN
+    let inj_vol_ml = create_memo({
+        let settings = settings;
+        move |_| {
+            let dose = parse_num(&cafe_dose_mg.get());
+            let conc = parse_num(&cafe_conc_mg_ml.get());
+            let dose_mg = if settings.get().displayInjectableInIU.unwrap_or(false) {
+                if dose.is_finite() && conc.is_finite() && conc > 0.0 {
+                    (dose / 100.0) * conc
+                } else {
+                    f64::NAN
+                }
+            } else {
+                dose
+            };
+            if dose_mg.is_finite() && conc.is_finite() && conc > 0.0 {
+                dose_mg / conc
+            } else {
+                f64::NAN
+            }
         }
     });
 
-    let gear_results = create_memo(move |_| {
-        let dose = parse_num(&cafe_dose_mg.get());
-        let freq = parse_num(&cafe_freq_days.get());
-        let vial_ml = parse_num(&cafe_vial_ml.get());
-        let conc = parse_num(&cafe_conc_mg_ml.get());
-        GEARS
-            .iter()
-            .map(|gear| calc_for(*gear, dose, freq, vial_ml, conc))
-            .collect::<Vec<_>>()
+    let gear_results = create_memo({
+        let settings = settings;
+        move |_| {
+            let dose = parse_num(&cafe_dose_mg.get());
+            let freq = parse_num(&cafe_freq_days.get());
+            let vial_ml = parse_num(&cafe_vial_ml.get());
+            let conc = parse_num(&cafe_conc_mg_ml.get());
+            let dose_mg = if settings.get().displayInjectableInIU.unwrap_or(false) {
+                if dose.is_finite() && conc.is_finite() && conc > 0.0 {
+                    (dose / 100.0) * conc
+                } else {
+                    f64::NAN
+                }
+            } else {
+                dose
+            };
+            GEARS
+                .iter()
+                .map(|gear| calc_for(*gear, dose_mg, freq, vial_ml, conc))
+                .collect::<Vec<_>>()
+        }
     });
 
     page_layout(
@@ -164,7 +204,13 @@ pub fn CalcPage() -> impl IntoView {
                             <h3>"Dose and Concentration to Volume"</h3>
                             <div class="calc-grid">
                                 <label class="calc-field">
-                                    "Dose (mg)"
+                                    {move || {
+                                        if settings.get().displayInjectableInIU.unwrap_or(false) {
+                                            "Dose (IU)"
+                                        } else {
+                                            "Dose (mg)"
+                                        }
+                                    }}
                                     <input
                                         type="text"
                                         min="0"
@@ -246,7 +292,13 @@ pub fn CalcPage() -> impl IntoView {
                     <h2>"Vial Life & Dose Calculator (from HRT Cafe)"</h2>
                     <div class="calc-grid">
                         <label class="calc-field">
-                            "I am injecting (mg)"
+                            {move || {
+                                if settings.get().displayInjectableInIU.unwrap_or(false) {
+                                    "I am injecting (IU)"
+                                } else {
+                                    "I am injecting (mg)"
+                                }
+                            }}
                             <input
                                 type="text"
                                 min="0"

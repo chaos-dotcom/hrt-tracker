@@ -1,13 +1,15 @@
+use gloo_net::http::Request;
 use gloo_timers::callback::Timeout;
 use js_sys::{Date, Object, Reflect};
 use leptos::*;
 use leptos_router::A;
+use serde::Deserialize;
 use std::cell::RefCell;
 use std::rc::Rc;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{closure::Closure, JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
-use web_sys::{FileReader, HtmlInputElement};
+use web_sys::{FileReader, FormData, HtmlInputElement};
 
 use crate::layout::page_layout;
 use crate::store::use_store;
@@ -48,6 +50,97 @@ struct OcrExtraction {
     prolactin: Option<OcrValue>,
     shbg: Option<OcrValue>,
     fai: Option<OcrValue>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PdfUploadFile {
+    filename: String,
+    #[serde(default)]
+    text: Option<String>,
+    #[serde(default)]
+    extract_error: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct PdfUploadResponse {
+    files: Vec<PdfUploadFile>,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn apply_ocr_extraction(
+    extracted: OcrExtraction,
+    estradiol_level: RwSignal<String>,
+    estradiol_unit: RwSignal<String>,
+    test_level: RwSignal<String>,
+    test_unit: RwSignal<String>,
+    progesterone_level: RwSignal<String>,
+    progesterone_unit: RwSignal<String>,
+    fsh_level: RwSignal<String>,
+    fsh_unit: RwSignal<String>,
+    lh_level: RwSignal<String>,
+    lh_unit: RwSignal<String>,
+    prolactin_level: RwSignal<String>,
+    prolactin_unit: RwSignal<String>,
+    shbg_level: RwSignal<String>,
+    shbg_unit: RwSignal<String>,
+    free_androgen_index: RwSignal<String>,
+) -> usize {
+    let mut filled = 0;
+    if let Some(value) = extracted.estradiol {
+        estradiol_level.set(value.value);
+        if let Some(unit) = value.unit {
+            estradiol_unit.set(unit);
+        }
+        filled += 1;
+    }
+    if let Some(value) = extracted.testosterone {
+        test_level.set(value.value);
+        if let Some(unit) = value.unit {
+            test_unit.set(unit);
+        }
+        filled += 1;
+    }
+    if let Some(value) = extracted.progesterone {
+        progesterone_level.set(value.value);
+        if let Some(unit) = value.unit {
+            progesterone_unit.set(unit);
+        }
+        filled += 1;
+    }
+    if let Some(value) = extracted.fsh {
+        fsh_level.set(value.value);
+        if let Some(unit) = value.unit {
+            fsh_unit.set(unit);
+        }
+        filled += 1;
+    }
+    if let Some(value) = extracted.lh {
+        lh_level.set(value.value);
+        if let Some(unit) = value.unit {
+            lh_unit.set(unit);
+        }
+        filled += 1;
+    }
+    if let Some(value) = extracted.prolactin {
+        prolactin_level.set(value.value);
+        if let Some(unit) = value.unit {
+            prolactin_unit.set(unit);
+        }
+        filled += 1;
+    }
+    if let Some(value) = extracted.shbg {
+        shbg_level.set(value.value);
+        if let Some(unit) = value.unit {
+            shbg_unit.set(unit);
+        }
+        filled += 1;
+    }
+    if let Some(value) = extracted.fai {
+        free_androgen_index.set(value.value);
+        filled += 1;
+    }
+    filled
 }
 
 #[wasm_bindgen]
@@ -230,6 +323,11 @@ pub fn CreateBloodTest() -> impl IntoView {
     let ocr_status = create_rw_signal(String::new());
     let ocr_error = create_rw_signal(None::<String>);
     let ocr_input_ref: NodeRef<html::Input> = create_node_ref();
+    let pdf_busy = create_rw_signal(false);
+    let pdf_status = create_rw_signal(String::new());
+    let pdf_error = create_rw_signal(None::<String>);
+    let pdf_input_ref: NodeRef<html::Input> = create_node_ref();
+    let attached_pdf_files = create_rw_signal(Vec::<String>::new());
     let show_feedback = create_rw_signal(false);
     let feedback_timeout: Rc<RefCell<Option<Timeout>>> = Rc::new(RefCell::new(None));
 
@@ -240,6 +338,18 @@ pub fn CreateBloodTest() -> impl IntoView {
                 return;
             }
             if let Some(input) = ocr_input_ref.get() {
+                input.click();
+            }
+        }
+    };
+
+    let open_pdf_picker = {
+        let pdf_input_ref = pdf_input_ref;
+        move |_| {
+            if pdf_busy.get() {
+                return;
+            }
+            if let Some(input) = pdf_input_ref.get() {
                 input.click();
             }
         }
@@ -356,60 +466,24 @@ pub fn CreateBloodTest() -> impl IntoView {
                         return;
                     }
                     let extracted = extract_ocr_values(&text);
-                    let mut filled = 0;
-                    if let Some(value) = extracted.estradiol {
-                        estradiol_level.set(value.value);
-                        if let Some(unit) = value.unit {
-                            estradiol_unit.set(unit);
-                        }
-                        filled += 1;
-                    }
-                    if let Some(value) = extracted.testosterone {
-                        test_level.set(value.value);
-                        if let Some(unit) = value.unit {
-                            test_unit.set(unit);
-                        }
-                        filled += 1;
-                    }
-                    if let Some(value) = extracted.progesterone {
-                        progesterone_level.set(value.value);
-                        if let Some(unit) = value.unit {
-                            progesterone_unit.set(unit);
-                        }
-                        filled += 1;
-                    }
-                    if let Some(value) = extracted.fsh {
-                        fsh_level.set(value.value);
-                        if let Some(unit) = value.unit {
-                            fsh_unit.set(unit);
-                        }
-                        filled += 1;
-                    }
-                    if let Some(value) = extracted.lh {
-                        lh_level.set(value.value);
-                        if let Some(unit) = value.unit {
-                            lh_unit.set(unit);
-                        }
-                        filled += 1;
-                    }
-                    if let Some(value) = extracted.prolactin {
-                        prolactin_level.set(value.value);
-                        if let Some(unit) = value.unit {
-                            prolactin_unit.set(unit);
-                        }
-                        filled += 1;
-                    }
-                    if let Some(value) = extracted.shbg {
-                        shbg_level.set(value.value);
-                        if let Some(unit) = value.unit {
-                            shbg_unit.set(unit);
-                        }
-                        filled += 1;
-                    }
-                    if let Some(value) = extracted.fai {
-                        free_androgen_index.set(value.value);
-                        filled += 1;
-                    }
+                    let filled = apply_ocr_extraction(
+                        extracted,
+                        estradiol_level,
+                        estradiol_unit,
+                        test_level,
+                        test_unit,
+                        progesterone_level,
+                        progesterone_unit,
+                        fsh_level,
+                        fsh_unit,
+                        lh_level,
+                        lh_unit,
+                        prolactin_level,
+                        prolactin_unit,
+                        shbg_level,
+                        shbg_unit,
+                        free_androgen_index,
+                    );
                     if filled == 0 {
                         ocr_error.set(Some("OCR ran, but no lab values were found.".to_string()));
                         ocr_status.set(String::new());
@@ -434,8 +508,186 @@ pub fn CreateBloodTest() -> impl IntoView {
         }
     };
 
+    let on_pdf_change = {
+        let attached_pdf_files = attached_pdf_files;
+        let estradiol_level = estradiol_level;
+        let estradiol_unit = estradiol_unit;
+        let test_level = test_level;
+        let test_unit = test_unit;
+        let progesterone_level = progesterone_level;
+        let progesterone_unit = progesterone_unit;
+        let fsh_level = fsh_level;
+        let fsh_unit = fsh_unit;
+        let lh_level = lh_level;
+        let lh_unit = lh_unit;
+        let prolactin_level = prolactin_level;
+        let prolactin_unit = prolactin_unit;
+        let shbg_level = shbg_level;
+        let shbg_unit = shbg_unit;
+        let free_androgen_index = free_androgen_index;
+        move |ev: leptos::ev::Event| {
+            if pdf_busy.get() {
+                return;
+            }
+            let input: HtmlInputElement = event_target(&ev);
+            let Some(files) = input.files() else {
+                return;
+            };
+            let file_list: Vec<_> = (0..files.length())
+                .filter_map(|index| files.get(index))
+                .collect();
+            if file_list.is_empty() {
+                return;
+            }
+            let input_clone = input.clone();
+            pdf_busy.set(true);
+            pdf_error.set(None);
+            pdf_status.set("Uploading PDF...".to_string());
+            spawn_local(async move {
+                let form = match FormData::new() {
+                    Ok(form) => form,
+                    Err(_) => {
+                        pdf_error.set(Some("Could not create upload payload.".to_string()));
+                        pdf_status.set(String::new());
+                        pdf_busy.set(false);
+                        input_clone.set_value("");
+                        return;
+                    }
+                };
+                for file in file_list {
+                    if form
+                        .append_with_blob_and_filename("file", &file, &file.name())
+                        .is_err()
+                    {
+                        continue;
+                    }
+                }
+                let request = match Request::post("/api/bloodtest-pdf").body(form) {
+                    Ok(request) => request,
+                    Err(_) => {
+                        pdf_error.set(Some("Could not prepare PDF upload request.".to_string()));
+                        pdf_status.set(String::new());
+                        pdf_busy.set(false);
+                        input_clone.set_value("");
+                        return;
+                    }
+                };
+                let response = match request.send().await {
+                    Ok(response) => response,
+                    Err(_) => {
+                        pdf_error.set(Some("PDF upload failed.".to_string()));
+                        pdf_status.set(String::new());
+                        pdf_busy.set(false);
+                        input_clone.set_value("");
+                        return;
+                    }
+                };
+                if !response.ok() {
+                    let status = response.status();
+                    let body = response.text().await.unwrap_or_default();
+                    if body.trim().is_empty() {
+                        pdf_error.set(Some(format!("PDF upload failed ({status}).")));
+                    } else {
+                        pdf_error.set(Some(format!(
+                            "PDF upload failed ({status}): {}",
+                            body.trim()
+                        )));
+                    }
+                    pdf_status.set(String::new());
+                    pdf_busy.set(false);
+                    input_clone.set_value("");
+                    return;
+                }
+                let payload = match response.json::<PdfUploadResponse>().await {
+                    Ok(payload) => payload,
+                    Err(_) => {
+                        pdf_error.set(Some("Failed to parse PDF upload response.".to_string()));
+                        pdf_status.set(String::new());
+                        pdf_busy.set(false);
+                        input_clone.set_value("");
+                        return;
+                    }
+                };
+
+                if payload.files.is_empty() {
+                    pdf_error.set(Some("No PDF files were uploaded.".to_string()));
+                    pdf_status.set(String::new());
+                    pdf_busy.set(false);
+                    input_clone.set_value("");
+                    return;
+                }
+
+                let mut files = attached_pdf_files.get();
+                let mut uploaded = 0;
+                let mut filled = 0;
+                let mut extract_failures = 0;
+                for item in payload.files {
+                    if !files.iter().any(|name| name == &item.filename) {
+                        files.push(item.filename.clone());
+                        uploaded += 1;
+                    }
+                    if let Some(text) = item.text {
+                        let extracted = extract_ocr_values(&text);
+                        filled += apply_ocr_extraction(
+                            extracted,
+                            estradiol_level,
+                            estradiol_unit,
+                            test_level,
+                            test_unit,
+                            progesterone_level,
+                            progesterone_unit,
+                            fsh_level,
+                            fsh_unit,
+                            lh_level,
+                            lh_unit,
+                            prolactin_level,
+                            prolactin_unit,
+                            shbg_level,
+                            shbg_unit,
+                            free_androgen_index,
+                        );
+                    }
+                    if item.extract_error.is_some() {
+                        extract_failures += 1;
+                    }
+                }
+                attached_pdf_files.set(files);
+
+                let mut status_chunks = Vec::new();
+                if uploaded > 0 {
+                    status_chunks.push(format!(
+                        "Attached {uploaded} PDF{}.",
+                        if uploaded == 1 { "" } else { "s" }
+                    ));
+                }
+                if filled > 0 {
+                    status_chunks.push(format!(
+                        "Autofilled {filled} field{} from PDF text.",
+                        if filled == 1 { "" } else { "s" }
+                    ));
+                }
+                if extract_failures > 0 {
+                    status_chunks.push(format!(
+                        "{extract_failures} PDF{} had no extractable text.",
+                        if extract_failures == 1 { "" } else { "s" }
+                    ));
+                }
+
+                if status_chunks.is_empty() {
+                    pdf_status.set("PDF upload complete.".to_string());
+                } else {
+                    pdf_status.set(status_chunks.join(" "));
+                }
+                pdf_error.set(None);
+                pdf_busy.set(false);
+                input_clone.set_value("");
+            });
+        }
+    };
+
     let on_submit = {
         let feedback_timeout = feedback_timeout.clone();
+        let attached_pdf_files = attached_pdf_files;
         move |ev: leptos::ev::SubmitEvent| {
             ev.prevent_default();
             let date = parse_datetime_local(&test_date_time.get());
@@ -483,6 +735,8 @@ pub fn CreateBloodTest() -> impl IntoView {
             let predicted_model = predict_e2_pg_ml(&store.data.get(), date);
             let fudge_factor =
                 compute_fudge_factor(measured_e2, predicted_model.or(predicted_input));
+            let pdf_files = attached_pdf_files.get();
+            let next_pdf_files = pdf_files.clone();
 
             let entry = BloodTest {
                 date,
@@ -509,15 +763,39 @@ pub fn CreateBloodTest() -> impl IntoView {
                     Some(notes.get())
                 },
                 estrogenType: None,
+                pdfFiles: if pdf_files.is_empty() {
+                    None
+                } else {
+                    Some(pdf_files)
+                },
             };
 
+            let mut removed_pdf_files = Vec::new();
             store.data.update(|d| {
                 if let Some(existing) = d.bloodTests.iter_mut().find(|item| item.date == date) {
-                    *existing = entry;
+                    let previous_pdf_files = existing.pdfFiles.clone().unwrap_or_default();
+                    removed_pdf_files = previous_pdf_files
+                        .iter()
+                        .filter(|name| !next_pdf_files.iter().any(|candidate| candidate == *name))
+                        .cloned()
+                        .collect();
+                    *existing = entry.clone();
                 } else {
-                    d.bloodTests.push(entry);
+                    d.bloodTests.push(entry.clone());
                 }
             });
+            if !removed_pdf_files.is_empty() {
+                spawn_local(async move {
+                    for filename in removed_pdf_files {
+                        let _ = Request::delete(&format!(
+                            "/api/bloodtest-pdf/{}",
+                            urlencoding::encode(&filename)
+                        ))
+                        .send()
+                        .await;
+                    }
+                });
+            }
             store.mark_dirty();
 
             show_feedback.set(true);
@@ -567,7 +845,7 @@ pub fn CreateBloodTest() -> impl IntoView {
                     </label>
 
                     <div class="form-section">
-                        <h3>"Import from screenshot"</h3>
+                        <h3>"Import lab report"</h3>
                         <div class="inline-equal">
                             <div>
                                 <input
@@ -595,6 +873,78 @@ pub fn CreateBloodTest() -> impl IntoView {
                                 </Show>
                             </div>
                         </div>
+                        <div class="inline-equal">
+                            <div>
+                                <input
+                                    type="file"
+                                    accept="application/pdf,.pdf"
+                                    multiple
+                                    node_ref=pdf_input_ref
+                                    on:change=on_pdf_change
+                                    class="hidden-input"
+                                />
+                                <button
+                                    type="button"
+                                    on:click=open_pdf_picker
+                                    prop:disabled=move || pdf_busy.get()
+                                >
+                                    {move || if pdf_busy.get() { "Uploading PDF..." } else { "Upload lab PDF" }}
+                                </button>
+                                <p class="muted">"Encrypted PDFs use the password from Settings & Backup."</p>
+                            </div>
+                            <div>
+                                <Show when=move || !pdf_status.get().is_empty()>
+                                    <p class="muted">{move || pdf_status.get()}</p>
+                                </Show>
+                                <Show when=move || pdf_error.get().is_some()>
+                                    <p class="muted">{move || pdf_error.get().unwrap_or_default()}</p>
+                                </Show>
+                            </div>
+                        </div>
+                        <Show when=move || !attached_pdf_files.get().is_empty()>
+                            <div class="photo-actions">
+                                <p class="muted">"Attached report PDFs"</p>
+                                <ul class="history-list">
+                                    <For
+                                        each=move || attached_pdf_files.get()
+                                        key=|filename| filename.clone()
+                                        children=move |filename| {
+                                            let open_href = format!(
+                                                "/api/bloodtest-pdf/{}",
+                                                urlencoding::encode(&filename)
+                                            );
+                                            let file_for_remove = filename.clone();
+                                            view! {
+                                                <li class="history-item">
+                                                    <a href=open_href target="_blank" rel="noopener noreferrer">
+                                                        {filename.clone()}
+                                                    </a>
+                                                    <button
+                                                        type="button"
+                                                        class="action-button"
+                                                        on:click=move |_| {
+                                                            let remove_name = file_for_remove.clone();
+                                                            attached_pdf_files
+                                                                .update(|files| files.retain(|item| item != &remove_name));
+                                                            spawn_local(async move {
+                                                                let _ = Request::delete(&format!(
+                                                                    "/api/bloodtest-pdf/{}",
+                                                                    urlencoding::encode(&remove_name)
+                                                                ))
+                                                                .send()
+                                                                .await;
+                                                            });
+                                                        }
+                                                    >
+                                                        "Remove"
+                                                    </button>
+                                                </li>
+                                            }
+                                        }
+                                    />
+                                </ul>
+                            </div>
+                        </Show>
                     </div>
 
                     <div class="form-section">

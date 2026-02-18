@@ -38,6 +38,11 @@ async fn main() {
             "/api/dosage-photo/:entry_id/:filename",
             get(api::get_dosage_photo).delete(api::delete_dosage_photo),
         )
+        .route("/api/bloodtest-pdf", post(api::upload_bloodtest_pdf))
+        .route(
+            "/api/bloodtest-pdf/:filename",
+            get(api::get_bloodtest_pdf).delete(api::delete_bloodtest_pdf),
+        )
         .layer(cors);
 
     let addr = std::env::var("HRT_SERVER_ADDR").unwrap_or_else(|_| "127.0.0.1:4200".to_string());

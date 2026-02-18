@@ -7,6 +7,7 @@ use tokio::io::AsyncWriteExt;
 pub const DATA_FILE_PATH: &str = "data/hrt-data.json";
 pub const SETTINGS_FILE_PATH: &str = "data/hrt-settings.yaml";
 pub const PHOTOS_DIR: &str = "data/dosage-photos";
+pub const BLOODTEST_PDFS_DIR: &str = "data/bloodtest-pdfs";
 
 #[derive(thiserror::Error, Debug)]
 pub enum StorageError {
@@ -115,8 +116,35 @@ pub async fn delete_photo(entry_id: &str, filename: &str) -> Result<bool, Storag
     }
 }
 
+pub async fn save_bloodtest_pdf(filename: &str, bytes: &[u8]) -> Result<PathBuf, StorageError> {
+    let dir = Path::new(BLOODTEST_PDFS_DIR);
+    fs::create_dir_all(dir).await?;
+    let path = dir.join(filename);
+    fs::write(&path, bytes).await?;
+    Ok(path)
+}
+
+pub async fn read_bloodtest_pdf(filename: &str) -> Result<Option<Vec<u8>>, StorageError> {
+    let path = Path::new(BLOODTEST_PDFS_DIR).join(filename);
+    match fs::read(path).await {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(err) => Err(err.into()),
+    }
+}
+
+pub async fn delete_bloodtest_pdf(filename: &str) -> Result<bool, StorageError> {
+    let path = Path::new(BLOODTEST_PDFS_DIR).join(filename);
+    match fs::remove_file(path).await {
+        Ok(()) => Ok(true),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(err) => Err(err.into()),
+    }
+}
+
 pub fn content_type_from_ext(ext: &str) -> &'static str {
     match ext.to_lowercase().as_str() {
+        "pdf" => "application/pdf",
         "jpg" | "jpeg" => "image/jpeg",
         "png" => "image/png",
         "webp" => "image/webp",

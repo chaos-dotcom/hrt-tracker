@@ -17,8 +17,9 @@ use crate::charts::{
 use crate::layout::page_layout;
 use crate::store::use_store;
 use crate::utils::{
-    compute_fudge_factor, fmt_blood_value, fmt_date_label, format_injectable_dose,
-    hormone_unit_label, parse_date_or_now, parse_decimal, parse_hormone_unit, parse_length_unit,
+    compute_fudge_factor, fmt_blood_value, fmt_date_label, fmt_decimal, format_injectable_dose,
+    hormone_unit_label, injectable_dose_from_iu, injectable_iu_from_dose, parse_date_or_now,
+    parse_decimal, parse_hormone_unit, parse_length_unit,
 };
 use hrt_shared::logic::{predict_e2_pg_ml, snap_to_next_injection_boundary};
 use hrt_shared::types::{
@@ -247,6 +248,10 @@ fn update_photo_note(photo: &mut DosagePhoto, note: String) {
             };
         }
     }
+}
+
+fn bloodtest_pdf_url(filename: &str) -> String {
+    format!("/api/bloodtest-pdf/{}", urlencoding::encode(filename))
 }
 
 const DAY_MS: i64 = 24 * 60 * 60 * 1000;
@@ -500,6 +505,7 @@ pub fn ViewPage() -> impl IntoView {
     let editing_entry_id = create_rw_signal(String::new());
     let editing_date = create_rw_signal(String::new());
     let editing_dose = create_rw_signal(String::new());
+    let editing_dose_in_iu = create_rw_signal(false);
     let editing_unit = create_rw_signal(String::new());
     let editing_route = create_rw_signal(String::new());
     let editing_pill_qty = create_rw_signal(String::new());
@@ -537,6 +543,7 @@ pub fn ViewPage() -> impl IntoView {
     let edit_blood_shbg_unit = create_rw_signal(String::new());
     let edit_blood_fai = create_rw_signal(String::new());
     let edit_blood_notes = create_rw_signal(String::new());
+    let edit_blood_pdf_files = create_rw_signal(Vec::<String>::new());
 
     let edit_measurement_date = create_rw_signal(None::<i64>);
     let edit_measurement_date_text = create_rw_signal(String::new());
@@ -1122,7 +1129,8 @@ pub fn ViewPage() -> impl IntoView {
                 Some(value) => value,
                 None => return,
             };
-            let dose_value = parse_optional_num(&editing_dose.get()).unwrap_or(0.0);
+            let dose_input_value = parse_optional_num(&editing_dose.get()).unwrap_or(0.0);
+            let dose_is_iu = editing_dose_in_iu.get();
             let date_value = parse_datetime_local(&editing_date.get());
             let note_text = editing_note.get();
             let note_value = if note_text.trim().is_empty() {
@@ -1140,6 +1148,12 @@ pub fn ViewPage() -> impl IntoView {
                 };
 
             store_edit.data.update(|d| {
+                let schedule_vial_id_for_iu = d
+                    .injectableEstradiol
+                    .as_ref()
+                    .and_then(|cfg| cfg.vialId.clone());
+                let mut iu_conversion_data = HrtData::default();
+                iu_conversion_data.vials = d.vials.clone();
                 for entry in &mut d.dosageHistory {
                     if entry_matches(entry, &key) {
                         match entry {
@@ -1158,7 +1172,24 @@ pub fn ViewPage() -> impl IntoView {
                                 ..
                             } => {
                                 *date = date_value;
-                                *dose = dose_value;
+                                if dose_is_iu && unit_value == HormoneUnits::Mg {
+                                    let selected_vial = editing_vial_id.get();
+                                    let selected_vial_id = if selected_vial.trim().is_empty() {
+                                        None
+                                    } else {
+                                        Some(&selected_vial)
+                                    };
+                                    if let Some(converted) = injectable_dose_from_iu(
+                                        &iu_conversion_data,
+                                        dose_input_value,
+                                        selected_vial_id,
+                                        schedule_vial_id_for_iu.as_ref(),
+                                    ) {
+                                        *dose = converted;
+                                    }
+                                } else {
+                                    *dose = dose_input_value;
+                                }
                                 *unit = unit_value.clone();
                                 *note = note_value.clone();
                                 *bonusDose = if editing_bonus.get() {
@@ -1203,7 +1234,7 @@ pub fn ViewPage() -> impl IntoView {
                                 ..
                             } => {
                                 *date = date_value;
-                                *dose = dose_value;
+                                *dose = dose_input_value;
                                 *unit = unit_value.clone();
                                 *note = note_value.clone();
                                 *pillQuantity = pill_qty;
@@ -1216,7 +1247,7 @@ pub fn ViewPage() -> impl IntoView {
                                 ..
                             } => {
                                 *date = date_value;
-                                *dose = dose_value;
+                                *dose = dose_input_value;
                                 *unit = unit_value.clone();
                                 *note = note_value.clone();
                             }
@@ -1230,7 +1261,7 @@ pub fn ViewPage() -> impl IntoView {
                                 ..
                             } => {
                                 *date = date_value;
-                                *dose = dose_value;
+                                *dose = dose_input_value;
                                 *unit = unit_value.clone();
                                 *note = note_value.clone();
                                 *pillQuantity = pill_qty;
@@ -1900,8 +1931,12 @@ pub fn ViewPage() -> impl IntoView {
                                                 edit_blood_shbg_unit.set(entry.shbgUnit.as_ref().map(|u| hormone_unit_label(u).to_string()).unwrap_or_else(|| "nmol/L".to_string()));
                                                 edit_blood_fai.set(entry.freeAndrogenIndex.map(fmt_blood_value).unwrap_or_default());
                                                 edit_blood_notes.set(entry.notes.clone().unwrap_or_default());
+                                                edit_blood_pdf_files.set(
+                                                    entry.pdfFiles.clone().unwrap_or_default(),
+                                                );
                                             }
                                         };
+                                        let pdf_files = StoredValue::new(entry.pdfFiles.clone().unwrap_or_default());
                                         view! {
                                             <li class="history-item">
                                                 <div>
@@ -1993,7 +2028,26 @@ pub fn ViewPage() -> impl IntoView {
                                                         <Show when=move || entry.fudgeFactor.is_some()>
                                                             <span>{format!("FF: {:.3}", entry.fudgeFactor.unwrap_or_default())}</span>
                                                         </Show>
+                                                        <Show when=move || !pdf_files.get_value().is_empty()>
+                                                            <span>{format!("PDFs: {}", pdf_files.get_value().len())}</span>
+                                                        </Show>
                                                     </div>
+                                                    <Show when=move || !pdf_files.get_value().is_empty()>
+                                                        <div class="history-meta history-meta-inline">
+                                                            {pdf_files
+                                                                .get_value()
+                                                                .into_iter()
+                                                                .map(|filename| {
+                                                                    let href = bloodtest_pdf_url(&filename);
+                                                                    view! {
+                                                                        <a href=href target="_blank" rel="noopener noreferrer">
+                                                                            {filename}
+                                                                        </a>
+                                                                    }
+                                                                })
+                                                                .collect_view()}
+                                                        </div>
+                                                    </Show>
                                                 </div>
                                                 <button type="button" class="action-button" on:click=on_edit>
                                                     "Edit"
@@ -2227,9 +2281,48 @@ pub fn ViewPage() -> impl IntoView {
                                                 editing_entry_id.set(resolved_key.clone());
                                                 let date_text = to_local_input_value(dosage_entry_date(&entry));
                                                 editing_date.set(date_text);
+                                                let data_value = store.data.get();
+                                                let schedule_vial_id = data_value
+                                                    .injectableEstradiol
+                                                    .as_ref()
+                                                    .and_then(|cfg| cfg.vialId.as_ref());
+                                                editing_dose_in_iu.set(false);
                                                 editing_dose.set(match &entry {
-                                                    DosageHistoryEntry::InjectableEstradiol { dose, .. }
-                                                    | DosageHistoryEntry::OralEstradiol { dose, .. }
+                                                    DosageHistoryEntry::InjectableEstradiol {
+                                                        dose,
+                                                        unit,
+                                                        vialId,
+                                                        ..
+                                                    } => {
+                                                        let use_iu = store
+                                                            .settings
+                                                            .get()
+                                                            .displayInjectableInIU
+                                                            .unwrap_or(false)
+                                                            && *unit == HormoneUnits::Mg
+                                                            && injectable_dose_from_iu(
+                                                                &data_value,
+                                                                1.0,
+                                                                vialId.as_ref(),
+                                                                schedule_vial_id,
+                                                            )
+                                                            .is_some();
+                                                        editing_dose_in_iu.set(use_iu);
+                                                        if use_iu {
+                                                            injectable_iu_from_dose(
+                                                                &data_value,
+                                                                *dose,
+                                                                unit,
+                                                                vialId.as_ref(),
+                                                                schedule_vial_id,
+                                                            )
+                                                            .map(|iu| fmt_decimal(iu, 0))
+                                                            .unwrap_or_else(|| format!("{:.2}", dose))
+                                                        } else {
+                                                            format!("{:.2}", dose)
+                                                        }
+                                                    }
+                                                    DosageHistoryEntry::OralEstradiol { dose, .. }
                                                     | DosageHistoryEntry::Antiandrogen { dose, .. }
                                                     | DosageHistoryEntry::Progesterone { dose, .. } => {
                                                         format!("{:.2}", dose)
@@ -2471,7 +2564,15 @@ pub fn ViewPage() -> impl IntoView {
                         />
                         <div class="inline-equal">
                             <label>
-                                "Dose"
+                                {move || {
+                                    if editing_med_type.get() != "injectableEstradiol" {
+                                        "Dose"
+                                    } else if editing_dose_in_iu.get() {
+                                        "Dose (IU)"
+                                    } else {
+                                        "Dose (mg)"
+                                    }
+                                }}
                                 <input
                                     type="text"
                                     step="any"
@@ -2482,7 +2583,13 @@ pub fn ViewPage() -> impl IntoView {
                             <label>
                                 "Unit"
                                 <select
-                                    on:change=move |ev| editing_unit.set(event_target_value(&ev))
+                                    on:change=move |ev| {
+                                        let value = event_target_value(&ev);
+                                        if parse_hormone_unit(&value) != Some(HormoneUnits::Mg) {
+                                            editing_dose_in_iu.set(false);
+                                        }
+                                        editing_unit.set(value);
+                                    }
                                     prop:value=move || editing_unit.get()
                                 >
                                     {hormone_unit_labels()
@@ -2495,6 +2602,18 @@ pub fn ViewPage() -> impl IntoView {
                                 </select>
                             </label>
                         </div>
+                        <Show
+                            when=move || {
+                                editing_med_type.get() == "injectableEstradiol"
+                                    && store.settings.get().displayInjectableInIU.unwrap_or(false)
+                                    && parse_hormone_unit(&editing_unit.get()) == Some(HormoneUnits::Mg)
+                                    && !editing_dose_in_iu.get()
+                            }
+                        >
+                            <p class="muted">
+                                "Select a vial with concentration to edit this dose in IU."
+                            </p>
+                        </Show>
                         <Show when=is_prog>
                             <label>
                                 "Route"
@@ -3009,6 +3128,37 @@ pub fn ViewPage() -> impl IntoView {
                             on:input=move |ev| edit_blood_notes.set(event_target_value(&ev))
                             prop:value=move || edit_blood_notes.get()
                         ></textarea>
+                        <Show when=move || !edit_blood_pdf_files.get().is_empty()>
+                            <label>"Attached report PDFs"</label>
+                            <ul class="history-list">
+                                <For
+                                    each=move || edit_blood_pdf_files.get()
+                                    key=|filename| filename.clone()
+                                    children=move |filename| {
+                                        let open_href = bloodtest_pdf_url(&filename);
+                                        let remove_name = filename.clone();
+                                        view! {
+                                            <li class="history-item">
+                                                <a href=open_href target="_blank" rel="noopener noreferrer">
+                                                    {filename}
+                                                </a>
+                                                <button
+                                                    type="button"
+                                                    class="action-button"
+                                                    on:click=move |_| {
+                                                        edit_blood_pdf_files.update(|files| {
+                                                            files.retain(|item| item != &remove_name);
+                                                        });
+                                                    }
+                                                >
+                                                    "Remove"
+                                                </button>
+                                            </li>
+                                        }
+                                    }
+                                />
+                            </ul>
+                        </Show>
                         <div class="modal-actions">
                             <button type="button" on:click={
                                 let store = store_blood_modal.clone();
@@ -3021,6 +3171,14 @@ pub fn ViewPage() -> impl IntoView {
                                         Some(value) => value,
                                         None => return,
                                     };
+                                    let files_to_delete = store
+                                        .data
+                                        .get()
+                                        .bloodTests
+                                        .iter()
+                                        .find(|entry| entry.date == date)
+                                        .and_then(|entry| entry.pdfFiles.clone())
+                                        .unwrap_or_default();
                                     confirm_title.set("Delete blood test?".to_string());
                                     confirm_delete.set(Some(format!("blood-{date}")));
                                     let store = store.clone();
@@ -3028,6 +3186,16 @@ pub fn ViewPage() -> impl IntoView {
                                         store.data.update(|d| {
                                             d.bloodTests.retain(|entry| entry.date != date);
                                         });
+                                        if !files_to_delete.is_empty() {
+                                            let files_to_delete = files_to_delete.clone();
+                                            spawn_local(async move {
+                                                for filename in files_to_delete {
+                                                    let _ = Request::delete(&bloodtest_pdf_url(&filename))
+                                                        .send()
+                                                        .await;
+                                                }
+                                            });
+                                        }
                                         store.mark_dirty();
                                         store.save();
                                         edit_blood_date.set(None);
@@ -3084,6 +3252,7 @@ pub fn ViewPage() -> impl IntoView {
                                         parse_hormone_unit(&edit_blood_shbg_unit.get())
                                             .unwrap_or(HormoneUnits::TNmolL);
                                     let notes = edit_blood_notes.get();
+                                    let updated_pdf_files = edit_blood_pdf_files.get();
                                     let measured_e2 = e2_value.map(|value| {
                                         if e2_unit == HormoneUnits::E2PmolL {
                                             value / 3.671
@@ -3101,9 +3270,21 @@ pub fn ViewPage() -> impl IntoView {
                                     let predicted_model = predict_e2_pg_ml(&store.data.get(), snapped_date);
                                     let fudge_factor =
                                         compute_fudge_factor(measured_e2, predicted_model.or(predicted_input));
+                                    let mut removed_pdf_files = Vec::new();
                                     store.data.update(|d| {
                                         for entry in &mut d.bloodTests {
                                             if entry.date == date {
+                                                let previous_pdf_files =
+                                                    entry.pdfFiles.clone().unwrap_or_default();
+                                                removed_pdf_files = previous_pdf_files
+                                                    .iter()
+                                                    .filter(|name| {
+                                                        !updated_pdf_files
+                                                            .iter()
+                                                            .any(|candidate| candidate == *name)
+                                                    })
+                                                    .cloned()
+                                                    .collect();
                                                 entry.date = snapped_date;
                                                 entry.estradiolLevel = e2_value;
                                                 entry.testLevel = t_value;
@@ -3127,9 +3308,23 @@ pub fn ViewPage() -> impl IntoView {
                                                 } else {
                                                     Some(notes.clone())
                                                 };
+                                                entry.pdfFiles = if updated_pdf_files.is_empty() {
+                                                    None
+                                                } else {
+                                                    Some(updated_pdf_files.clone())
+                                                };
                                             }
                                         }
                                     });
+                                    if !removed_pdf_files.is_empty() {
+                                        spawn_local(async move {
+                                            for filename in removed_pdf_files {
+                                                let _ = Request::delete(&bloodtest_pdf_url(&filename))
+                                                    .send()
+                                                    .await;
+                                            }
+                                        });
+                                    }
                                     store.mark_dirty();
                                     store.save();
                                     edit_blood_date.set(None);

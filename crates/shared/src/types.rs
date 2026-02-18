@@ -305,6 +305,8 @@ pub struct BloodTest {
     pub notes: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub estrogenType: Option<EstrogenType>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pdfFiles: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -370,6 +372,8 @@ pub struct Settings {
     pub displayInjectableInIU: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub braSizeSystem: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pdfPassword: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
