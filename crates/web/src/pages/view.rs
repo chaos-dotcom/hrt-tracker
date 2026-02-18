@@ -682,6 +682,34 @@ pub fn ViewPage() -> impl IntoView {
         }
     };
 
+    let editing_dose_as_mg = create_memo({
+        let store = store.clone();
+        move |_| {
+            if editing_med_type.get() != "injectableEstradiol" {
+                return None;
+            }
+            let dose_value = parse_optional_num(&editing_dose.get())?;
+            if dose_value <= 0.0 {
+                return None;
+            }
+            if !editing_dose_in_iu.get() {
+                return Some(dose_value);
+            }
+            let data_value = store.data.get();
+            let schedule_vial_id = data_value
+                .injectableEstradiol
+                .as_ref()
+                .and_then(|cfg| cfg.vialId.as_ref());
+            let selected_vial = editing_vial_id.get();
+            let selected_vial_id = if selected_vial.trim().is_empty() {
+                None
+            } else {
+                Some(&selected_vial)
+            };
+            injectable_dose_from_iu(&data_value, dose_value, selected_vial_id, schedule_vial_id)
+        }
+    });
+
     create_effect({
         let view_zoom = view_zoom;
         move |_| {
@@ -1138,7 +1166,11 @@ pub fn ViewPage() -> impl IntoView {
             } else {
                 Some(note_text.clone())
             };
-            let unit_value = parse_hormone_unit(&editing_unit.get()).unwrap_or(HormoneUnits::Mg);
+            let unit_value = if editing_med_type.get() == "injectableEstradiol" {
+                HormoneUnits::Mg
+            } else {
+                parse_hormone_unit(&editing_unit.get()).unwrap_or(HormoneUnits::Mg)
+            };
             let pill_qty = parse_optional_num(&editing_pill_qty.get()).filter(|v| *v > 0.0);
             let route_value =
                 if editing_route.get() == progesterone_route_label(&ProgesteroneRoutes::Boofed) {
@@ -2329,8 +2361,10 @@ pub fn ViewPage() -> impl IntoView {
                                                     }
                                                 });
                                                 editing_unit.set(match &entry {
-                                                    DosageHistoryEntry::InjectableEstradiol { unit, .. }
-                                                    | DosageHistoryEntry::OralEstradiol { unit, .. }
+                                                    DosageHistoryEntry::InjectableEstradiol { .. } => {
+                                                        hormone_unit_label(&HormoneUnits::Mg).to_string()
+                                                    }
+                                                    DosageHistoryEntry::OralEstradiol { unit, .. }
                                                     | DosageHistoryEntry::Antiandrogen { unit, .. }
                                                     | DosageHistoryEntry::Progesterone { unit, .. } => {
                                                         hormone_unit_label(unit).to_string()
@@ -2580,33 +2614,51 @@ pub fn ViewPage() -> impl IntoView {
                                     prop:value=move || editing_dose.get()
                                 />
                             </label>
-                            <label>
-                                "Unit"
-                                <select
-                                    on:change=move |ev| {
-                                        let value = event_target_value(&ev);
-                                        if parse_hormone_unit(&value) != Some(HormoneUnits::Mg) {
-                                            editing_dose_in_iu.set(false);
+                            <Show when=move || editing_med_type.get() != "injectableEstradiol">
+                                <label>
+                                    "Unit"
+                                    <select
+                                        on:change=move |ev| {
+                                            let value = event_target_value(&ev);
+                                            if parse_hormone_unit(&value) != Some(HormoneUnits::Mg) {
+                                                editing_dose_in_iu.set(false);
+                                            }
+                                            editing_unit.set(value);
                                         }
-                                        editing_unit.set(value);
-                                    }
-                                    prop:value=move || editing_unit.get()
-                                >
-                                    {hormone_unit_labels()
-                                        .into_iter()
-                                        .map(|label| {
-                                            let display = label.clone();
-                                            view! { <option value=display.clone()>{display}</option> }
-                                        })
-                                        .collect_view()}
-                                </select>
-                            </label>
+                                        prop:value=move || editing_unit.get()
+                                    >
+                                        {hormone_unit_labels()
+                                            .into_iter()
+                                            .map(|label| {
+                                                let display = label.clone();
+                                                view! { <option value=display.clone()>{display}</option> }
+                                            })
+                                            .collect_view()}
+                                    </select>
+                                </label>
+                            </Show>
                         </div>
+                        <Show
+                            when=move || {
+                                editing_med_type.get() == "injectableEstradiol" && editing_dose_in_iu.get()
+                            }
+                        >
+                            <p class="muted">
+                                "Stored as "
+                                <strong>
+                                    {move || {
+                                        editing_dose_as_mg
+                                            .get()
+                                            .map(|dose| format!("{} mg", fmt_decimal(dose, 3)))
+                                            .unwrap_or_else(|| "—".to_string())
+                                    }}
+                                </strong>
+                            </p>
+                        </Show>
                         <Show
                             when=move || {
                                 editing_med_type.get() == "injectableEstradiol"
                                     && store.settings.get().displayInjectableInIU.unwrap_or(false)
-                                    && parse_hormone_unit(&editing_unit.get()) == Some(HormoneUnits::Mg)
                                     && !editing_dose_in_iu.get()
                             }
                         >
