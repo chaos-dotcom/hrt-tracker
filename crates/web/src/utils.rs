@@ -44,6 +44,19 @@ pub fn parse_length_unit(value: &str) -> Option<LengthUnit> {
     }
 }
 
+pub fn parse_decimal(value: &str) -> Option<f64> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let normalized = trimmed.replace(',', ".");
+    normalized.parse::<f64>().ok().filter(|v| v.is_finite())
+}
+
+pub fn parse_decimal_or_nan(value: &str) -> f64 {
+    parse_decimal(value).unwrap_or(f64::NAN)
+}
+
 pub fn hormone_unit_label(unit: &HormoneUnits) -> &'static str {
     match unit {
         HormoneUnits::E2PmolL => "pmol/L",
@@ -219,4 +232,33 @@ pub fn fmt_date_label(date_ms: i64, axis_mode: &str, first_dose: Option<i64>) ->
         .single()
         .map(|d| d.format("%Y-%m-%d").to_string())
         .unwrap_or_else(|| date_ms.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_decimal, parse_decimal_or_nan};
+
+    #[test]
+    fn parse_decimal_accepts_dot_and_comma_inputs() {
+        assert_eq!(parse_decimal("0.2"), Some(0.2));
+        assert_eq!(parse_decimal("0,2"), Some(0.2));
+        assert_eq!(parse_decimal(" 1.25 "), Some(1.25));
+        assert_eq!(parse_decimal(" 1,25 "), Some(1.25));
+    }
+
+    #[test]
+    fn parse_decimal_rejects_empty_and_invalid_values() {
+        assert_eq!(parse_decimal(""), None);
+        assert_eq!(parse_decimal("   "), None);
+        assert_eq!(parse_decimal("."), None);
+        assert_eq!(parse_decimal(","), None);
+        assert_eq!(parse_decimal("abc"), None);
+    }
+
+    #[test]
+    fn parse_decimal_or_nan_returns_nan_for_invalid_values() {
+        assert!(parse_decimal_or_nan("not-a-number").is_nan());
+        assert_eq!(parse_decimal_or_nan("0.2"), 0.2);
+        assert_eq!(parse_decimal_or_nan("0,2"), 0.2);
+    }
 }

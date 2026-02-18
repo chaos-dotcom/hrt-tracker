@@ -22,6 +22,7 @@ pub fn page_layout(title: &'static str, body: View) -> impl IntoView {
 
     let is_running = move || stopwatch_start.get().is_some();
     let elapsed_ms = move || {
+        let _tick = stopwatch_tick.get();
         let base = stopwatch_accum.get();
         if let Some(start) = stopwatch_start.get() {
             base + (Date::now() - start)
@@ -121,7 +122,6 @@ pub fn page_layout(title: &'static str, body: View) -> impl IntoView {
                         on:click=move |_| stopwatch_open.set(!stopwatch_open.get())
                     >
                         {move || {
-                            let _tick = stopwatch_tick.get();
                             if is_running() {
                                 format!("Stopwatch · {}", format_stopwatch(elapsed_ms()))
                             } else {

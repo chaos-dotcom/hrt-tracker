@@ -1,16 +1,17 @@
 use axum::extract::OriginalUri;
 use axum::routing::{get, post};
 use axum::{
-    Router,
     body::Body,
     http::{Request, Response, StatusCode},
+    Router,
 };
 use std::path::Path;
 use tower_http::services::ServeDir;
 
 pub fn serve() {
     let addr = std::env::var("HRT_WEB_ADDR").unwrap_or_else(|_| "127.0.0.1:4100".to_string());
-    let backend_addr = std::env::var("HRT_SERVER_ADDR").unwrap_or_else(|_| "127.0.0.1:4200".to_string());
+    let backend_addr =
+        std::env::var("HRT_SERVER_ADDR").unwrap_or_else(|_| "127.0.0.1:4200".to_string());
 
     let ocr_dir = if Path::new("target/site/ocr").exists() {
         "target/site/ocr"
@@ -50,7 +51,7 @@ fn read_index() -> String {
 
 fn api_proxy_router(backend_addr: String) -> Router {
     let backend_url = format!("http://{}", backend_addr);
-    
+
     Router::new()
         .route("/health", get(proxy_handler))
         .route("/data", get(proxy_handler).post(proxy_handler))
@@ -59,7 +60,10 @@ fn api_proxy_router(backend_addr: String) -> Router {
         .route("/ics", get(proxy_handler))
         .route("/ics/:secret", get(proxy_handler))
         .route("/dosage-photo/:entry_id", post(proxy_handler))
-        .route("/dosage-photo/:entry_id/:filename", get(proxy_handler).delete(proxy_handler))
+        .route(
+            "/dosage-photo/:entry_id/:filename",
+            get(proxy_handler).delete(proxy_handler),
+        )
         .fallback(proxy_handler)
         .layer(axum::middleware::from_fn(move |req, next| {
             let backend_url = backend_url.clone();
@@ -67,7 +71,9 @@ fn api_proxy_router(backend_addr: String) -> Router {
         }))
 }
 
-async fn proxy_handler(req: Request<Body>) -> Result<Response<Body>, axum::response::ErrorResponse> {
+async fn proxy_handler(
+    req: Request<Body>,
+) -> Result<Response<Body>, axum::response::ErrorResponse> {
     let backend_url = format!(
         "http://{}",
         std::env::var("HRT_SERVER_ADDR").unwrap_or_else(|_| "127.0.0.1:4200".to_string())
@@ -108,12 +114,7 @@ async fn proxy_request(
 
     let body_bytes = match axum::body::to_bytes(req.into_body(), usize::MAX).await {
         Ok(bytes) => bytes,
-        Err(_) => {
-            return Ok(proxy_error(
-                StatusCode::BAD_REQUEST,
-                "Invalid request body",
-            ))
-        }
+        Err(_) => return Ok(proxy_error(StatusCode::BAD_REQUEST, "Invalid request body")),
     };
     request_builder = request_builder.body(body_bytes);
 
@@ -136,7 +137,12 @@ async fn proxy_request(
 
     let response = match builder.body(Body::from(response_body)) {
         Ok(response) => response,
-        Err(_) => return Ok(proxy_error(StatusCode::INTERNAL_SERVER_ERROR, "Proxy error")),
+        Err(_) => {
+            return Ok(proxy_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Proxy error",
+            ))
+        }
     };
 
     Ok(response)
@@ -147,7 +153,10 @@ fn proxy_error(status: StatusCode, message: &str) -> Response<Body> {
     response = response.header("Content-Type", "application/json");
     let safe_message = message.replace('"', "\\\"");
     let body = format!("{{\"error\":\"{}\"}}", safe_message);
-    response
-        .body(Body::from(body))
-        .unwrap_or_else(|_| Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR).body(Body::from("{}")).unwrap())
+    response.body(Body::from(body)).unwrap_or_else(|_| {
+        Response::builder()
+            .status(StatusCode::INTERNAL_SERVER_ERROR)
+            .body(Body::from("{}"))
+            .unwrap()
+    })
 }

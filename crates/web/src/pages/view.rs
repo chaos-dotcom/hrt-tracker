@@ -1,8 +1,8 @@
 use gloo_events::EventListener;
 use gloo_net::http::Request;
 use js_sys::{Date, Math};
-use leptos::*;
 use leptos::window;
+use leptos::*;
 use leptos_router::A;
 use serde::Deserialize;
 use std::cell::RefCell;
@@ -10,20 +10,20 @@ use std::rc::Rc;
 use wasm_bindgen::JsCast;
 use web_sys::{FormData, HtmlCanvasElement, HtmlInputElement};
 
+use crate::charts::view::{compute_view_chart_state, draw_view_chart, find_nearest_point};
 use crate::charts::{
     chart_padding, clamp_zoom, compute_chart_bounds, ChartTooltip, DragState, ViewZoom,
 };
-use crate::charts::view::{compute_view_chart_state, draw_view_chart, find_nearest_point};
 use crate::layout::page_layout;
 use crate::store::use_store;
 use crate::utils::{
     compute_fudge_factor, fmt_blood_value, fmt_date_label, format_injectable_dose,
-    hormone_unit_label, parse_date_or_now, parse_hormone_unit, parse_length_unit,
+    hormone_unit_label, parse_date_or_now, parse_decimal, parse_hormone_unit, parse_length_unit,
 };
 use hrt_shared::logic::{predict_e2_pg_ml, snap_to_next_injection_boundary};
 use hrt_shared::types::{
-    DiaryEntry, DosageHistoryEntry, DosagePhoto, HormoneUnits, HrtData, InjectionSites,
-    InjectableEstradiols, LengthUnit, ProgesteroneRoutes, SyringeKinds, WeightUnit,
+    DiaryEntry, DosageHistoryEntry, DosagePhoto, HormoneUnits, HrtData, InjectableEstradiols,
+    InjectionSites, LengthUnit, ProgesteroneRoutes, SyringeKinds, WeightUnit,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -82,11 +82,7 @@ fn parse_datetime_local(value: &str) -> i64 {
 }
 
 fn parse_optional_num(value: &str) -> Option<f64> {
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    trimmed.parse::<f64>().ok().filter(|v| v.is_finite())
+    parse_decimal(value)
 }
 
 fn weight_unit_label(unit: &WeightUnit) -> &'static str {
@@ -234,10 +230,16 @@ fn update_photo_note(photo: &mut DosagePhoto, note: String) {
         DosagePhoto::Legacy(file) => {
             *photo = DosagePhoto::Entry {
                 file: file.clone(),
-                note: if note.trim().is_empty() { None } else { Some(note) },
+                note: if note.trim().is_empty() {
+                    None
+                } else {
+                    Some(note)
+                },
             };
         }
-        DosagePhoto::Entry { note: entry_note, .. } => {
+        DosagePhoto::Entry {
+            note: entry_note, ..
+        } => {
             *entry_note = if note.trim().is_empty() {
                 None
             } else {
@@ -264,13 +266,15 @@ fn get_last_dose_date_for_type(data: &HrtData, med_type: RegimenKey) -> Option<i
         match (med_type, entry) {
             (
                 RegimenKey::InjectableEstradiol,
-                DosageHistoryEntry::InjectableEstradiol { date, bonusDose, .. },
+                DosageHistoryEntry::InjectableEstradiol {
+                    date, bonusDose, ..
+                },
             ) => {
                 if !bonusDose.unwrap_or(false) {
                     dates.push(*date);
                 }
             }
-            | (RegimenKey::OralEstradiol, DosageHistoryEntry::OralEstradiol { date, .. })
+            (RegimenKey::OralEstradiol, DosageHistoryEntry::OralEstradiol { date, .. })
             | (RegimenKey::Antiandrogen, DosageHistoryEntry::Antiandrogen { date, .. })
             | (RegimenKey::Progesterone, DosageHistoryEntry::Progesterone { date, .. }) => {
                 dates.push(*date);
@@ -348,7 +352,10 @@ fn get_next_scheduled_candidate(data: &HrtData, use_iu: bool) -> Option<NextDose
             options.push((
                 RegimenKey::OralEstradiol,
                 date,
-                format!("Oral Estradiol: {:?}, {:.2} {:?}", cfg.kind, cfg.dose, cfg.unit),
+                format!(
+                    "Oral Estradiol: {:?}, {:.2} {:?}",
+                    cfg.kind, cfg.dose, cfg.unit
+                ),
             ));
         }
     }
@@ -357,7 +364,10 @@ fn get_next_scheduled_candidate(data: &HrtData, use_iu: bool) -> Option<NextDose
             options.push((
                 RegimenKey::Antiandrogen,
                 date,
-                format!("Antiandrogen: {:?}, {:.2} {:?}", cfg.kind, cfg.dose, cfg.unit),
+                format!(
+                    "Antiandrogen: {:?}, {:.2} {:?}",
+                    cfg.kind, cfg.dose, cfg.unit
+                ),
             ));
         }
     }
@@ -377,7 +387,11 @@ fn get_next_scheduled_candidate(data: &HrtData, use_iu: bool) -> Option<NextDose
         return None;
     }
     let now = Date::now() as i64;
-    let mut future: Vec<_> = options.iter().cloned().filter(|(_, date, _)| *date >= now).collect();
+    let mut future: Vec<_> = options
+        .iter()
+        .cloned()
+        .filter(|(_, date, _)| *date >= now)
+        .collect();
     if !future.is_empty() {
         future.sort_by_key(|(_, date, _)| *date);
         let (med_type, _, label) = future[0].clone();
@@ -394,9 +408,9 @@ fn generate_estrannaise_url(data: &HrtData, fudge_factor: Option<f64>) -> Option
         .dosageHistory
         .iter()
         .filter_map(|entry| match entry {
-            DosageHistoryEntry::InjectableEstradiol { date, kind, dose, .. } => {
-                Some((*date, kind.clone(), *dose))
-            }
+            DosageHistoryEntry::InjectableEstradiol {
+                date, kind, dose, ..
+            } => Some((*date, kind.clone(), *dose)),
             _ => None,
         })
         .collect();
@@ -456,7 +470,13 @@ fn generate_estrannaise_url(data: &HrtData, fudge_factor: Option<f64>) -> Option
     let custom = dose_strings
         .iter()
         .enumerate()
-        .map(|(idx, ds)| if idx == 0 { format!("cu,{ds}") } else { ds.clone() })
+        .map(|(idx, ds)| {
+            if idx == 0 {
+                format!("cu,{ds}")
+            } else {
+                ds.clone()
+            }
+        })
         .collect::<Vec<_>>()
         .join("-");
     let suffix = fudge_factor
@@ -536,13 +556,17 @@ pub fn ViewPage() -> impl IntoView {
     let note_content = create_rw_signal(String::new());
     let note_date = create_rw_signal({
         let now = Date::new_0();
-        format!("{:04}-{:02}-{:02}", now.get_full_year(), now.get_month() + 1, now.get_date())
+        format!(
+            "{:04}-{:02}-{:02}",
+            now.get_full_year(),
+            now.get_month() + 1,
+            now.get_date()
+        )
     });
     let editing_note_id = create_rw_signal(None::<String>);
     let editing_note_title = create_rw_signal(String::new());
     let editing_note_content = create_rw_signal(String::new());
     let editing_note_date = create_rw_signal(String::new());
-
 
     let x_axis_mode = create_rw_signal("date".to_string());
     let time_range_days = create_rw_signal(365_i64);
@@ -581,13 +605,8 @@ pub fn ViewPage() -> impl IntoView {
         }
     });
 
-    let first_dose_date = create_memo(move |_| {
-        data.get()
-            .dosageHistory
-            .iter()
-            .map(dosage_entry_date)
-            .min()
-    });
+    let first_dose_date =
+        create_memo(move |_| data.get().dosageHistory.iter().map(dosage_entry_date).min());
 
     let days_since_first_dose = create_memo(move |_| {
         first_dose_date.get().map(|first| {
@@ -655,7 +674,6 @@ pub fn ViewPage() -> impl IntoView {
             0.0
         }
     };
-
 
     create_effect({
         let view_zoom = view_zoom;
@@ -741,7 +759,11 @@ pub fn ViewPage() -> impl IntoView {
             store.data.update(|data| {
                 for note in &mut data.notes {
                     if note.id == id {
-                        note.title = if title.is_empty() { None } else { Some(title.clone()) };
+                        note.title = if title.is_empty() {
+                            None
+                        } else {
+                            Some(title.clone())
+                        };
                         note.content = content.clone();
                         note.date = date_ms;
                     }
@@ -761,73 +783,71 @@ pub fn ViewPage() -> impl IntoView {
                 return;
             };
             let now = Date::now() as i64;
-            store.data.update(|data| {
-                match candidate.med_type {
-                    RegimenKey::InjectableEstradiol => {
-                        if let Some(cfg) = data.injectableEstradiol.as_mut() {
-                            let record = DosageHistoryEntry::InjectableEstradiol {
-                                date: now,
-                                id: None,
-                                kind: cfg.kind.clone(),
-                                dose: cfg.dose,
-                                unit: cfg.unit.clone(),
-                                note: None,
-                                bonusDose: None,
-                                injectionSite: None,
-                                vialId: cfg.vialId.clone(),
-                                subVialId: cfg.subVialId.clone(),
-                                syringeKind: cfg.syringeKind.clone(),
-                                needleLength: cfg.needleLength.clone(),
-                                needleGauge: cfg.needleGauge.clone(),
-                                photos: None,
-                            };
-                            data.dosageHistory.push(record);
-                            if cfg.frequency.is_finite() && cfg.frequency > 0.0 {
-                                cfg.nextDoseDate = Some(now + (cfg.frequency * DAY_MS as f64) as i64);
-                            }
+            store.data.update(|data| match candidate.med_type {
+                RegimenKey::InjectableEstradiol => {
+                    if let Some(cfg) = data.injectableEstradiol.as_mut() {
+                        let record = DosageHistoryEntry::InjectableEstradiol {
+                            date: now,
+                            id: None,
+                            kind: cfg.kind.clone(),
+                            dose: cfg.dose,
+                            unit: cfg.unit.clone(),
+                            note: None,
+                            bonusDose: None,
+                            injectionSite: None,
+                            vialId: cfg.vialId.clone(),
+                            subVialId: cfg.subVialId.clone(),
+                            syringeKind: cfg.syringeKind.clone(),
+                            needleLength: cfg.needleLength.clone(),
+                            needleGauge: cfg.needleGauge.clone(),
+                            photos: None,
+                        };
+                        data.dosageHistory.push(record);
+                        if cfg.frequency.is_finite() && cfg.frequency > 0.0 {
+                            cfg.nextDoseDate = Some(now + (cfg.frequency * DAY_MS as f64) as i64);
                         }
                     }
-                    RegimenKey::OralEstradiol => {
-                        if let Some(cfg) = data.oralEstradiol.as_ref() {
-                            let record = DosageHistoryEntry::OralEstradiol {
-                                date: now,
-                                id: None,
-                                kind: cfg.kind.clone(),
-                                dose: cfg.dose,
-                                unit: cfg.unit.clone(),
-                                pillQuantity: Some(1.0),
-                                note: None,
-                            };
-                            data.dosageHistory.push(record);
-                        }
+                }
+                RegimenKey::OralEstradiol => {
+                    if let Some(cfg) = data.oralEstradiol.as_ref() {
+                        let record = DosageHistoryEntry::OralEstradiol {
+                            date: now,
+                            id: None,
+                            kind: cfg.kind.clone(),
+                            dose: cfg.dose,
+                            unit: cfg.unit.clone(),
+                            pillQuantity: Some(1.0),
+                            note: None,
+                        };
+                        data.dosageHistory.push(record);
                     }
-                    RegimenKey::Antiandrogen => {
-                        if let Some(cfg) = data.antiandrogen.as_ref() {
-                            let record = DosageHistoryEntry::Antiandrogen {
-                                date: now,
-                                id: None,
-                                kind: cfg.kind.clone(),
-                                dose: cfg.dose,
-                                unit: cfg.unit.clone(),
-                                note: None,
-                            };
-                            data.dosageHistory.push(record);
-                        }
+                }
+                RegimenKey::Antiandrogen => {
+                    if let Some(cfg) = data.antiandrogen.as_ref() {
+                        let record = DosageHistoryEntry::Antiandrogen {
+                            date: now,
+                            id: None,
+                            kind: cfg.kind.clone(),
+                            dose: cfg.dose,
+                            unit: cfg.unit.clone(),
+                            note: None,
+                        };
+                        data.dosageHistory.push(record);
                     }
-                    RegimenKey::Progesterone => {
-                        if let Some(cfg) = data.progesterone.as_ref() {
-                            let record = DosageHistoryEntry::Progesterone {
-                                date: now,
-                                id: None,
-                                kind: cfg.kind.clone(),
-                                route: cfg.route.clone(),
-                                dose: cfg.dose,
-                                unit: cfg.unit.clone(),
-                                pillQuantity: Some(1.0),
-                                note: None,
-                            };
-                            data.dosageHistory.push(record);
-                        }
+                }
+                RegimenKey::Progesterone => {
+                    if let Some(cfg) = data.progesterone.as_ref() {
+                        let record = DosageHistoryEntry::Progesterone {
+                            date: now,
+                            id: None,
+                            kind: cfg.kind.clone(),
+                            route: cfg.route.clone(),
+                            dose: cfg.dose,
+                            unit: cfg.unit.clone(),
+                            pillQuantity: Some(1.0),
+                            note: None,
+                        };
+                        data.dosageHistory.push(record);
                     }
                 }
             });
@@ -1112,12 +1132,12 @@ pub fn ViewPage() -> impl IntoView {
             };
             let unit_value = parse_hormone_unit(&editing_unit.get()).unwrap_or(HormoneUnits::Mg);
             let pill_qty = parse_optional_num(&editing_pill_qty.get()).filter(|v| *v > 0.0);
-            let route_value = if editing_route.get() == progesterone_route_label(&ProgesteroneRoutes::Boofed)
-            {
-                ProgesteroneRoutes::Boofed
-            } else {
-                ProgesteroneRoutes::Oral
-            };
+            let route_value =
+                if editing_route.get() == progesterone_route_label(&ProgesteroneRoutes::Boofed) {
+                    ProgesteroneRoutes::Boofed
+                } else {
+                    ProgesteroneRoutes::Oral
+                };
 
             store_edit.data.update(|d| {
                 for entry in &mut d.dosageHistory {
@@ -1141,7 +1161,11 @@ pub fn ViewPage() -> impl IntoView {
                                 *dose = dose_value;
                                 *unit = unit_value.clone();
                                 *note = note_value.clone();
-                                *bonusDose = if editing_bonus.get() { Some(true) } else { None };
+                                *bonusDose = if editing_bonus.get() {
+                                    Some(true)
+                                } else {
+                                    None
+                                };
                                 *injectionSite =
                                     injection_site_from_label(&editing_injection_site.get());
                                 *vialId = if editing_vial_id.get().trim().is_empty() {
@@ -1279,7 +1303,9 @@ pub fn ViewPage() -> impl IntoView {
                 return;
             }
             let input_clone = input.clone();
-            let file_list: Vec<_> = (0..files.length()).filter_map(|idx| files.get(idx)).collect();
+            let file_list: Vec<_> = (0..files.length())
+                .filter_map(|idx| files.get(idx))
+                .collect();
             if file_list.is_empty() {
                 return;
             }
@@ -1297,12 +1323,11 @@ pub fn ViewPage() -> impl IntoView {
                     {
                         continue;
                     }
-                    let request = match Request::post(&format!("/api/dosage-photo/{entry_id}"))
-                        .body(form)
-                    {
-                        Ok(request) => request,
-                        Err(_) => continue,
-                    };
+                    let request =
+                        match Request::post(&format!("/api/dosage-photo/{entry_id}")).body(form) {
+                            Ok(request) => request,
+                            Err(_) => continue,
+                        };
                     let Ok(response) = request.send().await else {
                         continue;
                     };
@@ -1318,7 +1343,8 @@ pub fn ViewPage() -> impl IntoView {
                     store.data.update(|data| {
                         for entry in &mut data.dosageHistory {
                             if entry_matches(entry, &entry_id) {
-                                if let DosageHistoryEntry::InjectableEstradiol { photos, .. } = entry
+                                if let DosageHistoryEntry::InjectableEstradiol { photos, .. } =
+                                    entry
                                 {
                                     let list = photos.get_or_insert_with(Vec::new);
                                     for filename in &payload.filenames {
@@ -1357,8 +1383,7 @@ pub fn ViewPage() -> impl IntoView {
                 store.data.update(|data| {
                     for entry in &mut data.dosageHistory {
                         if entry_matches(entry, &entry_id) {
-                            if let DosageHistoryEntry::InjectableEstradiol { photos, .. } = entry
-                            {
+                            if let DosageHistoryEntry::InjectableEstradiol { photos, .. } = entry {
                                 if let Some(list) = photos.as_mut() {
                                     list.retain(|photo| match photo {
                                         DosagePhoto::Legacy(file) => file != &filename,
@@ -2166,7 +2191,7 @@ pub fn ViewPage() -> impl IntoView {
                                                     });
                                                     store.mark_dirty();
                                                     store.save();
-                                                }))); 
+                                                })));
                                             }
                                         };
                                         let on_edit = {
@@ -2448,7 +2473,7 @@ pub fn ViewPage() -> impl IntoView {
                             <label>
                                 "Dose"
                                 <input
-                                    type="number"
+                                    type="text"
                                     step="any"
                                     on:input=move |ev| editing_dose.set(event_target_value(&ev))
                                     prop:value=move || editing_dose.get()
@@ -2491,7 +2516,7 @@ pub fn ViewPage() -> impl IntoView {
                             <label>
                                 "Pill quantity"
                                 <input
-                                    type="number"
+                                    type="text"
                                     min="1"
                                     step="any"
                                     on:input=move |ev| editing_pill_qty.set(event_target_value(&ev))
@@ -2767,7 +2792,7 @@ pub fn ViewPage() -> impl IntoView {
                             <label>
                                 "Estradiol level"
                                 <input
-                                    type="number"
+                                    type="text"
                                     step="any"
                                     on:input=move |ev| edit_blood_e2.set(event_target_value(&ev))
                                     prop:value=move || edit_blood_e2.get()
@@ -2793,7 +2818,7 @@ pub fn ViewPage() -> impl IntoView {
                             <label>
                                 "Estrannaise predicted E2"
                                 <input
-                                    type="number"
+                                    type="text"
                                     step="any"
                                     on:input=move |ev| edit_blood_estrannaise.set(event_target_value(&ev))
                                     prop:value=move || edit_blood_estrannaise.get()
@@ -2814,7 +2839,7 @@ pub fn ViewPage() -> impl IntoView {
                             <label>
                                 "Testosterone level"
                                 <input
-                                    type="number"
+                                    type="text"
                                     step="any"
                                     on:input=move |ev| edit_blood_t.set(event_target_value(&ev))
                                     prop:value=move || edit_blood_t.get()
@@ -2840,7 +2865,7 @@ pub fn ViewPage() -> impl IntoView {
                             <label>
                                 "Progesterone level"
                                 <input
-                                    type="number"
+                                    type="text"
                                     step="any"
                                     on:input=move |ev| edit_blood_prog.set(event_target_value(&ev))
                                     prop:value=move || edit_blood_prog.get()
@@ -2866,7 +2891,7 @@ pub fn ViewPage() -> impl IntoView {
                             <label>
                                 "FSH level"
                                 <input
-                                    type="number"
+                                    type="text"
                                     step="any"
                                     on:input=move |ev| edit_blood_fsh.set(event_target_value(&ev))
                                     prop:value=move || edit_blood_fsh.get()
@@ -2892,7 +2917,7 @@ pub fn ViewPage() -> impl IntoView {
                             <label>
                                 "LH level"
                                 <input
-                                    type="number"
+                                    type="text"
                                     step="any"
                                     on:input=move |ev| edit_blood_lh.set(event_target_value(&ev))
                                     prop:value=move || edit_blood_lh.get()
@@ -2918,7 +2943,7 @@ pub fn ViewPage() -> impl IntoView {
                             <label>
                                 "Prolactin level"
                                 <input
-                                    type="number"
+                                    type="text"
                                     step="any"
                                     on:input=move |ev| edit_blood_prolactin.set(event_target_value(&ev))
                                     prop:value=move || edit_blood_prolactin.get()
@@ -2944,7 +2969,7 @@ pub fn ViewPage() -> impl IntoView {
                             <label>
                                 "SHBG level"
                                 <input
-                                    type="number"
+                                    type="text"
                                     step="any"
                                     on:input=move |ev| edit_blood_shbg.set(event_target_value(&ev))
                                     prop:value=move || edit_blood_shbg.get()
@@ -2970,7 +2995,7 @@ pub fn ViewPage() -> impl IntoView {
                             <label>
                                 "Free Androgen Index"
                                 <input
-                                    type="number"
+                                    type="text"
                                     step="any"
                                     on:input=move |ev| edit_blood_fai.set(event_target_value(&ev))
                                     prop:value=move || edit_blood_fai.get()
@@ -3137,7 +3162,7 @@ pub fn ViewPage() -> impl IntoView {
                             <label>
                                 "Weight"
                                 <input
-                                    type="number"
+                                    type="text"
                                     step="any"
                                     on:input=move |ev| edit_measurement_weight.set(event_target_value(&ev))
                                     prop:value=move || edit_measurement_weight.get()
@@ -3165,7 +3190,7 @@ pub fn ViewPage() -> impl IntoView {
                             <label>
                                 "Height"
                                 <input
-                                    type="number"
+                                    type="text"
                                     step="any"
                                     on:input=move |ev| edit_measurement_height.set(event_target_value(&ev))
                                     prop:value=move || edit_measurement_height.get()
@@ -3204,35 +3229,35 @@ pub fn ViewPage() -> impl IntoView {
                         </select>
                         <div class="measurement-grid">
                             <input
-                                type="number"
+                                type="text"
                                 step="any"
                                 placeholder="Underbust"
                                 on:input=move |ev| edit_measurement_underbust.set(event_target_value(&ev))
                                 prop:value=move || edit_measurement_underbust.get()
                             />
                             <input
-                                type="number"
+                                type="text"
                                 step="any"
                                 placeholder="Bust"
                                 on:input=move |ev| edit_measurement_bust.set(event_target_value(&ev))
                                 prop:value=move || edit_measurement_bust.get()
                             />
                             <input
-                                type="number"
+                                type="text"
                                 step="any"
                                 placeholder="Bideltoid (shoulder)"
                                 on:input=move |ev| edit_measurement_bideltoid.set(event_target_value(&ev))
                                 prop:value=move || edit_measurement_bideltoid.get()
                             />
                             <input
-                                type="number"
+                                type="text"
                                 step="any"
                                 placeholder="Waist"
                                 on:input=move |ev| edit_measurement_waist.set(event_target_value(&ev))
                                 prop:value=move || edit_measurement_waist.get()
                             />
                             <input
-                                type="number"
+                                type="text"
                                 step="any"
                                 placeholder="Hip"
                                 on:input=move |ev| edit_measurement_hip.set(event_target_value(&ev))

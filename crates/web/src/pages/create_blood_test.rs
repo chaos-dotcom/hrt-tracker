@@ -11,7 +11,7 @@ use web_sys::{FileReader, HtmlInputElement};
 
 use crate::layout::page_layout;
 use crate::store::use_store;
-use crate::utils::{compute_fudge_factor, hormone_unit_label, parse_hormone_unit};
+use crate::utils::{compute_fudge_factor, hormone_unit_label, parse_decimal, parse_hormone_unit};
 use hrt_shared::logic::predict_e2_pg_ml;
 use hrt_shared::types::{BloodTest, HormoneUnits};
 
@@ -86,11 +86,7 @@ fn parse_datetime_local(value: &str) -> i64 {
 }
 
 fn parse_optional(value: &str) -> Option<f64> {
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    trimmed.parse::<f64>().ok().filter(|v| v.is_finite())
+    parse_decimal(value)
 }
 
 fn unit_or_default(value: &str, fallback: HormoneUnits) -> HormoneUnits {
@@ -305,7 +301,9 @@ pub fn CreateBloodTest() -> impl IntoView {
                     Reflect::has(&js_sys::global(), &JsValue::from_str("Tesseract"))
                         .unwrap_or(false);
                 if !tesseract_loaded {
-                    ocr_error.set(Some("OCR library did not load. Try refreshing.".to_string()));
+                    ocr_error.set(Some(
+                        "OCR library did not load. Try refreshing.".to_string(),
+                    ));
                     ocr_status.set(String::new());
                     ocr_busy.set(false);
                     input_clone.set_value("");
@@ -483,7 +481,8 @@ pub fn CreateBloodTest() -> impl IntoView {
                 }
             });
             let predicted_model = predict_e2_pg_ml(&store.data.get(), date);
-            let fudge_factor = compute_fudge_factor(measured_e2, predicted_model.or(predicted_input));
+            let fudge_factor =
+                compute_fudge_factor(measured_e2, predicted_model.or(predicted_input));
 
             let entry = BloodTest {
                 date,
@@ -605,7 +604,7 @@ pub fn CreateBloodTest() -> impl IntoView {
                             <label>
                                 "Estradiol level"
                                 <input
-                                    type="number"
+                                    type="text"
                                     step="any"
                                     on:input=move |ev| estradiol_level.set(event_target_value(&ev))
                                     prop:value=move || estradiol_level.get()
@@ -626,7 +625,7 @@ pub fn CreateBloodTest() -> impl IntoView {
                             <label>
                                 "Estrannaise predicted E2"
                                 <input
-                                    type="number"
+                                    type="text"
                                     step="any"
                                     on:input=move |ev| estrannaise_number.set(event_target_value(&ev))
                                     prop:value=move || estrannaise_number.get()
@@ -648,7 +647,7 @@ pub fn CreateBloodTest() -> impl IntoView {
                             <label>
                                 "Testosterone level"
                                 <input
-                                    type="number"
+                                    type="text"
                                     step="any"
                                     on:input=move |ev| test_level.set(event_target_value(&ev))
                                     prop:value=move || test_level.get()
@@ -669,7 +668,7 @@ pub fn CreateBloodTest() -> impl IntoView {
                             <label>
                                 "Progesterone level"
                                 <input
-                                    type="number"
+                                    type="text"
                                     step="any"
                                     on:input=move |ev| progesterone_level.set(event_target_value(&ev))
                                     prop:value=move || progesterone_level.get()
@@ -690,7 +689,7 @@ pub fn CreateBloodTest() -> impl IntoView {
                             <label>
                                 "FSH level"
                                 <input
-                                    type="number"
+                                    type="text"
                                     step="any"
                                     on:input=move |ev| fsh_level.set(event_target_value(&ev))
                                     prop:value=move || fsh_level.get()
@@ -711,7 +710,7 @@ pub fn CreateBloodTest() -> impl IntoView {
                             <label>
                                 "LH level"
                                 <input
-                                    type="number"
+                                    type="text"
                                     step="any"
                                     on:input=move |ev| lh_level.set(event_target_value(&ev))
                                     prop:value=move || lh_level.get()
@@ -732,7 +731,7 @@ pub fn CreateBloodTest() -> impl IntoView {
                             <label>
                                 "Prolactin level"
                                 <input
-                                    type="number"
+                                    type="text"
                                     step="any"
                                     on:input=move |ev| prolactin_level.set(event_target_value(&ev))
                                     prop:value=move || prolactin_level.get()
@@ -753,7 +752,7 @@ pub fn CreateBloodTest() -> impl IntoView {
                             <label>
                                 "SHBG level"
                                 <input
-                                    type="number"
+                                    type="text"
                                     step="any"
                                     on:input=move |ev| shbg_level.set(event_target_value(&ev))
                                     prop:value=move || shbg_level.get()
@@ -774,7 +773,7 @@ pub fn CreateBloodTest() -> impl IntoView {
                             <label>
                                 "Free Androgen Index"
                                 <input
-                                    type="number"
+                                    type="text"
                                     step="any"
                                     on:input=move |ev| free_androgen_index.set(event_target_value(&ev))
                                     prop:value=move || free_androgen_index.get()

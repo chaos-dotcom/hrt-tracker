@@ -1,6 +1,7 @@
 use leptos::*;
 
 use crate::layout::page_layout;
+use crate::utils::parse_decimal_or_nan;
 
 #[derive(Clone, Copy)]
 struct Gear {
@@ -37,11 +38,7 @@ const GEARS: [Gear; 4] = [
 ];
 
 fn parse_num(value: &str) -> f64 {
-    value
-        .trim()
-        .replace(',', ".")
-        .parse::<f64>()
-        .unwrap_or(f64::NAN)
+    parse_decimal_or_nan(value)
 }
 
 fn fmt(value: f64, decimals: usize) -> String {
@@ -169,7 +166,7 @@ pub fn CalcPage() -> impl IntoView {
                                 <label class="calc-field">
                                     "Dose (mg)"
                                     <input
-                                        type="number"
+                                        type="text"
                                         min="0"
                                         step="any"
                                         on:input=move |ev| tfs_dose_mg.set(event_target_value(&ev))
@@ -179,7 +176,7 @@ pub fn CalcPage() -> impl IntoView {
                                 <label class="calc-field">
                                     "Concentration (mg/mL)"
                                     <input
-                                        type="number"
+                                        type="text"
                                         min="0"
                                         step="any"
                                         on:input=move |ev| tfs_conc_mg_ml.set(event_target_value(&ev))
@@ -206,7 +203,7 @@ pub fn CalcPage() -> impl IntoView {
                                 <label class="calc-field">
                                     "Volume (mL)"
                                     <input
-                                        type="number"
+                                        type="text"
                                         min="0"
                                         step="any"
                                         on:input=move |ev| tfs_vol2_ml.set(event_target_value(&ev))
@@ -216,7 +213,7 @@ pub fn CalcPage() -> impl IntoView {
                                 <label class="calc-field">
                                     "Concentration (mg/mL)"
                                     <input
-                                        type="number"
+                                        type="text"
                                         min="0"
                                         step="any"
                                         on:input=move |ev| tfs_conc2_mg_ml.set(event_target_value(&ev))
@@ -251,7 +248,7 @@ pub fn CalcPage() -> impl IntoView {
                         <label class="calc-field">
                             "I am injecting (mg)"
                             <input
-                                type="number"
+                                type="text"
                                 min="0"
                                 step="any"
                                 inputmode="decimal"
@@ -262,7 +259,7 @@ pub fn CalcPage() -> impl IntoView {
                         <label class="calc-field">
                             "Every (days)"
                             <input
-                                type="number"
+                                type="text"
                                 min="0"
                                 step="any"
                                 inputmode="decimal"
@@ -273,7 +270,7 @@ pub fn CalcPage() -> impl IntoView {
                         <label class="calc-field">
                             "My vial is (mL)"
                             <input
-                                type="number"
+                                type="text"
                                 min="0"
                                 step="any"
                                 inputmode="decimal"
@@ -284,7 +281,7 @@ pub fn CalcPage() -> impl IntoView {
                         <label class="calc-field">
                             "At concentration (mg/mL)"
                             <input
-                                type="number"
+                                type="text"
                                 min="0"
                                 step="any"
                                 inputmode="decimal"
