@@ -9,7 +9,7 @@ async fn main() {
     // Get allowed origins from environment variable or use defaults
     let origins_str = std::env::var("HRT_ALLOWED_ORIGINS")
         .unwrap_or_else(|_| "http://127.0.0.1:4100,http://127.0.0.1:3000,http://localhost:4100,http://localhost:3000".to_string());
-    
+
     let origins: Vec<HeaderValue> = origins_str
         .split(',')
         .filter_map(|s| s.trim().parse::<HeaderValue>().ok())

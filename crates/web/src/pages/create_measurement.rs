@@ -8,7 +8,7 @@ use wasm_bindgen::JsValue;
 
 use crate::layout::page_layout;
 use crate::store::use_store;
-use crate::utils::parse_length_unit;
+use crate::utils::{parse_decimal, parse_length_unit};
 use hrt_shared::types::{Measurement, WeightUnit};
 
 const BC_LOCATIONS: [&str; 8] = [
@@ -23,14 +23,30 @@ const BC_LOCATIONS: [&str; 8] = [
 ];
 
 const BC_SIZES: [&[i32]; 8] = [
-    &[28, 30, 32, 34, 36, 38, 40, 42, 44, 46, 48, 50, 52, 54, 56, 58, 60],
-    &[28, 30, 32, 34, 36, 38, 40, 42, 44, 46, 48, 50, 52, 54, 56, 58, 60],
-    &[60, 65, 70, 75, 80, 85, 90, 95, 100, 105, 110, 115, 120, 125, 130, 135, 140],
-    &[75, 80, 85, 90, 95, 100, 105, 110, 115, 120, 125, 130, 135, 140, 145, 150, 155],
-    &[6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38],
-    &[32, 34, 36, 38, 40, 42, 44, 46, 48, 50, 52, 54, 56, 58, 60, 62, 64],
-    &[32, 34, 36, 38, 40, 42, 44, 46, 48, 50, 52, 54, 56, 58, 60, 62, 64],
-    &[4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36],
+    &[
+        28, 30, 32, 34, 36, 38, 40, 42, 44, 46, 48, 50, 52, 54, 56, 58, 60,
+    ],
+    &[
+        28, 30, 32, 34, 36, 38, 40, 42, 44, 46, 48, 50, 52, 54, 56, 58, 60,
+    ],
+    &[
+        60, 65, 70, 75, 80, 85, 90, 95, 100, 105, 110, 115, 120, 125, 130, 135, 140,
+    ],
+    &[
+        75, 80, 85, 90, 95, 100, 105, 110, 115, 120, 125, 130, 135, 140, 145, 150, 155,
+    ],
+    &[
+        6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38,
+    ],
+    &[
+        32, 34, 36, 38, 40, 42, 44, 46, 48, 50, 52, 54, 56, 58, 60, 62, 64,
+    ],
+    &[
+        32, 34, 36, 38, 40, 42, 44, 46, 48, 50, 52, 54, 56, 58, 60, 62, 64,
+    ],
+    &[
+        4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36,
+    ],
 ];
 
 const BC_US_CUP: [&str; 9] = ["AA", "A", "B", "C", "D", "DD/E", "DDD/F", "DDDD/G", "H"];
@@ -105,7 +121,12 @@ fn to_centimeters(value: f64, unit: &str) -> f64 {
     }
 }
 
-fn calculate_bra_size(underbust: f64, bust: f64, unit: &str, system: &str) -> Option<BraCalculation> {
+fn calculate_bra_size(
+    underbust: f64,
+    bust: f64,
+    unit: &str,
+    system: &str,
+) -> Option<BraCalculation> {
     if !underbust.is_finite() || !bust.is_finite() || underbust <= 0.0 || bust <= 0.0 {
         return None;
     }
@@ -186,11 +207,7 @@ fn parse_datetime_local(value: &str) -> i64 {
 }
 
 fn parse_optional(value: &str) -> Option<f64> {
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    trimmed.parse::<f64>().ok().filter(|v| v.is_finite())
+    parse_decimal(value)
 }
 
 fn parse_weight_unit(value: &str) -> Option<WeightUnit> {
@@ -324,7 +341,7 @@ pub fn CreateMeasurement() -> impl IntoView {
                             "Weight"
                             <div class="inline">
                                 <input
-                                    type="number"
+                                    type="text"
                                     step="any"
                                     on:input=move |ev| weight.set(event_target_value(&ev))
                                     prop:value=move || weight.get()
@@ -342,7 +359,7 @@ pub fn CreateMeasurement() -> impl IntoView {
                             "Height"
                             <div class="inline">
                                 <input
-                                    type="number"
+                                    type="text"
                                     step="any"
                                     on:input=move |ev| height.set(event_target_value(&ev))
                                     prop:value=move || height.get()
@@ -371,35 +388,35 @@ pub fn CreateMeasurement() -> impl IntoView {
                         </div>
                         <div class="measurement-grid">
                             <input
-                                type="number"
+                                type="text"
                                 step="any"
                                 placeholder="Underbust"
                                 on:input=move |ev| underbust.set(event_target_value(&ev))
                                 prop:value=move || underbust.get()
                             />
                             <input
-                                type="number"
+                                type="text"
                                 step="any"
                                 placeholder="Bust"
                                 on:input=move |ev| bust.set(event_target_value(&ev))
                                 prop:value=move || bust.get()
                             />
                             <input
-                                type="number"
+                                type="text"
                                 step="any"
                                 placeholder="Bideltoid (shoulder)"
                                 on:input=move |ev| bideltoid.set(event_target_value(&ev))
                                 prop:value=move || bideltoid.get()
                             />
                             <input
-                                type="number"
+                                type="text"
                                 step="any"
                                 placeholder="Waist"
                                 on:input=move |ev| waist.set(event_target_value(&ev))
                                 prop:value=move || waist.get()
                             />
                             <input
-                                type="number"
+                                type="text"
                                 step="any"
                                 placeholder="Hip"
                                 on:input=move |ev| hip.set(event_target_value(&ev))

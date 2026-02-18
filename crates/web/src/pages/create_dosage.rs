@@ -9,7 +9,7 @@ use wasm_bindgen::JsValue;
 
 use crate::layout::page_layout;
 use crate::store::use_store;
-use crate::utils::{hormone_unit_label, parse_hormone_unit};
+use crate::utils::{hormone_unit_label, parse_decimal, parse_decimal_or_nan, parse_hormone_unit};
 use hrt_shared::logic::backfill_scheduled_doses;
 use hrt_shared::types::{
     AntiandrogenSchedule, Antiandrogens, DosageHistoryEntry, HormoneUnits, InjectableEstradiols,
@@ -238,16 +238,11 @@ fn parse_optional_datetime(value: &str) -> Option<i64> {
 }
 
 fn parse_num(value: &str) -> f64 {
-    value.trim().parse::<f64>().unwrap_or(f64::NAN)
+    parse_decimal_or_nan(value)
 }
 
 fn parse_optional_num(value: &str) -> Option<f64> {
-    let parsed = parse_num(value);
-    if parsed.is_finite() {
-        Some(parsed)
-    } else {
-        None
-    }
+    parse_decimal(value)
 }
 
 fn fmt(value: f64, decimals: usize) -> String {
@@ -729,7 +724,7 @@ pub fn CreateDosage() -> impl IntoView {
                                         <label>
                                             "Dose (mg)"
                                             <input
-                                                type="number"
+                                                type="text"
                                                 step="any"
                                                 on:input=move |ev| inj_conv_dose_mg.set(event_target_value(&ev))
                                                 prop:value=move || inj_conv_dose_mg.get()
@@ -738,7 +733,7 @@ pub fn CreateDosage() -> impl IntoView {
                                         <label>
                                             "Concentration (mg/mL)"
                                             <input
-                                                type="number"
+                                                type="text"
                                                 step="any"
                                                 on:input=move |ev| inj_conv_conc_mg_ml.set(event_target_value(&ev))
                                                 prop:value=move || inj_conv_conc_mg_ml.get()
@@ -764,7 +759,7 @@ pub fn CreateDosage() -> impl IntoView {
                                         <label>
                                             "Volume (mL)"
                                             <input
-                                                type="number"
+                                                type="text"
                                                 step="any"
                                                 on:input=move |ev| inj_conv_vol2_ml.set(event_target_value(&ev))
                                                 prop:value=move || inj_conv_vol2_ml.get()
@@ -773,7 +768,7 @@ pub fn CreateDosage() -> impl IntoView {
                                         <label>
                                             "Concentration (mg/mL)"
                                             <input
-                                                type="number"
+                                                type="text"
                                                 step="any"
                                                 on:input=move |ev| inj_conv_conc2_mg_ml.set(event_target_value(&ev))
                                                 prop:value=move || inj_conv_conc2_mg_ml.get()
@@ -1021,7 +1016,7 @@ pub fn CreateDosage() -> impl IntoView {
                             <label>
                                 "Pill quantity"
                                 <input
-                                    type="number"
+                                    type="text"
                                     min="1"
                                     step="any"
                                     on:input=move |ev| estrogen_pill_qty.set(event_target_value(&ev))
@@ -1091,7 +1086,7 @@ pub fn CreateDosage() -> impl IntoView {
                                 <label>
                                     "Frequency (days)"
                                     <input
-                                        type="number"
+                                        type="text"
                                         step="any"
                                         on:input=move |ev| {
                                             if estrogen_method.get() == "injection" {
@@ -1114,7 +1109,7 @@ pub fn CreateDosage() -> impl IntoView {
                             <label>
                                 "Dose"
                                 <input
-                                    type="number"
+                                    type="text"
                                     step="any"
                                     on:input=move |ev| estrogen_dose.set(event_target_value(&ev))
                                     prop:value=move || estrogen_dose.get()
@@ -1197,7 +1192,7 @@ pub fn CreateDosage() -> impl IntoView {
                                 <label>
                                     "Frequency (days)"
                                     <input
-                                        type="number"
+                                        type="text"
                                         step="any"
                                         on:input=move |ev| aa_frequency.set(event_target_value(&ev))
                                         prop:value=move || aa_frequency.get()
@@ -1209,7 +1204,7 @@ pub fn CreateDosage() -> impl IntoView {
                                 <label>
                                     "Dose"
                                     <input
-                                        type="number"
+                                        type="text"
                                         step="any"
                                         on:input=move |ev| aa_dose.set(event_target_value(&ev))
                                         prop:value=move || aa_dose.get()
@@ -1256,7 +1251,7 @@ pub fn CreateDosage() -> impl IntoView {
                                 <label>
                                     "Pill quantity"
                                     <input
-                                        type="number"
+                                        type="text"
                                         min="1"
                                         step="any"
                                         on:input=move |ev| prog_pill_qty.set(event_target_value(&ev))
@@ -1308,7 +1303,7 @@ pub fn CreateDosage() -> impl IntoView {
                                     <label>
                                         "Frequency (days)"
                                         <input
-                                            type="number"
+                                            type="text"
                                             step="any"
                                             on:input=move |ev| prog_frequency.set(event_target_value(&ev))
                                             prop:value=move || prog_frequency.get()
@@ -1318,7 +1313,7 @@ pub fn CreateDosage() -> impl IntoView {
                                 <label>
                                     "Dose"
                                     <input
-                                        type="number"
+                                        type="text"
                                         step="any"
                                         on:input=move |ev| prog_dose.set(event_target_value(&ev))
                                         prop:value=move || prog_dose.get()

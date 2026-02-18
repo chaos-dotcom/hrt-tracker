@@ -7,6 +7,7 @@ use wasm_bindgen::JsCast;
 use crate::layout::page_layout;
 use crate::store;
 use crate::store::use_store;
+use crate::utils::parse_decimal;
 use hrt_shared::types::{HormoneUnits, Settings};
 
 #[component]
@@ -15,6 +16,13 @@ pub fn BackupPage() -> impl IntoView {
     let settings = store.settings;
 
     let ics_secret = create_rw_signal(settings.get().icsSecret.unwrap_or_default());
+    let blood_test_interval_months = create_rw_signal(
+        settings
+            .get()
+            .bloodTestIntervalMonths
+            .map(|v| v.to_string())
+            .unwrap_or_default(),
+    );
     let ics_url = create_memo({
         let ics_secret = ics_secret;
         move |_| {
@@ -40,14 +48,17 @@ pub fn BackupPage() -> impl IntoView {
     let on_save_settings = {
         let store = store.clone();
         let ics_secret = ics_secret;
+        let blood_test_interval_months = blood_test_interval_months;
         move |_: leptos::ev::MouseEvent| {
             let secret = ics_secret.get();
+            let interval = parse_decimal(&blood_test_interval_months.get());
             store.settings.update(|s| {
                 s.icsSecret = if secret.trim().is_empty() {
                     None
                 } else {
                     Some(secret)
                 };
+                s.bloodTestIntervalMonths = interval;
             });
             store.mark_dirty();
         }
@@ -209,24 +220,20 @@ pub fn BackupPage() -> impl IntoView {
                         </div>
                         <label>"Blood test interval (months)"</label>
                         <input
-                            type="number"
+                            type="text"
                             step="any"
                             min="1"
-                            on:input={
+                            on:input=move |ev| blood_test_interval_months.set(event_target_value(&ev))
+                            on:blur={
                                 let store = store.clone();
-                                move |ev| {
-                                    let value = event_target_value(&ev);
-                                    let parsed = value.parse::<f64>().ok();
+                                let blood_test_interval_months = blood_test_interval_months;
+                                move |_| {
+                                    let parsed = parse_decimal(&blood_test_interval_months.get());
                                     store.settings.update(|s| s.bloodTestIntervalMonths = parsed);
                                     store.mark_dirty();
                                 }
                             }
-                            prop:value=move || store
-                                .settings
-                                .get()
-                                .bloodTestIntervalMonths
-                                .map(|v| v.to_string())
-                                .unwrap_or_else(|| "".to_string())
+                            prop:value=move || blood_test_interval_months.get()
                         />
                         <label>"ICS URL secret (optional)"</label>
                         <input

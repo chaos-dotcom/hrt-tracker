@@ -246,7 +246,10 @@ pub fn use_store() -> AppStore {
 
 pub fn api_base() -> String {
     // Use relative paths for single-port proxy setup, fallback to absolute URL for development
-    let base = std::option_env!("HRT_API_BASE").unwrap_or("").trim().to_string();
+    let base = std::option_env!("HRT_API_BASE")
+        .unwrap_or("")
+        .trim()
+        .to_string();
     if base.is_empty() {
         return String::new();
     }

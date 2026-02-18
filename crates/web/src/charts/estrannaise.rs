@@ -1,5 +1,5 @@
-use leptos::window;
 use chrono::{Local, TimeZone};
+use leptos::window;
 use plotters::element::DashedPathElement;
 use plotters::prelude::*;
 use plotters_canvas::CanvasBackend;
@@ -175,9 +175,7 @@ pub fn draw_estrannaise_chart(canvas_id: &str, series: &EstrannaiseSeries, zoom:
             }
         } else {
             let line = series.blended.iter().map(|p| (p.x, p.y));
-            chart
-                .draw_series(LineSeries::new(line, blended_style))
-                .ok();
+            chart.draw_series(LineSeries::new(line, blended_style)).ok();
         }
     }
     if !series.stepped.is_empty() {
@@ -195,32 +193,27 @@ pub fn draw_estrannaise_chart(canvas_id: &str, series: &EstrannaiseSeries, zoom:
             if historical.len() > 1 {
                 chart
                     .draw_series(std::iter::once(DashedPathElement::new(
-                        historical,
-                        6,
-                        4,
-                        step_style,
+                        historical, 6, 4, step_style,
                     )))
                     .ok();
             }
             if forecast.len() > 1 {
                 chart
                     .draw_series(std::iter::once(DashedPathElement::new(
-                        forecast,
-                        2,
-                        6,
-                        step_style,
+                        forecast, 2, 6, step_style,
                     )))
                     .ok();
             }
         } else {
-            let line = series.stepped.iter().map(|p| (p.x, p.y)).collect::<Vec<_>>();
+            let line = series
+                .stepped
+                .iter()
+                .map(|p| (p.x, p.y))
+                .collect::<Vec<_>>();
             if line.len() > 1 {
                 chart
                     .draw_series(std::iter::once(DashedPathElement::new(
-                        line,
-                        6,
-                        4,
-                        step_style,
+                        line, 6, 4, step_style,
                     )))
                     .ok();
             }

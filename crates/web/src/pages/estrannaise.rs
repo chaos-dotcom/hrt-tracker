@@ -13,7 +13,9 @@ use crate::charts::{
 use crate::estrannaise::compute_estrannaise_series;
 use crate::layout::page_layout;
 use crate::store::use_store;
-use crate::utils::{compute_fudge_factor, fmt_blood_value, fmt_date_label, hormone_unit_label};
+use crate::utils::{
+    compute_fudge_factor, fmt_blood_value, fmt_date_label, hormone_unit_label, parse_decimal,
+};
 use hrt_shared::logic::predict_e2_pg_ml;
 use hrt_shared::types::{BloodTest, HormoneUnits};
 
@@ -94,8 +96,8 @@ pub fn EstrannaisePage() -> impl IntoView {
         move |_| {
             let data_value = store.data.get();
             let settings_value = settings.get();
-            let dose_override = forecast_dose_override.get().trim().parse::<f64>().ok();
-            let freq_override = forecast_frequency_override.get().trim().parse::<f64>().ok();
+            let dose_override = parse_decimal(&forecast_dose_override.get());
+            let freq_override = parse_decimal(&forecast_frequency_override.get());
             compute_estrannaise_series(
                 &data_value,
                 &settings_value,
@@ -358,7 +360,7 @@ pub fn EstrannaisePage() -> impl IntoView {
                     <div class="chart-toolbar-group">
                         <label class="muted">"Dose"</label>
                         <input
-                            type="number"
+                            type="text"
                             step="any"
                             min="0"
                             class="chart-input"
@@ -370,7 +372,7 @@ pub fn EstrannaisePage() -> impl IntoView {
                     <div class="chart-toolbar-group">
                         <label class="muted">"Every (days)"</label>
                         <input
-                            type="number"
+                            type="text"
                             step="any"
                             min="1"
                             class="chart-input"

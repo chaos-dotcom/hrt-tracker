@@ -8,7 +8,7 @@ use std::rc::Rc;
 
 use crate::layout::page_layout;
 use crate::store::use_store;
-use crate::utils::{fmt_decimal, parse_date_or_now};
+use crate::utils::{fmt_decimal, parse_date_or_now, parse_decimal};
 use hrt_shared::types::{InjectableEstradiols, SubVial, Vial};
 
 const ESTER_OPTIONS: [InjectableEstradiols; 6] = [
@@ -109,11 +109,7 @@ pub fn VialsPage() -> impl IntoView {
             if value.trim().is_empty() {
                 return;
             }
-            let initial_iu = iu_value
-                .trim()
-                .parse::<f64>()
-                .ok()
-                .filter(|v| v.is_finite() && *v >= 0.0);
+            let initial_iu = parse_decimal(&iu_value).filter(|v| *v >= 0.0);
             let created_at = Date::now() as i64;
             store.data.update(|data| {
                 if let Some(vial) = data.vials.iter_mut().find(|v| v.id == vial_id) {
@@ -154,11 +150,7 @@ pub fn VialsPage() -> impl IntoView {
     let update_sub_initial_iu = {
         let store = store.clone();
         move |vial_id: String, sub_id: String, value: String| {
-            let parsed = value
-                .trim()
-                .parse::<f64>()
-                .ok()
-                .filter(|v| v.is_finite() && *v >= 0.0);
+            let parsed = parse_decimal(&value).filter(|v| *v >= 0.0);
             store.data.update(|data| {
                 if let Some(vial) = data.vials.iter_mut().find(|v| v.id == vial_id) {
                     if let Some(sub) = vial.subVials.iter_mut().find(|s| s.id == sub_id) {
@@ -386,11 +378,11 @@ pub fn VialsPage() -> impl IntoView {
                                                                     <label class="subvial-meta">
                                                                         "Starting IU"
                                                                         <input
-                                                                            type="number"
+                                                                            type="text"
                                                                             step="any"
                                                                             min="0"
                                                                             value=initial_value
-                                                                            on:input={
+                                                                            on:change={
                                                                                 let sub_id = sub_id.clone();
                                                                                 move |ev| {
                                                                                     let update_sub_initial_iu = update_sub_initial_iu.get_value();
@@ -439,7 +431,7 @@ pub fn VialsPage() -> impl IntoView {
                                                     prop:value=sub_input_value
                                                 />
                                                 <input
-                                                    type="number"
+                                                    type="text"
                                                     step="any"
                                                     min="0"
                                                     placeholder="Starting IU"
@@ -504,18 +496,8 @@ pub fn VialsCreatePage() -> impl IntoView {
         let ester_value = ester_value.trim().to_string();
         let created_at = parse_date_or_now(&created_date.get());
         let use_by_ms = parse_optional_date(&use_by.get());
-        let concentration_value = concentration
-            .get()
-            .trim()
-            .parse::<f64>()
-            .ok()
-            .filter(|v| v.is_finite() && *v > 0.0);
-        let first_sub_initial = first_sub_iu
-            .get()
-            .trim()
-            .parse::<f64>()
-            .ok()
-            .filter(|v| v.is_finite() && *v >= 0.0);
+        let concentration_value = parse_decimal(&concentration.get()).filter(|v| *v > 0.0);
+        let first_sub_initial = parse_decimal(&first_sub_iu.get()).filter(|v| *v >= 0.0);
         let mut sub_vials = Vec::new();
         if !first_sub_number.get().trim().is_empty() {
             let sub_created = Date::now() as i64;
@@ -651,7 +633,7 @@ pub fn VialsCreatePage() -> impl IntoView {
                 <label>
                     "Concentration (mg/mL)"
                     <input
-                        type="number"
+                        type="text"
                         step="any"
                         min="0"
                         placeholder="e.g., 40"
@@ -680,7 +662,7 @@ pub fn VialsCreatePage() -> impl IntoView {
                 <label>
                     "Starting IU in first cartridge (optional)"
                     <input
-                        type="number"
+                        type="text"
                         step="any"
                         min="0"
                         placeholder="e.g., 200"
@@ -757,12 +739,7 @@ pub fn VialsDetailPage() -> impl IntoView {
             parse_date_or_now(&created_value)
         };
         let use_by_ms = parse_optional_date(&use_by.get());
-        let concentration_value = concentration
-            .get()
-            .trim()
-            .parse::<f64>()
-            .ok()
-            .filter(|v| v.is_finite() && *v > 0.0);
+        let concentration_value = parse_decimal(&concentration.get()).filter(|v| *v > 0.0);
         let spent_at = if is_spent.get() {
             let spent_value = spent_date.get();
             let value = if spent_value.trim().is_empty() {
@@ -854,7 +831,7 @@ pub fn VialsDetailPage() -> impl IntoView {
                     <label>
                         "Concentration (mg/mL)"
                         <input
-                            type="number"
+                            type="text"
                             step="any"
                             min="0"
                             on:input=move |ev| concentration.set(event_target_value(&ev))

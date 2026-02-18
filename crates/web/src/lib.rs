@@ -72,3 +72,40 @@ pub fn mount_app() {
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use server::serve;
+
+#[cfg(test)]
+mod tests {
+    fn assert_no_numeric_input_type(file_name: &str, source: &str) {
+        assert!(
+            !source.contains("type=\"number\""),
+            "{file_name} still contains type=\"number\" which blocks decimal typing in some browsers/locales"
+        );
+    }
+
+    #[test]
+    fn decimal_entry_pages_do_not_use_number_input_type() {
+        let pages = [
+            ("pages/backup.rs", include_str!("pages/backup.rs")),
+            ("pages/calc.rs", include_str!("pages/calc.rs")),
+            (
+                "pages/create_blood_test.rs",
+                include_str!("pages/create_blood_test.rs"),
+            ),
+            (
+                "pages/create_dosage.rs",
+                include_str!("pages/create_dosage.rs"),
+            ),
+            (
+                "pages/create_measurement.rs",
+                include_str!("pages/create_measurement.rs"),
+            ),
+            ("pages/estrannaise.rs", include_str!("pages/estrannaise.rs")),
+            ("pages/vials.rs", include_str!("pages/vials.rs")),
+            ("pages/view.rs", include_str!("pages/view.rs")),
+        ];
+
+        for (file_name, source) in pages {
+            assert_no_numeric_input_type(file_name, source);
+        }
+    }
+}
