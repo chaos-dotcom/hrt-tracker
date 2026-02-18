@@ -384,9 +384,6 @@ pub fn CreateDosage() -> impl IntoView {
             if !settings.get().displayInjectableInIU.unwrap_or(false) {
                 return false;
             }
-            if parse_hormone_unit(&estrogen_unit.get()) != Some(HormoneUnits::Mg) {
-                return false;
-            }
             let data_value = store.data.get();
             let selected_vial = selected_vial_id.get();
             let selected_vial_id = if selected_vial.trim().is_empty() {
@@ -463,6 +460,34 @@ pub fn CreateDosage() -> impl IntoView {
         }
     });
 
+    let estrogen_dose_as_mg = create_memo({
+        let store = store.clone();
+        move |_| {
+            if estrogen_method.get() != "injection" {
+                return None;
+            }
+            let dose_value = parse_num(&estrogen_dose.get());
+            if !dose_value.is_finite() || dose_value <= 0.0 {
+                return None;
+            }
+            if !estrogen_dose_in_iu.get() {
+                return Some(dose_value);
+            }
+            let data_value = store.data.get();
+            let selected_vial = selected_vial_id.get();
+            let selected_vial_id = if selected_vial.trim().is_empty() {
+                None
+            } else {
+                Some(&selected_vial)
+            };
+            let schedule_vial_id = data_value
+                .injectableEstradiol
+                .as_ref()
+                .and_then(|cfg| cfg.vialId.as_ref());
+            injectable_dose_from_iu(&data_value, dose_value, selected_vial_id, schedule_vial_id)
+        }
+    });
+
     let record_date_time = create_rw_signal(String::new());
 
     let schedule_feedback = create_rw_signal(false);
@@ -504,7 +529,7 @@ pub fn CreateDosage() -> impl IntoView {
                 };
                 estrogen_dose.set(dose_label);
                 estrogen_dose_in_iu.set(dose_in_iu);
-                estrogen_unit.set(hormone_unit_label(&inj.unit).to_string());
+                estrogen_unit.set(hormone_unit_label(&HormoneUnits::Mg).to_string());
                 injection_frequency.set(format!("{:.2}", inj.frequency));
                 estrogen_next_date.set(
                     inj.nextDoseDate
@@ -625,33 +650,34 @@ pub fn CreateDosage() -> impl IntoView {
             let mode_value = mode.get();
             let estrogen_method_value = estrogen_method.get();
             let estrogen_input_dose = parse_num(&estrogen_dose.get());
-            let estrogen_unit_value =
-                parse_hormone_unit(&estrogen_unit.get()).unwrap_or(HormoneUnits::Mg);
-            let estrogen_dose_value = if estrogen_method_value == "injection"
-                && estrogen_unit_value == HormoneUnits::Mg
-                && estrogen_dose_in_iu.get()
-            {
-                let data_value = store.data.get();
-                let selected_vial = selected_vial_id.get();
-                let selected_vial_id = if selected_vial.trim().is_empty() {
-                    None
-                } else {
-                    Some(&selected_vial)
-                };
-                let schedule_vial_id = data_value
-                    .injectableEstradiol
-                    .as_ref()
-                    .and_then(|cfg| cfg.vialId.as_ref());
-                injectable_dose_from_iu(
-                    &data_value,
-                    estrogen_input_dose,
-                    selected_vial_id,
-                    schedule_vial_id,
-                )
-                .unwrap_or(estrogen_input_dose)
+            let estrogen_unit_value = if estrogen_method_value == "injection" {
+                HormoneUnits::Mg
             } else {
-                estrogen_input_dose
+                parse_hormone_unit(&estrogen_unit.get()).unwrap_or(HormoneUnits::Mg)
             };
+            let estrogen_dose_value =
+                if estrogen_method_value == "injection" && estrogen_dose_in_iu.get() {
+                    let data_value = store.data.get();
+                    let selected_vial = selected_vial_id.get();
+                    let selected_vial_id = if selected_vial.trim().is_empty() {
+                        None
+                    } else {
+                        Some(&selected_vial)
+                    };
+                    let schedule_vial_id = data_value
+                        .injectableEstradiol
+                        .as_ref()
+                        .and_then(|cfg| cfg.vialId.as_ref());
+                    injectable_dose_from_iu(
+                        &data_value,
+                        estrogen_input_dose,
+                        selected_vial_id,
+                        schedule_vial_id,
+                    )
+                    .unwrap_or(estrogen_input_dose)
+                } else {
+                    estrogen_input_dose
+                };
 
             if mode_value == "record" {
                 let record_ms = parse_datetime_local(&record_date_time.get());
@@ -1314,9 +1340,26 @@ pub fn CreateDosage() -> impl IntoView {
 
                             <Show
                                 when=move || {
+                                    estrogen_method.get() == "injection" && estrogen_dose_in_iu.get()
+                                }
+                            >
+                                <p class="muted">
+                                    "Stored as "
+                                    <strong>
+                                        {move || {
+                                            estrogen_dose_as_mg
+                                                .get()
+                                                .map(|dose| format!("{} mg", fmt(dose, 3)))
+                                                .unwrap_or_else(|| "—".to_string())
+                                        }}
+                                    </strong>
+                                </p>
+                            </Show>
+
+                            <Show
+                                when=move || {
                                     estrogen_method.get() == "injection"
                                         && settings.get().displayInjectableInIU.unwrap_or(false)
-                                        && parse_hormone_unit(&estrogen_unit.get()) == Some(HormoneUnits::Mg)
                                         && !estrogen_dose_in_iu.get()
                                 }
                             >
@@ -1325,19 +1368,23 @@ pub fn CreateDosage() -> impl IntoView {
                                 </p>
                             </Show>
 
-                            <label>
-                                "Unit"
-                                <select
-                                    on:change=move |ev| estrogen_unit.set(event_target_value(&ev))
-                                    prop:value=move || estrogen_unit.get()
-                                >
-                                    <For
-                                        each=move || hormone_unit_labels()
-                                        key=|label| label.clone()
-                                        children=move |label| view! { <option value=label.clone()>{label}</option> }
-                                    />
-                                </select>
-                            </label>
+                            <Show when=move || estrogen_method.get() != "injection">
+                                <label>
+                                    "Unit"
+                                    <select
+                                        on:change=move |ev| estrogen_unit.set(event_target_value(&ev))
+                                        prop:value=move || estrogen_unit.get()
+                                    >
+                                        <For
+                                            each=move || hormone_unit_labels()
+                                            key=|label| label.clone()
+                                            children=move |label| {
+                                                view! { <option value=label.clone()>{label}</option> }
+                                            }
+                                        />
+                                    </select>
+                                </label>
+                            </Show>
                         </div>
                     </section>
 
