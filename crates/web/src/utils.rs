@@ -152,6 +152,16 @@ fn vial_concentration_mg_ml(data: &HrtData, vial_id: &str) -> Option<f64> {
         .filter(|conc| *conc > 0.0)
 }
 
+pub fn injectable_concentration_mg_ml(
+    data: &HrtData,
+    vial_id: Option<&String>,
+    schedule_vial_id: Option<&String>,
+) -> Option<f64> {
+    vial_id
+        .and_then(|id| vial_concentration_mg_ml(data, id))
+        .or_else(|| schedule_vial_id.and_then(|id| vial_concentration_mg_ml(data, id)))
+}
+
 pub fn injectable_iu_from_dose(
     data: &HrtData,
     dose: f64,
@@ -162,14 +172,31 @@ pub fn injectable_iu_from_dose(
     if *unit != HormoneUnits::Mg || !dose.is_finite() || dose <= 0.0 {
         return None;
     }
-    let conc = vial_id
-        .and_then(|id| vial_concentration_mg_ml(data, id))
-        .or_else(|| schedule_vial_id.and_then(|id| vial_concentration_mg_ml(data, id)));
+    let conc = injectable_concentration_mg_ml(data, vial_id, schedule_vial_id);
     let conc = conc?;
     let ml = dose / conc;
     let iu = ml * 100.0;
     if iu.is_finite() && iu > 0.0 {
         Some(iu)
+    } else {
+        None
+    }
+}
+
+pub fn injectable_dose_from_iu(
+    data: &HrtData,
+    iu: f64,
+    vial_id: Option<&String>,
+    schedule_vial_id: Option<&String>,
+) -> Option<f64> {
+    if !iu.is_finite() || iu <= 0.0 {
+        return None;
+    }
+    let conc = injectable_concentration_mg_ml(data, vial_id, schedule_vial_id)?;
+    let ml = iu / 100.0;
+    let dose = ml * conc;
+    if dose.is_finite() && dose > 0.0 {
+        Some(dose)
     } else {
         None
     }
@@ -236,7 +263,10 @@ pub fn fmt_date_label(date_ms: i64, axis_mode: &str, first_dose: Option<i64>) ->
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_decimal, parse_decimal_or_nan};
+    use super::{
+        injectable_dose_from_iu, injectable_iu_from_dose, parse_decimal, parse_decimal_or_nan,
+    };
+    use hrt_shared::types::{HormoneUnits, HrtData, Vial};
 
     #[test]
     fn parse_decimal_accepts_dot_and_comma_inputs() {
@@ -260,5 +290,42 @@ mod tests {
         assert!(parse_decimal_or_nan("not-a-number").is_nan());
         assert_eq!(parse_decimal_or_nan("0.2"), 0.2);
         assert_eq!(parse_decimal_or_nan("0,2"), 0.2);
+    }
+
+    #[test]
+    fn injectable_mg_and_iu_conversion_roundtrips_with_known_vial() {
+        let mut data = HrtData::default();
+        data.vials.push(Vial {
+            id: "vial-1".to_string(),
+            esterKind: None,
+            suspensionOil: None,
+            otherIngredients: None,
+            batchNumber: None,
+            source: None,
+            concentrationMgPerMl: Some(40.0),
+            isSpent: None,
+            spentAt: None,
+            useBy: None,
+            createdAt: 0,
+            subVials: Vec::new(),
+        });
+        let vial_id = "vial-1".to_string();
+        let vial = Some(&vial_id);
+
+        let iu = injectable_iu_from_dose(&data, 4.0, &HormoneUnits::Mg, vial, None)
+            .expect("expected IU conversion");
+        assert_eq!(iu, 10.0);
+
+        let mg = injectable_dose_from_iu(&data, iu, vial, None).expect("expected mg conversion");
+        assert!((mg - 4.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn injectable_iu_conversion_requires_known_concentration() {
+        let data = HrtData::default();
+        let missing_vial_id = "missing".to_string();
+        let vial = Some(&missing_vial_id);
+        assert!(injectable_iu_from_dose(&data, 4.0, &HormoneUnits::Mg, vial, None,).is_none());
+        assert!(injectable_dose_from_iu(&data, 10.0, vial, None).is_none());
     }
 }

@@ -14,7 +14,8 @@ use crate::estrannaise::compute_estrannaise_series;
 use crate::layout::page_layout;
 use crate::store::use_store;
 use crate::utils::{
-    compute_fudge_factor, fmt_blood_value, fmt_date_label, hormone_unit_label, parse_decimal,
+    compute_fudge_factor, fmt_blood_value, fmt_date_label, hormone_unit_label,
+    injectable_dose_from_iu, parse_decimal,
 };
 use hrt_shared::logic::predict_e2_pg_ml;
 use hrt_shared::types::{BloodTest, HormoneUnits};
@@ -91,12 +92,37 @@ pub fn EstrannaisePage() -> impl IntoView {
         }
     });
 
+    let forecast_dose_in_iu = create_memo({
+        let settings = store.settings;
+        move |_| {
+            if !settings.get().displayInjectableInIU.unwrap_or(false) {
+                return false;
+            }
+            let data_value = store.data.get();
+            let schedule_vial_id = data_value
+                .injectableEstradiol
+                .as_ref()
+                .and_then(|cfg| cfg.vialId.as_ref());
+            injectable_dose_from_iu(&data_value, 1.0, schedule_vial_id, schedule_vial_id).is_some()
+        }
+    });
+
     let estrannaise_series = create_memo({
         let settings = store.settings;
         move |_| {
             let data_value = store.data.get();
             let settings_value = settings.get();
-            let dose_override = parse_decimal(&forecast_dose_override.get());
+            let dose_override = if forecast_dose_in_iu.get() {
+                let schedule_vial_id = data_value
+                    .injectableEstradiol
+                    .as_ref()
+                    .and_then(|cfg| cfg.vialId.as_ref());
+                parse_decimal(&forecast_dose_override.get()).and_then(|iu| {
+                    injectable_dose_from_iu(&data_value, iu, schedule_vial_id, schedule_vial_id)
+                })
+            } else {
+                parse_decimal(&forecast_dose_override.get())
+            };
             let freq_override = parse_decimal(&forecast_frequency_override.get());
             compute_estrannaise_series(
                 &data_value,
@@ -358,7 +384,9 @@ pub fn EstrannaisePage() -> impl IntoView {
                         </select>
                     </div>
                     <div class="chart-toolbar-group">
-                        <label class="muted">"Dose"</label>
+                        <label class="muted">
+                            {move || if forecast_dose_in_iu.get() { "Dose (IU)" } else { "Dose (mg)" }}
+                        </label>
                         <input
                             type="text"
                             step="any"
@@ -368,6 +396,14 @@ pub fn EstrannaisePage() -> impl IntoView {
                             on:input=move |ev| forecast_dose_override.set(event_target_value(&ev))
                             prop:value=move || forecast_dose_override.get()
                         />
+                        <Show
+                            when=move || {
+                                store.settings.get().displayInjectableInIU.unwrap_or(false)
+                                    && !forecast_dose_in_iu.get()
+                            }
+                        >
+                            <span class="muted">"Set injectable vial concentration to enter IU."</span>
+                        </Show>
                     </div>
                     <div class="chart-toolbar-group">
                         <label class="muted">"Every (days)"</label>

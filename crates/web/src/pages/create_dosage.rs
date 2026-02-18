@@ -9,7 +9,10 @@ use wasm_bindgen::JsValue;
 
 use crate::layout::page_layout;
 use crate::store::use_store;
-use crate::utils::{hormone_unit_label, parse_decimal, parse_decimal_or_nan, parse_hormone_unit};
+use crate::utils::{
+    hormone_unit_label, injectable_dose_from_iu, injectable_iu_from_dose, parse_decimal,
+    parse_decimal_or_nan, parse_hormone_unit,
+};
 use hrt_shared::logic::backfill_scheduled_doses;
 use hrt_shared::types::{
     AntiandrogenSchedule, Antiandrogens, DosageHistoryEntry, HormoneUnits, InjectableEstradiols,
@@ -287,6 +290,7 @@ pub fn CreateDosage() -> impl IntoView {
 
     let mode = create_rw_signal(initial_mode);
     let estrogen_method = create_rw_signal("injection".to_string());
+    let settings = store.settings;
 
     let injectable_type =
         create_rw_signal(injectable_label(&InjectableEstradiols::Benzoate).to_string());
@@ -299,11 +303,27 @@ pub fn CreateDosage() -> impl IntoView {
 
     let inj_conv_dose_mg = create_rw_signal("4".to_string());
     let inj_conv_conc_mg_ml = create_rw_signal("40".to_string());
+    let inj_conv_dose_as_mg = create_memo({
+        let settings = settings;
+        move |_| {
+            let dose = parse_num(&inj_conv_dose_mg.get());
+            let conc = parse_num(&inj_conv_conc_mg_ml.get());
+            if settings.get().displayInjectableInIU.unwrap_or(false) {
+                if dose.is_finite() && conc.is_finite() && conc > 0.0 {
+                    (dose / 100.0) * conc
+                } else {
+                    f64::NAN
+                }
+            } else {
+                dose
+            }
+        }
+    });
     let inj_conv_vol_ml = create_memo(move |_| {
-        let dose = parse_num(&inj_conv_dose_mg.get());
+        let dose_mg = inj_conv_dose_as_mg.get();
         let conc = parse_num(&inj_conv_conc_mg_ml.get());
-        if dose.is_finite() && conc.is_finite() && conc > 0.0 {
-            dose / conc
+        if dose_mg.is_finite() && conc.is_finite() && conc > 0.0 {
+            dose_mg / conc
         } else {
             f64::NAN
         }
@@ -354,6 +374,33 @@ pub fn CreateDosage() -> impl IntoView {
     let selected_vial_id = create_rw_signal(String::new());
     let selected_sub_vial_id = create_rw_signal(String::new());
 
+    let injectable_dose_field_in_iu = create_memo({
+        let store = store.clone();
+        move |_| {
+            if estrogen_method.get() != "injection" {
+                return false;
+            }
+            if !settings.get().displayInjectableInIU.unwrap_or(false) {
+                return false;
+            }
+            if parse_hormone_unit(&estrogen_unit.get()) != Some(HormoneUnits::Mg) {
+                return false;
+            }
+            let data_value = store.data.get();
+            let selected_vial = selected_vial_id.get();
+            let selected_vial_id = if selected_vial.trim().is_empty() {
+                None
+            } else {
+                Some(&selected_vial)
+            };
+            let schedule_vial_id = data_value
+                .injectableEstradiol
+                .as_ref()
+                .and_then(|cfg| cfg.vialId.as_ref());
+            injectable_dose_from_iu(&data_value, 1.0, selected_vial_id, schedule_vial_id).is_some()
+        }
+    });
+
     let record_date_time = create_rw_signal(String::new());
 
     let schedule_feedback = create_rw_signal(false);
@@ -367,10 +414,25 @@ pub fn CreateDosage() -> impl IntoView {
                 return;
             }
             let data = store.data.get();
-            if let Some(inj) = data.injectableEstradiol {
+            if let Some(inj) = data.injectableEstradiol.as_ref() {
                 estrogen_method.set("injection".to_string());
                 injectable_type.set(injectable_label(&inj.kind).to_string());
-                estrogen_dose.set(format!("{:.3}", inj.dose));
+                let dose_label = if settings.get().displayInjectableInIU.unwrap_or(false)
+                    && inj.unit == HormoneUnits::Mg
+                {
+                    injectable_iu_from_dose(
+                        &data,
+                        inj.dose,
+                        &inj.unit,
+                        inj.vialId.as_ref(),
+                        inj.vialId.as_ref(),
+                    )
+                    .map(|iu| fmt(iu, 0))
+                    .unwrap_or_else(|| format!("{:.3}", inj.dose))
+                } else {
+                    format!("{:.3}", inj.dose)
+                };
+                estrogen_dose.set(dose_label);
                 estrogen_unit.set(hormone_unit_label(&inj.unit).to_string());
                 injection_frequency.set(format!("{:.2}", inj.frequency));
                 estrogen_next_date.set(
@@ -378,12 +440,12 @@ pub fn CreateDosage() -> impl IntoView {
                         .map(to_local_input_value)
                         .unwrap_or_default(),
                 );
-                selected_vial_id.set(inj.vialId.unwrap_or_default());
-                selected_sub_vial_id.set(inj.subVialId.unwrap_or_default());
-                syringe_kind.set(inj.syringeKind.unwrap_or_default());
-                needle_length.set(inj.needleLength.unwrap_or_default());
-                needle_gauge.set(inj.needleGauge.unwrap_or_default());
-            } else if let Some(oral) = data.oralEstradiol {
+                selected_vial_id.set(inj.vialId.clone().unwrap_or_default());
+                selected_sub_vial_id.set(inj.subVialId.clone().unwrap_or_default());
+                syringe_kind.set(inj.syringeKind.clone().unwrap_or_default());
+                needle_length.set(inj.needleLength.clone().unwrap_or_default());
+                needle_gauge.set(inj.needleGauge.clone().unwrap_or_default());
+            } else if let Some(oral) = data.oralEstradiol.as_ref() {
                 estrogen_method.set("oral".to_string());
                 oral_type.set(oral_label(&oral.kind).to_string());
                 estrogen_dose.set(format!("{:.3}", oral.dose));
@@ -401,7 +463,7 @@ pub fn CreateDosage() -> impl IntoView {
                 needle_gauge.set(String::new());
             }
 
-            if let Some(aa) = data.antiandrogen {
+            if let Some(aa) = data.antiandrogen.as_ref() {
                 aa_type.set(antiandrogen_label(&aa.kind).to_string());
                 aa_dose.set(format!("{:.3}", aa.dose));
                 aa_unit.set(hormone_unit_label(&aa.unit).to_string());
@@ -413,7 +475,7 @@ pub fn CreateDosage() -> impl IntoView {
                 );
             }
 
-            if let Some(prog) = data.progesterone {
+            if let Some(prog) = data.progesterone.as_ref() {
                 prog_type.set(progesterone_label(&prog.kind).to_string());
                 prog_dose.set(format!("{:.3}", prog.dose));
                 prog_unit.set(hormone_unit_label(&prog.unit).to_string());
@@ -490,22 +552,47 @@ pub fn CreateDosage() -> impl IntoView {
             ev.prevent_default();
             let mode_value = mode.get();
             let estrogen_method_value = estrogen_method.get();
+            let estrogen_input_dose = parse_num(&estrogen_dose.get());
+            let estrogen_unit_value =
+                parse_hormone_unit(&estrogen_unit.get()).unwrap_or(HormoneUnits::Mg);
+            let estrogen_dose_value = if estrogen_method_value == "injection"
+                && estrogen_unit_value == HormoneUnits::Mg
+                && injectable_dose_field_in_iu.get()
+            {
+                let data_value = store.data.get();
+                let selected_vial = selected_vial_id.get();
+                let selected_vial_id = if selected_vial.trim().is_empty() {
+                    None
+                } else {
+                    Some(&selected_vial)
+                };
+                let schedule_vial_id = data_value
+                    .injectableEstradiol
+                    .as_ref()
+                    .and_then(|cfg| cfg.vialId.as_ref());
+                injectable_dose_from_iu(
+                    &data_value,
+                    estrogen_input_dose,
+                    selected_vial_id,
+                    schedule_vial_id,
+                )
+                .unwrap_or(estrogen_input_dose)
+            } else {
+                estrogen_input_dose
+            };
 
             if mode_value == "record" {
                 let record_ms = parse_datetime_local(&record_date_time.get());
                 store.data.update(|data| {
                     if record_estrogen.get() {
-                        let dose_value = parse_num(&estrogen_dose.get());
-                        let unit_value =
-                            parse_hormone_unit(&estrogen_unit.get()).unwrap_or(HormoneUnits::Mg);
                         if estrogen_method_value == "injection" {
                             let kind = injectable_from_label(&injectable_type.get());
                             let record = DosageHistoryEntry::InjectableEstradiol {
                                 date: record_ms,
                                 id: None,
                                 kind,
-                                dose: dose_value,
-                                unit: unit_value,
+                                dose: estrogen_dose_value,
+                                unit: estrogen_unit_value.clone(),
                                 note: if estrogen_note.get().trim().is_empty() {
                                     None
                                 } else {
@@ -549,8 +636,8 @@ pub fn CreateDosage() -> impl IntoView {
                                 date: record_ms,
                                 id: None,
                                 kind,
-                                dose: dose_value,
-                                unit: unit_value,
+                                dose: estrogen_dose_value,
+                                unit: estrogen_unit_value.clone(),
                                 pillQuantity: pill_qty,
                                 note: if estrogen_note.get().trim().is_empty() {
                                     None
@@ -609,8 +696,8 @@ pub fn CreateDosage() -> impl IntoView {
                 if estrogen_method_value == "injection" {
                     let schedule = InjectableSchedule {
                         kind: injectable_from_label(&injectable_type.get()),
-                        dose: parse_num(&estrogen_dose.get()),
-                        unit: parse_hormone_unit(&estrogen_unit.get()).unwrap_or(HormoneUnits::Mg),
+                        dose: estrogen_dose_value,
+                        unit: estrogen_unit_value.clone(),
                         frequency: parse_num(&injection_frequency.get()).max(1.0),
                         vialId: if selected_vial_id.get().is_empty() {
                             None
@@ -644,8 +731,8 @@ pub fn CreateDosage() -> impl IntoView {
                 } else {
                     let schedule = OralSchedule {
                         kind: oral_from_label(&oral_type.get()),
-                        dose: parse_num(&estrogen_dose.get()),
-                        unit: parse_hormone_unit(&estrogen_unit.get()).unwrap_or(HormoneUnits::Mg),
+                        dose: estrogen_dose_value,
+                        unit: estrogen_unit_value.clone(),
                         frequency: parse_num(&oral_frequency.get()).max(1.0),
                         nextDoseDate: parse_optional_datetime(&estrogen_next_date.get()),
                     };
@@ -722,7 +809,13 @@ pub fn CreateDosage() -> impl IntoView {
                                     <h4>"Dose and Concentration to Volume"</h4>
                                     <div class="inline-equal">
                                         <label>
-                                            "Dose (mg)"
+                                            {move || {
+                                                if settings.get().displayInjectableInIU.unwrap_or(false) {
+                                                    "Dose (IU)"
+                                                } else {
+                                                    "Dose (mg)"
+                                                }
+                                            }}
                                             <input
                                                 type="text"
                                                 step="any"
@@ -741,14 +834,37 @@ pub fn CreateDosage() -> impl IntoView {
                                         </label>
                                     </div>
                                     <p class="muted">
-                                        "Volume = Dose ÷ Concentration = "
+                                        {move || {
+                                            if settings.get().displayInjectableInIU.unwrap_or(false) {
+                                                "Volume = IU ÷ 100 = "
+                                            } else {
+                                                "Volume = Dose ÷ Concentration = "
+                                            }
+                                        }}
                                         <strong>{move || fmt(inj_conv_vol_ml.get(), 3)}</strong>
                                         " mL"
-                                        <Show when=move || inj_conv_vol_ml.get().is_finite()>
+                                        <Show
+                                            when=move || {
+                                                inj_conv_vol_ml.get().is_finite()
+                                                    && !settings.get().displayInjectableInIU.unwrap_or(false)
+                                            }
+                                        >
                                             <span>
                                                 " (≈ "
                                                 <strong>{move || fmt_iu_from_ml(inj_conv_vol_ml.get())}</strong>
                                                 " IU)"
+                                            </span>
+                                        </Show>
+                                        <Show
+                                            when=move || {
+                                                inj_conv_vol_ml.get().is_finite()
+                                                    && settings.get().displayInjectableInIU.unwrap_or(false)
+                                            }
+                                        >
+                                            <span>
+                                                " ("
+                                                <strong>{move || fmt(inj_conv_dose_as_mg.get(), 3)}</strong>
+                                                " mg)"
                                             </span>
                                         </Show>
                                     </p>
@@ -1107,7 +1223,15 @@ pub fn CreateDosage() -> impl IntoView {
                             </Show>
 
                             <label>
-                                "Dose"
+                                {move || {
+                                    if estrogen_method.get() != "injection" {
+                                        "Dose"
+                                    } else if injectable_dose_field_in_iu.get() {
+                                        "Dose (IU)"
+                                    } else {
+                                        "Dose (mg)"
+                                    }
+                                }}
                                 <input
                                     type="text"
                                     step="any"
@@ -1115,6 +1239,19 @@ pub fn CreateDosage() -> impl IntoView {
                                     prop:value=move || estrogen_dose.get()
                                 />
                             </label>
+
+                            <Show
+                                when=move || {
+                                    estrogen_method.get() == "injection"
+                                        && settings.get().displayInjectableInIU.unwrap_or(false)
+                                        && parse_hormone_unit(&estrogen_unit.get()) == Some(HormoneUnits::Mg)
+                                        && !injectable_dose_field_in_iu.get()
+                                }
+                            >
+                                <p class="muted">
+                                    "To enter injectable doses in IU, select a vial with concentration."
+                                </p>
+                            </Show>
 
                             <label>
                                 "Unit"

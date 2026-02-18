@@ -168,6 +168,7 @@ fn default_settings() -> Settings {
         displayEstradiolUnit: Some(HormoneUnits::E2PmolL),
         displayInjectableInIU: Some(false),
         braSizeSystem: Some("uk".to_string()),
+        pdfPassword: None,
     }
 }
 
@@ -193,6 +194,9 @@ fn merge_settings(base: &mut Settings, incoming: Settings) {
     }
     if incoming.braSizeSystem.is_some() {
         base.braSizeSystem = incoming.braSizeSystem;
+    }
+    if incoming.pdfPassword.is_some() {
+        base.pdfPassword = incoming.pdfPassword;
     }
 }
 
