@@ -273,22 +273,27 @@ fn hormone_unit_labels() -> Vec<String> {
         .collect()
 }
 
-#[component]
-pub fn CreateDosage() -> impl IntoView {
+fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
     let store = use_store();
     let navigate = use_navigate();
 
-    let initial_mode = {
-        let search = window().location().search().unwrap_or_default();
-        if search.contains("mode=schedule") {
-            "schedule"
-        } else {
-            "record"
-        }
-        .to_string()
-    };
+    if !schedule_only {
+        create_effect({
+            let navigate = navigate.clone();
+            move |_| {
+                let search = window().location().search().unwrap_or_default();
+                if search.contains("mode=schedule") {
+                    navigate("/edit/schedule", Default::default());
+                }
+            }
+        });
+    }
 
-    let mode = create_rw_signal(initial_mode);
+    let mode = create_rw_signal(if schedule_only {
+        "schedule".to_string()
+    } else {
+        "record".to_string()
+    });
     let estrogen_method = create_rw_signal("injection".to_string());
     let settings = store.settings;
 
@@ -883,18 +888,29 @@ pub fn CreateDosage() -> impl IntoView {
     };
 
     page_layout(
-        "Set up / record dosage",
+        if schedule_only {
+            "Edit schedule"
+        } else {
+            "Record dosage"
+        },
         view! {
             <div class="view-layout">
                 <div class="view-header">
                     <div>
-                        <h2>"Set up / record dosage"</h2>
+                        <h2>{if schedule_only { "Edit schedule" } else { "Record dosage" }}</h2>
                         <p class="muted">
-                            "Record one-off doses or configure recurring schedules."
+                            {if schedule_only {
+                                "Configure recurring schedules for each medication."
+                            } else {
+                                "Record one-off doses for your regimen."
+                            }}
                         </p>
                     </div>
                     <div class="header-actions">
                         <A href="/view">"View dosage history"</A>
+                        <Show when=move || schedule_only>
+                            <A href="/create/dosage">"Record dose"</A>
+                        </Show>
                     </div>
                 </div>
 
@@ -999,34 +1015,9 @@ pub fn CreateDosage() -> impl IntoView {
                         </section>
                     </Show>
 
-                    <section class="card">
-                        <h3>"Mode"</h3>
-                        <div class="option-group">
-                            <label class="toggle toggle-wide">
-                                <input
-                                    type="radio"
-                                    name="mode"
-                                    value="record"
-                                    on:change=move |_| mode.set("record".to_string())
-                                    prop:checked=move || mode.get() == "record"
-                                />
-                                <span class="toggle-track" aria-hidden="true"></span>
-                                <span class="toggle-label">"Record Dose"</span>
-                            </label>
-                            <label class="toggle toggle-wide">
-                                <input
-                                    type="radio"
-                                    name="mode"
-                                    value="schedule"
-                                    on:change=move |_| mode.set("schedule".to_string())
-                                    prop:checked=move || mode.get() == "schedule"
-                                />
-                                <span class="toggle-track" aria-hidden="true"></span>
-                                <span class="toggle-label">"Set Schedule"</span>
-                            </label>
-                        </div>
-
-                        <Show when=move || mode.get() == "record">
+                    <Show when=move || !schedule_only>
+                        <section class="card">
+                            <h3>"Dose timing"</h3>
                             <label>
                                 "Date / time"
                                 <input
@@ -1036,8 +1027,8 @@ pub fn CreateDosage() -> impl IntoView {
                                     required
                                 />
                             </label>
-                        </Show>
-                    </section>
+                        </section>
+                    </Show>
 
                     <section class="card dose-card">
                         <h3>"Estrogen"</h3>
@@ -1623,4 +1614,14 @@ pub fn CreateDosage() -> impl IntoView {
         }
         .into_view(),
     )
+}
+
+#[component]
+pub fn CreateDosage() -> impl IntoView {
+    dosage_editor_page(false)
+}
+
+#[component]
+pub fn EditSchedulePage() -> impl IntoView {
+    dosage_editor_page(true)
 }

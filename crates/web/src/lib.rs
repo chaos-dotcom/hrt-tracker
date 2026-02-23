@@ -15,8 +15,8 @@ mod utils;
 mod server;
 
 use pages::{
-    BackupPage, CalcPage, CreateBloodTest, CreateDosage, CreateMeasurement, EstrannaisePage,
-    StatsPage, VialsCreatePage, VialsDetailPage, VialsPage, ViewPage,
+    BackupPage, CalcPage, CreateBloodTest, CreateDosage, CreateMeasurement, EditSchedulePage,
+    EstrannaisePage, StatsPage, VialsCreatePage, VialsDetailPage, VialsPage, ViewPage,
 };
 use store::StoreProvider;
 
@@ -47,6 +47,7 @@ pub fn App() -> impl IntoView {
                         <Routes>
                             <Route path="/" view=ViewPage />
                             <Route path="/create/dosage" view=CreateDosage />
+                            <Route path="/edit/schedule" view=EditSchedulePage />
                             <Route path="/create/blood-test" view=CreateBloodTest />
                             <Route path="/create/measurement" view=CreateMeasurement />
                             <Route path="/view" view=ViewPage />
