@@ -1544,7 +1544,7 @@ pub fn ViewPage() -> impl IntoView {
                             >
                                 "Record next dose now"
                             </button>
-                            <A href="/create/dosage?mode=schedule">"Edit Schedule"</A>
+                            <A href="/edit/schedule">"Edit Schedule"</A>
                         </div>
                     </div>
                     <div class="view-summary">

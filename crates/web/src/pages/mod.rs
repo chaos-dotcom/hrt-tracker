@@ -11,7 +11,7 @@ mod view;
 pub use backup::BackupPage;
 pub use calc::CalcPage;
 pub use create_blood_test::CreateBloodTest;
-pub use create_dosage::CreateDosage;
+pub use create_dosage::{CreateDosage, EditSchedulePage};
 pub use create_measurement::CreateMeasurement;
 pub use estrannaise::EstrannaisePage;
 pub use stats::StatsPage;
