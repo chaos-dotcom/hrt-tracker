@@ -41,9 +41,9 @@ impl AppStore {
         let is_dirty = self.is_dirty;
         let last_error = self.last_error;
         let api_base = api_base();
+        is_loading.set(true);
+        last_error.set(None);
         spawn_local(async move {
-            is_loading.set(true);
-            last_error.set(None);
             let resp = Request::get(&format!("{}/api/data", api_base)).send().await;
             match resp {
                 Ok(resp) => match resp.json::<HrtData>().await {

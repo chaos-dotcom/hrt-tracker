@@ -451,9 +451,9 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
 
             if let Some(next_value) = converted {
                 estrogen_dose.set(if target_iu_mode {
-                    fmt(next_value, 0)
+                    format!("{next_value:.0}")
                 } else {
-                    fmt(next_value, 3)
+                    format!("{next_value:.3}")
                 });
                 estrogen_dose_in_iu.set(target_iu_mode);
             } else if target_iu_mode {
@@ -503,6 +503,9 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
         let store = store.clone();
         move |_| {
             if initialized.get() {
+                return;
+            }
+            if store.is_loading.get() {
                 return;
             }
             let data = store.data.get();
