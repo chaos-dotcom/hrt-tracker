@@ -49,8 +49,64 @@ pub fn parse_decimal(value: &str) -> Option<f64> {
     if trimmed.is_empty() {
         return None;
     }
-    let normalized = trimmed.replace(',', ".");
-    normalized.parse::<f64>().ok().filter(|v| v.is_finite())
+    let normalized = trimmed
+        .replace('\u{00a0}', "")
+        .replace('\u{202f}', "")
+        .replace('\u{2009}', "")
+        .replace(' ', "")
+        .replace('_', "")
+        .replace('\'', "");
+    if normalized.is_empty() {
+        return None;
+    }
+
+    let parse = |raw: String| raw.parse::<f64>().ok().filter(|v| v.is_finite());
+
+    let comma_count = normalized.matches(',').count();
+    let dot_count = normalized.matches('.').count();
+
+    if comma_count > 0 && dot_count > 0 {
+        let last_comma = normalized.rfind(',').unwrap_or(0);
+        let last_dot = normalized.rfind('.').unwrap_or(0);
+        if last_comma > last_dot {
+            // 1.234,56 -> 1234.56
+            return parse(normalized.replace('.', "").replace(',', "."));
+        }
+        // 1,234.56 -> 1234.56
+        return parse(normalized.replace(',', ""));
+    }
+
+    if comma_count > 0 {
+        if comma_count > 1 {
+            // 1,234,567 -> 1234567
+            return parse(normalized.replace(',', ""));
+        }
+        let split_idx = normalized.find(',').unwrap_or(0);
+        let int_part = &normalized[..split_idx];
+        let frac_part = &normalized[split_idx + 1..];
+        let int_digits = int_part.trim_start_matches(['+', '-']);
+        let grouped_thousands = frac_part.len() == 3
+            && frac_part.chars().all(|ch| ch.is_ascii_digit())
+            && !int_digits.is_empty()
+            && int_digits != "0"
+            && !int_digits.starts_with('0')
+            && int_part
+                .chars()
+                .all(|ch| ch.is_ascii_digit() || ch == '+' || ch == '-');
+        if grouped_thousands {
+            // 1,000 -> 1000
+            return parse(normalized.replace(',', ""));
+        }
+        // 1,25 -> 1.25
+        return parse(normalized.replace(',', "."));
+    }
+
+    if dot_count > 1 {
+        // 1.234.567 -> 1234567
+        return parse(normalized.replace('.', ""));
+    }
+
+    parse(normalized)
 }
 
 pub fn parse_decimal_or_nan(value: &str) -> f64 {
@@ -274,6 +330,20 @@ mod tests {
         assert_eq!(parse_decimal("0,2"), Some(0.2));
         assert_eq!(parse_decimal(" 1.25 "), Some(1.25));
         assert_eq!(parse_decimal(" 1,25 "), Some(1.25));
+        assert_eq!(parse_decimal("1.000"), Some(1.0));
+        assert_eq!(parse_decimal("0.125"), Some(0.125));
+        assert_eq!(parse_decimal("0,125"), Some(0.125));
+    }
+
+    #[test]
+    fn parse_decimal_accepts_grouped_thousands_inputs() {
+        assert_eq!(parse_decimal("1,000"), Some(1000.0));
+        assert_eq!(parse_decimal("12,345"), Some(12345.0));
+        assert_eq!(parse_decimal("1,234.5"), Some(1234.5));
+        assert_eq!(parse_decimal("1.234,5"), Some(1234.5));
+        assert_eq!(parse_decimal("1.234.567"), Some(1234567.0));
+        assert_eq!(parse_decimal("1 234,5"), Some(1234.5));
+        assert_eq!(parse_decimal("1'234,5"), Some(1234.5));
     }
 
     #[test]
