@@ -218,6 +218,14 @@ fn parse_weight_unit(value: &str) -> Option<WeightUnit> {
     }
 }
 
+fn measurement_id(date: i64) -> String {
+    format!(
+        "measurement-{}-{}",
+        date,
+        (js_sys::Math::random() * 1_000_000.0) as i64
+    )
+}
+
 #[component]
 pub fn CreateMeasurement() -> impl IntoView {
     let store = use_store();
@@ -284,6 +292,7 @@ pub fn CreateMeasurement() -> impl IntoView {
 
             let entry = Measurement {
                 date,
+                id: Some(measurement_id(date)),
                 weight: weight_val,
                 weightUnit: weight_unit_val,
                 height: height_val,
@@ -301,6 +310,7 @@ pub fn CreateMeasurement() -> impl IntoView {
                 data.measurements.push(entry);
             });
             store.mark_dirty();
+            store.save();
 
             show_feedback.set(true);
             if let Some(existing) = feedback_timeout.borrow_mut().take() {
