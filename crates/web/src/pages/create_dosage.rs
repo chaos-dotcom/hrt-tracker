@@ -383,6 +383,9 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
     let injectable_dose_field_in_iu = create_memo({
         let store = store.clone();
         move |_| {
+            if mode.get() != "record" {
+                return false;
+            }
             if estrogen_method.get() != "injection" {
                 return false;
             }
@@ -451,9 +454,9 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
 
             if let Some(next_value) = converted {
                 estrogen_dose.set(if target_iu_mode {
-                    format!("{next_value:.0}")
+                    fmt(next_value, 3)
                 } else {
-                    format!("{next_value:.3}")
+                    fmt(next_value, 3)
                 });
                 estrogen_dose_in_iu.set(target_iu_mode);
             } else if target_iu_mode {
@@ -512,7 +515,8 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
             if let Some(inj) = data.injectableEstradiol.as_ref() {
                 estrogen_method.set("injection".to_string());
                 injectable_type.set(injectable_label(&inj.kind).to_string());
-                let dose_in_iu = settings.get().displayInjectableInIU.unwrap_or(false)
+                let dose_in_iu = mode.get() == "record"
+                    && settings.get().displayInjectableInIU.unwrap_or(false)
                     && inj.unit == HormoneUnits::Mg
                     && injectable_iu_from_dose(
                         &data,
@@ -530,10 +534,10 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                         inj.vialId.as_ref(),
                         inj.vialId.as_ref(),
                     )
-                    .map(|iu| fmt(iu, 0))
-                    .unwrap_or_else(|| format!("{:.3}", inj.dose))
+                    .map(|iu| fmt(iu, 3))
+                    .unwrap_or_else(|| fmt(inj.dose, 3))
                 } else {
-                    format!("{:.3}", inj.dose)
+                    fmt(inj.dose, 3)
                 };
                 estrogen_dose.set(dose_label);
                 estrogen_dose_in_iu.set(dose_in_iu);
@@ -552,7 +556,7 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
             } else if let Some(oral) = data.oralEstradiol.as_ref() {
                 estrogen_method.set("oral".to_string());
                 oral_type.set(oral_label(&oral.kind).to_string());
-                estrogen_dose.set(format!("{:.3}", oral.dose));
+                estrogen_dose.set(fmt(oral.dose, 3));
                 estrogen_dose_in_iu.set(false);
                 estrogen_unit.set(hormone_unit_label(&oral.unit).to_string());
                 oral_frequency.set(format!("{:.2}", oral.frequency));
@@ -570,7 +574,7 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
 
             if let Some(aa) = data.antiandrogen.as_ref() {
                 aa_type.set(antiandrogen_label(&aa.kind).to_string());
-                aa_dose.set(format!("{:.3}", aa.dose));
+                aa_dose.set(fmt(aa.dose, 3));
                 aa_unit.set(hormone_unit_label(&aa.unit).to_string());
                 aa_frequency.set(format!("{:.2}", aa.frequency));
                 aa_next_date.set(
@@ -582,7 +586,7 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
 
             if let Some(prog) = data.progesterone.as_ref() {
                 prog_type.set(progesterone_label(&prog.kind).to_string());
-                prog_dose.set(format!("{:.3}", prog.dose));
+                prog_dose.set(fmt(prog.dose, 3));
                 prog_unit.set(hormone_unit_label(&prog.unit).to_string());
                 prog_route.set(progesterone_route_label(&prog.route).to_string());
                 prog_frequency.set(format!("{:.2}", prog.frequency));
