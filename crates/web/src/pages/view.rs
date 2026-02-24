@@ -18,13 +18,13 @@ use crate::layout::page_layout;
 use crate::store::use_store;
 use crate::utils::{
     compute_fudge_factor, fmt_blood_value, fmt_date_label, fmt_decimal, format_injectable_dose,
-    hormone_unit_label, injectable_dose_from_iu, injectable_iu_from_dose, parse_date_or_now,
-    parse_decimal, parse_hormone_unit, parse_length_unit,
+    hormone_unit_label, injectable_dose_from_iu, parse_decimal, parse_hormone_unit,
+    parse_length_unit,
 };
 use hrt_shared::logic::{predict_e2_pg_ml, snap_to_next_injection_boundary};
 use hrt_shared::types::{
     DiaryEntry, DosageHistoryEntry, DosagePhoto, HormoneUnits, HrtData, InjectableEstradiols,
-    InjectionSites, LengthUnit, ProgesteroneRoutes, SyringeKinds, WeightUnit,
+    InjectionSites, LengthUnit, Measurement, ProgesteroneRoutes, SyringeKinds, WeightUnit,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -105,6 +105,23 @@ fn parse_weight_unit(value: &str) -> Option<WeightUnit> {
         "kg" => Some(WeightUnit::KG),
         "lbs" => Some(WeightUnit::LBS),
         _ => None,
+    }
+}
+
+fn measurement_key(entry: &Measurement) -> String {
+    entry
+        .id
+        .clone()
+        .unwrap_or_else(|| format!("measurement-legacy-{}", entry.date))
+}
+
+fn measurement_matches_target(entry: &Measurement, id: Option<&str>, date: Option<i64>) -> bool {
+    if let Some(id) = id {
+        entry.id.as_deref() == Some(id)
+    } else if let Some(date) = date {
+        entry.id.is_none() && entry.date == date
+    } else {
+        false
     }
 }
 
@@ -545,6 +562,7 @@ pub fn ViewPage() -> impl IntoView {
     let edit_blood_notes = create_rw_signal(String::new());
     let edit_blood_pdf_files = create_rw_signal(Vec::<String>::new());
 
+    let edit_measurement_id = create_rw_signal(None::<String>);
     let edit_measurement_date = create_rw_signal(None::<i64>);
     let edit_measurement_date_text = create_rw_signal(String::new());
     let edit_measurement_weight = create_rw_signal(String::new());
@@ -2103,7 +2121,7 @@ pub fn ViewPage() -> impl IntoView {
                             <ul class="history-list">
                                 <For
                                     each=move || sorted_measurements.get()
-                                    key=|entry| entry.date
+                                    key=|entry| measurement_key(entry)
                                     children=move |entry| {
                                         let entry_date = entry.date;
                                         let date_label =
@@ -2113,8 +2131,9 @@ pub fn ViewPage() -> impl IntoView {
                                         let on_edit = {
                                             let entry = entry.clone();
                                             move |_| {
+                                                edit_measurement_id.set(entry.id.clone());
                                                 edit_measurement_date.set(Some(entry.date));
-                                                edit_measurement_date_text.set(to_local_input_value(entry.date)[0..10].to_string());
+                                                edit_measurement_date_text.set(to_local_input_value(entry.date));
                                                 edit_measurement_weight.set(entry.weight.map(|v| format!("{:.2}", v)).unwrap_or_default());
                                                 edit_measurement_weight_unit.set(entry.weightUnit.as_ref().map(|u| weight_unit_label(u).to_string()).unwrap_or_else(|| "kg".to_string()));
                                                 edit_measurement_height.set(entry.height.map(|v| format!("{:.2}", v)).unwrap_or_default());
@@ -2313,51 +2332,15 @@ pub fn ViewPage() -> impl IntoView {
                                                 editing_entry_id.set(resolved_key.clone());
                                                 let date_text = to_local_input_value(dosage_entry_date(&entry));
                                                 editing_date.set(date_text);
-                                                let data_value = store.data.get();
-                                                let schedule_vial_id = data_value
-                                                    .injectableEstradiol
-                                                    .as_ref()
-                                                    .and_then(|cfg| cfg.vialId.as_ref());
                                                 editing_dose_in_iu.set(false);
                                                 editing_dose.set(match &entry {
                                                     DosageHistoryEntry::InjectableEstradiol {
-                                                        dose,
-                                                        unit,
-                                                        vialId,
-                                                        ..
-                                                    } => {
-                                                        let use_iu = store
-                                                            .settings
-                                                            .get()
-                                                            .displayInjectableInIU
-                                                            .unwrap_or(false)
-                                                            && *unit == HormoneUnits::Mg
-                                                            && injectable_dose_from_iu(
-                                                                &data_value,
-                                                                1.0,
-                                                                vialId.as_ref(),
-                                                                schedule_vial_id,
-                                                            )
-                                                            .is_some();
-                                                        editing_dose_in_iu.set(use_iu);
-                                                        if use_iu {
-                                                            injectable_iu_from_dose(
-                                                                &data_value,
-                                                                *dose,
-                                                                unit,
-                                                                vialId.as_ref(),
-                                                                schedule_vial_id,
-                                                            )
-                                                            .map(|iu| fmt_decimal(iu, 0))
-                                                            .unwrap_or_else(|| format!("{:.2}", dose))
-                                                        } else {
-                                                            format!("{:.2}", dose)
-                                                        }
-                                                    }
+                                                        dose, ..
+                                                    } => fmt_decimal(*dose, 3),
                                                     DosageHistoryEntry::OralEstradiol { dose, .. }
                                                     | DosageHistoryEntry::Antiandrogen { dose, .. }
                                                     | DosageHistoryEntry::Progesterone { dose, .. } => {
-                                                        format!("{:.2}", dose)
+                                                        fmt_decimal(*dose, 3)
                                                     }
                                                 });
                                                 editing_unit.set(match &entry {
@@ -3395,13 +3378,16 @@ pub fn ViewPage() -> impl IntoView {
                 </div>
             </Show>
 
-            <Show when=move || edit_measurement_date.get().is_some()>
-                <div class="modal-backdrop" on:click=move |_| edit_measurement_date.set(None)>
+            <Show when=move || edit_measurement_id.get().is_some() || edit_measurement_date.get().is_some()>
+                <div class="modal-backdrop" on:click=move |_| {
+                    edit_measurement_id.set(None);
+                    edit_measurement_date.set(None);
+                }>
                     <div class="modal" on:click=move |ev| ev.stop_propagation()>
                         <h3>"Edit Measurement"</h3>
-                        <label>"Date"</label>
+                        <label>"Date / Time"</label>
                         <input
-                            type="date"
+                            type="datetime-local"
                             on:input=move |ev| edit_measurement_date_text.set(event_target_value(&ev))
                             prop:value=move || edit_measurement_date_text.get()
                         />
@@ -3525,21 +3511,36 @@ pub fn ViewPage() -> impl IntoView {
                                 let confirm_delete = confirm_delete;
                                 let confirm_title = confirm_title;
                                 let confirm_action = confirm_action;
+                                let edit_measurement_id = edit_measurement_id;
                                 let edit_measurement_date = edit_measurement_date;
                                 move |_: leptos::ev::MouseEvent| {
-                                    let date = match edit_measurement_date.get() {
-                                        Some(value) => value,
-                                        None => return,
-                                    };
+                                    let target_id = edit_measurement_id.get();
+                                    let target_date = edit_measurement_date.get();
+                                    if target_id.is_none() && target_date.is_none() {
+                                        return;
+                                    }
                                     confirm_title.set("Delete measurement?".to_string());
-                                    confirm_delete.set(Some(format!("measurement-{date}")));
+                                    confirm_delete.set(Some(
+                                        target_id
+                                            .clone()
+                                            .unwrap_or_else(|| {
+                                                format!("measurement-{}", target_date.unwrap_or_default())
+                                            }),
+                                    ));
                                     let store = store.clone();
                                     confirm_action.set(Some(Rc::new(move || {
                                         store.data.update(|d| {
-                                            d.measurements.retain(|entry| entry.date != date);
+                                            d.measurements.retain(|entry| {
+                                                !measurement_matches_target(
+                                                    entry,
+                                                    target_id.as_deref(),
+                                                    target_date,
+                                                )
+                                            });
                                         });
                                         store.mark_dirty();
                                         store.save();
+                                        edit_measurement_id.set(None);
                                         edit_measurement_date.set(None);
                                     })));
                                 }
@@ -3548,12 +3549,14 @@ pub fn ViewPage() -> impl IntoView {
                             </button>
                             <button type="button" on:click={
                                 let store = store_measure_modal.clone();
+                                let edit_measurement_id = edit_measurement_id;
                                 move |_: leptos::ev::MouseEvent| {
-                                    let date = match edit_measurement_date.get() {
-                                        Some(value) => value,
-                                        None => return,
-                                    };
-                                    let new_date = parse_date_or_now(&edit_measurement_date_text.get());
+                                    let target_id = edit_measurement_id.get();
+                                    let target_date = edit_measurement_date.get();
+                                    if target_id.is_none() && target_date.is_none() {
+                                        return;
+                                    }
+                                    let new_date = parse_datetime_local(&edit_measurement_date_text.get());
                                     let weight = parse_optional_num(&edit_measurement_weight.get());
                                     let height = parse_optional_num(&edit_measurement_height.get());
                                     let underbust = parse_optional_num(&edit_measurement_underbust.get());
@@ -3567,7 +3570,11 @@ pub fn ViewPage() -> impl IntoView {
                                     let bra_size = edit_measurement_bra_size.get();
                                     store.data.update(|d| {
                                         for entry in &mut d.measurements {
-                                            if entry.date == date {
+                                            if measurement_matches_target(
+                                                entry,
+                                                target_id.as_deref(),
+                                                target_date,
+                                            ) {
                                                 entry.date = new_date;
                                                 entry.weight = weight;
                                                 entry.weightUnit = parse_weight_unit(&weight_unit);
@@ -3589,14 +3596,19 @@ pub fn ViewPage() -> impl IntoView {
                                     });
                                     store.mark_dirty();
                                     store.save();
+                                    edit_measurement_id.set(None);
                                     edit_measurement_date.set(None);
                                 }
                             }>
                                 "Save"
                             </button>
                             <button type="button" on:click={
+                                let edit_measurement_id = edit_measurement_id;
                                 let edit_measurement_date = edit_measurement_date;
-                                move |_: leptos::ev::MouseEvent| edit_measurement_date.set(None)
+                                move |_: leptos::ev::MouseEvent| {
+                                    edit_measurement_id.set(None);
+                                    edit_measurement_date.set(None);
+                                }
                             }>
                                 "Cancel"
                             </button>
