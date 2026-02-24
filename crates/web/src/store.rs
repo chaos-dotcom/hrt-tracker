@@ -5,7 +5,7 @@ use hrt_shared::logic::{backfill_scheduled_doses, migrate_blood_tests_fudge_fact
 use hrt_shared::types::{HormoneUnits, HrtData, Settings};
 use leptos::*;
 use serde_json::Value;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 #[derive(Clone)]
@@ -18,6 +18,8 @@ pub struct AppStore {
     pub last_saved: RwSignal<Option<i64>>,
     pub last_error: RwSignal<Option<String>>,
     autosave_handle: Rc<RefCell<Option<Timeout>>>,
+    change_revision: Rc<Cell<u64>>,
+    pending_save: Rc<Cell<bool>>,
 }
 
 impl AppStore {
@@ -31,6 +33,8 @@ impl AppStore {
             last_saved: create_rw_signal(None),
             last_error: create_rw_signal(None),
             autosave_handle: Rc::new(RefCell::new(None)),
+            change_revision: Rc::new(Cell::new(0)),
+            pending_save: Rc::new(Cell::new(false)),
         }
     }
 
@@ -50,6 +54,7 @@ impl AppStore {
                     Ok(mut loaded) => {
                         migrate_blood_tests_fudge_factor(&mut loaded);
                         backfill_scheduled_doses(&mut loaded);
+                        ensure_measurement_ids(&mut loaded);
                         data.set(loaded);
                         is_dirty.set(false);
                     }
@@ -83,6 +88,8 @@ impl AppStore {
 
     pub fn mark_dirty(&self) {
         self.is_dirty.set(true);
+        self.change_revision
+            .set(self.change_revision.get().wrapping_add(1));
         self.schedule_autosave();
     }
 
@@ -100,6 +107,11 @@ impl AppStore {
     }
 
     pub fn save(&self) {
+        if self.is_saving.get() {
+            self.pending_save.set(true);
+            return;
+        }
+
         let settings_value = self.settings.get();
         if settings_value.enableAutoBackfill {
             self.data.update(|data| backfill_scheduled_doses(data));
@@ -109,6 +121,10 @@ impl AppStore {
         let is_dirty = self.is_dirty;
         let last_saved = self.last_saved;
         let last_error = self.last_error;
+        let pending_save = self.pending_save.clone();
+        let change_revision = self.change_revision.clone();
+        let revision_at_start = change_revision.get();
+        let store = self.clone();
         let api_base = api_base();
         spawn_local(async move {
             is_saving.set(true);
@@ -150,11 +166,33 @@ impl AppStore {
             }
 
             if !failed {
-                is_dirty.set(false);
-                last_saved.set(Some(js_sys::Date::now() as i64));
+                if change_revision.get() == revision_at_start && !pending_save.get() {
+                    is_dirty.set(false);
+                    last_saved.set(Some(js_sys::Date::now() as i64));
+                } else {
+                    pending_save.set(true);
+                    is_dirty.set(true);
+                }
             }
             is_saving.set(false);
+
+            if pending_save.replace(false) {
+                store.save();
+            }
         });
+    }
+}
+
+fn ensure_measurement_ids(data: &mut HrtData) {
+    for (index, measurement) in data.measurements.iter_mut().enumerate() {
+        if measurement
+            .id
+            .as_ref()
+            .map(|value| value.trim().is_empty())
+            .unwrap_or(true)
+        {
+            measurement.id = Some(format!("measurement-{}-{}", measurement.date, index));
+        }
     }
 }
 

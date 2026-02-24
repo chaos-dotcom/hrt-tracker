@@ -241,6 +241,8 @@ pub enum EstrogenType {
 pub struct Measurement {
     pub date: UnixTime,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub weight: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub weightUnit: Option<WeightUnit>,
