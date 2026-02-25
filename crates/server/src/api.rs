@@ -12,13 +12,12 @@ use hrt_shared::types::Hormone;
 
 use crate::storage::{
     content_type_from_ext, delete_bloodtest_pdf as delete_bloodtest_pdf_file, delete_photo,
-    read_bloodtest_pdf as read_bloodtest_pdf_file, read_json, read_photo, read_yaml,
-    save_bloodtest_pdf, save_photo, write_json_atomic, write_yaml, DATA_FILE_PATH,
-    SETTINGS_FILE_PATH,
+    read_bloodtest_pdf as read_bloodtest_pdf_file, read_data_value, read_photo,
+    read_settings_value, save_bloodtest_pdf, save_photo, write_data_value, write_settings_value,
 };
 
 pub async fn get_data() -> Response {
-    match read_json::<Value>(DATA_FILE_PATH).await {
+    match read_data_value().await {
         Ok(Some(mut value)) => {
             if !value.is_object() {
                 value = json!({});
@@ -46,7 +45,7 @@ pub async fn post_data(body: Bytes) -> Response {
         obj.remove("settings");
     }
 
-    if let Err(_) = write_json_atomic(DATA_FILE_PATH, &value).await {
+    if let Err(_) = write_data_value(&value).await {
         return json_error("Failed to write data", StatusCode::INTERNAL_SERVER_ERROR);
     }
 
@@ -54,7 +53,7 @@ pub async fn post_data(body: Bytes) -> Response {
 }
 
 pub async fn get_settings() -> Response {
-    match read_yaml::<Value>(SETTINGS_FILE_PATH).await {
+    match read_settings_value().await {
         Ok(Some(mut value)) => {
             if !value.is_object() {
                 value = json!({});
@@ -79,7 +78,7 @@ pub async fn post_settings(body: Bytes) -> Response {
 
     let payload = if value.is_object() { value } else { json!({}) };
 
-    if let Err(_) = write_yaml(SETTINGS_FILE_PATH, &payload).await {
+    if let Err(_) = write_settings_value(&payload).await {
         return json_error(
             "Failed to write settings",
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -218,7 +217,7 @@ pub async fn delete_dosage_photo(Path((entry_id, filename)): Path<(String, Strin
 }
 
 pub async fn upload_bloodtest_pdf(mut multipart: Multipart) -> Response {
-    let settings = match read_yaml::<Value>(SETTINGS_FILE_PATH).await {
+    let settings = match read_settings_value().await {
         Ok(Some(value)) if value.is_object() => value,
         _ => json!({}),
     };

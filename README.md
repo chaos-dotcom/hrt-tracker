@@ -10,7 +10,7 @@ A self-hosted web application (that could have been a spreadsheet) to track horm
 -   **Data Visualization:** View your hormone levels and dosage history on an interactive chart.
 -   **Estrannaise Integration:** Generate a link to model your injectable estradiol regimen on [Estrannaise](https://estrannai.se/).
 -   **Data Portability:** Easily back up your data to a JSON file and restore it when needed.
--   **Private:** Your data is saved to a `hrt-data.json` file on the server, ensuring you have full control over your information.
+-   **Private:** Your data is stored in a local database (SQLite by default, Postgres-compatible via configuration), with JSON/YAML file backups kept on disk.
 
 ## Getting Started
 
