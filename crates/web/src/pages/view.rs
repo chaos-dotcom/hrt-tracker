@@ -4,11 +4,26 @@ use js_sys::{Date, Math};
 use leptos::window;
 use leptos::*;
 use leptos_router::A;
-use serde::Deserialize;
 use std::cell::RefCell;
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
 use web_sys::{FormData, HtmlCanvasElement, HtmlInputElement};
+
+mod helpers;
+mod scheduling;
+mod types;
+
+use self::helpers::{
+    bloodtest_pdf_url, dosage_entry_date, dosage_entry_matches_key, dosage_photo_view,
+    hormone_unit_labels, injection_site_from_label, injection_site_label, length_unit_label,
+    measurement_key, measurement_matches_target, parse_date_only, parse_datetime_local,
+    parse_optional_num, parse_weight_unit, progesterone_route_label, syringe_kind_label,
+    to_local_input_value, update_photo_note, weight_unit_label,
+};
+use self::scheduling::{generate_estrannaise_url, get_next_scheduled_candidate};
+use self::types::{
+    RegimenKey, UploadResponse, DAY_MS, INJECTION_SITE_OPTIONS, SYRINGE_KIND_OPTIONS,
+};
 
 use crate::charts::view::{compute_view_chart_state, draw_view_chart, find_nearest_point};
 use crate::charts::{
@@ -18,495 +33,12 @@ use crate::layout::page_layout;
 use crate::store::use_store;
 use crate::utils::{
     compute_fudge_factor, fmt_blood_value, fmt_date_label, fmt_decimal, format_injectable_dose,
-    hormone_unit_label, injectable_dose_from_iu, parse_decimal, parse_hormone_unit,
-    parse_length_unit,
+    hormone_unit_label, injectable_dose_from_iu, parse_hormone_unit, parse_length_unit,
 };
 use hrt_shared::logic::{predict_e2_pg_ml, snap_to_next_injection_boundary};
 use hrt_shared::types::{
-    DiaryEntry, DosageHistoryEntry, DosagePhoto, HormoneUnits, HrtData, InjectableEstradiols,
-    InjectionSites, LengthUnit, Measurement, ProgesteroneRoutes, SyringeKinds, WeightUnit,
+    DiaryEntry, DosageHistoryEntry, DosagePhoto, HormoneUnits, HrtData, ProgesteroneRoutes,
 };
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum RegimenKey {
-    InjectableEstradiol,
-    OralEstradiol,
-    Antiandrogen,
-    Progesterone,
-}
-
-#[derive(Clone, PartialEq)]
-struct NextDoseCandidate {
-    med_type: RegimenKey,
-    label: String,
-}
-
-#[derive(Clone, PartialEq)]
-struct PhotoView {
-    file: String,
-    note: String,
-}
-
-#[derive(Deserialize)]
-struct UploadResponse {
-    filenames: Vec<String>,
-}
-
-fn to_local_input_value(ms: i64) -> String {
-    let date = Date::new(&wasm_bindgen::JsValue::from_f64(ms as f64));
-    let year = date.get_full_year();
-    let month = date.get_month() + 1;
-    let day = date.get_date();
-    let hour = date.get_hours();
-    let minute = date.get_minutes();
-    format!(
-        "{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}",
-        year = year,
-        month = month,
-        day = day,
-        hour = hour,
-        minute = minute
-    )
-}
-
-fn parse_datetime_local(value: &str) -> i64 {
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        return Date::now() as i64;
-    }
-    let parsed = Date::parse(trimmed);
-    if parsed.is_nan() {
-        Date::now() as i64
-    } else {
-        parsed as i64
-    }
-}
-
-fn parse_optional_num(value: &str) -> Option<f64> {
-    parse_decimal(value)
-}
-
-fn weight_unit_label(unit: &WeightUnit) -> &'static str {
-    match unit {
-        WeightUnit::KG => "kg",
-        WeightUnit::LBS => "lbs",
-    }
-}
-
-fn length_unit_label(unit: &LengthUnit) -> &'static str {
-    match unit {
-        LengthUnit::CM => "cm",
-        LengthUnit::IN => "in",
-    }
-}
-
-fn parse_weight_unit(value: &str) -> Option<WeightUnit> {
-    match value {
-        "kg" => Some(WeightUnit::KG),
-        "lbs" => Some(WeightUnit::LBS),
-        _ => None,
-    }
-}
-
-fn measurement_key(entry: &Measurement) -> String {
-    entry
-        .id
-        .clone()
-        .unwrap_or_else(|| format!("measurement-legacy-{}", entry.date))
-}
-
-fn measurement_matches_target(entry: &Measurement, id: Option<&str>, date: Option<i64>) -> bool {
-    if let Some(id) = id {
-        entry.id.as_deref() == Some(id)
-    } else if let Some(date) = date {
-        entry.id.is_none() && entry.date == date
-    } else {
-        false
-    }
-}
-
-fn parse_date_only(value: &str) -> i64 {
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        return Date::now() as i64;
-    }
-    let parsed = Date::parse(trimmed);
-    if parsed.is_nan() {
-        Date::now() as i64
-    } else {
-        parsed as i64
-    }
-}
-
-fn injection_site_label(site: &InjectionSites) -> &'static str {
-    match site {
-        InjectionSites::StomachRight => "Stomach right",
-        InjectionSites::StomachLeft => "Stomach left",
-        InjectionSites::TopThighRight => "Top thigh right",
-        InjectionSites::TopThighLeft => "Top thigh left",
-        InjectionSites::InnerThighRight => "Inner thigh right",
-        InjectionSites::InnerThighLeft => "Inner thigh left",
-        InjectionSites::OuterThighRight => "Outer thigh right",
-        InjectionSites::OuterThighLeft => "Outer thigh left",
-        InjectionSites::ThighRight => "Thigh right",
-        InjectionSites::ThighLeft => "Thigh left",
-        InjectionSites::ButtockRight => "Buttock right",
-        InjectionSites::ButtockLeft => "Buttock left",
-    }
-}
-
-const INJECTION_SITE_OPTIONS: [InjectionSites; 12] = [
-    InjectionSites::StomachRight,
-    InjectionSites::StomachLeft,
-    InjectionSites::ThighRight,
-    InjectionSites::ThighLeft,
-    InjectionSites::TopThighRight,
-    InjectionSites::TopThighLeft,
-    InjectionSites::InnerThighRight,
-    InjectionSites::InnerThighLeft,
-    InjectionSites::OuterThighRight,
-    InjectionSites::OuterThighLeft,
-    InjectionSites::ButtockRight,
-    InjectionSites::ButtockLeft,
-];
-
-fn injection_site_from_label(value: &str) -> Option<InjectionSites> {
-    INJECTION_SITE_OPTIONS
-        .iter()
-        .find(|site| injection_site_label(site) == value)
-        .cloned()
-}
-
-fn syringe_kind_label(kind: &SyringeKinds) -> &'static str {
-    match kind {
-        SyringeKinds::RegularSyringe => "Regular syringe",
-        SyringeKinds::LowWasteSyringe => "Low waste syringe",
-        SyringeKinds::LowWasteNeedle => "Low waste needle",
-        SyringeKinds::InsulinSyringe => "Insulin syringe",
-        SyringeKinds::InsulinPen => "Insulin pen",
-    }
-}
-
-const SYRINGE_KIND_OPTIONS: [SyringeKinds; 5] = [
-    SyringeKinds::RegularSyringe,
-    SyringeKinds::LowWasteSyringe,
-    SyringeKinds::LowWasteNeedle,
-    SyringeKinds::InsulinSyringe,
-    SyringeKinds::InsulinPen,
-];
-
-fn hormone_unit_labels() -> Vec<String> {
-    [
-        HormoneUnits::E2PgMl,
-        HormoneUnits::E2PmolL,
-        HormoneUnits::TNgDl,
-        HormoneUnits::TNmolL,
-        HormoneUnits::Mg,
-        HormoneUnits::NgMl,
-        HormoneUnits::MIuMl,
-        HormoneUnits::MIuL,
-        HormoneUnits::UL,
-    ]
-    .iter()
-    .map(|unit| hormone_unit_label(unit).to_string())
-    .collect()
-}
-
-fn progesterone_route_label(route: &ProgesteroneRoutes) -> &'static str {
-    match route {
-        ProgesteroneRoutes::Oral => "Oral",
-        ProgesteroneRoutes::Boofed => "Boofed",
-    }
-}
-
-fn injectable_model_id(kind: &InjectableEstradiols) -> Option<i64> {
-    match kind {
-        InjectableEstradiols::Benzoate => Some(0),
-        InjectableEstradiols::Valerate => Some(1),
-        InjectableEstradiols::Enanthate => Some(2),
-        InjectableEstradiols::Cypionate => Some(3),
-        InjectableEstradiols::Undecylate => Some(4),
-        InjectableEstradiols::PolyestradiolPhosphate => None,
-    }
-}
-
-fn dosage_photo_view(photo: &DosagePhoto) -> PhotoView {
-    match photo {
-        DosagePhoto::Legacy(file) => PhotoView {
-            file: file.clone(),
-            note: String::new(),
-        },
-        DosagePhoto::Entry { file, note } => PhotoView {
-            file: file.clone(),
-            note: note.clone().unwrap_or_default(),
-        },
-    }
-}
-
-fn update_photo_note(photo: &mut DosagePhoto, note: String) {
-    match photo {
-        DosagePhoto::Legacy(file) => {
-            *photo = DosagePhoto::Entry {
-                file: file.clone(),
-                note: if note.trim().is_empty() {
-                    None
-                } else {
-                    Some(note)
-                },
-            };
-        }
-        DosagePhoto::Entry {
-            note: entry_note, ..
-        } => {
-            *entry_note = if note.trim().is_empty() {
-                None
-            } else {
-                Some(note)
-            };
-        }
-    }
-}
-
-fn bloodtest_pdf_url(filename: &str) -> String {
-    format!("/api/bloodtest-pdf/{}", urlencoding::encode(filename))
-}
-
-const DAY_MS: i64 = 24 * 60 * 60 * 1000;
-
-fn dosage_entry_date(entry: &DosageHistoryEntry) -> i64 {
-    match entry {
-        DosageHistoryEntry::InjectableEstradiol { date, .. }
-        | DosageHistoryEntry::OralEstradiol { date, .. }
-        | DosageHistoryEntry::Antiandrogen { date, .. }
-        | DosageHistoryEntry::Progesterone { date, .. } => *date,
-    }
-}
-
-fn get_last_dose_date_for_type(data: &HrtData, med_type: RegimenKey) -> Option<i64> {
-    let mut dates = Vec::new();
-    for entry in &data.dosageHistory {
-        match (med_type, entry) {
-            (
-                RegimenKey::InjectableEstradiol,
-                DosageHistoryEntry::InjectableEstradiol {
-                    date, bonusDose, ..
-                },
-            ) => {
-                if !bonusDose.unwrap_or(false) {
-                    dates.push(*date);
-                }
-            }
-            (RegimenKey::OralEstradiol, DosageHistoryEntry::OralEstradiol { date, .. })
-            | (RegimenKey::Antiandrogen, DosageHistoryEntry::Antiandrogen { date, .. })
-            | (RegimenKey::Progesterone, DosageHistoryEntry::Progesterone { date, .. }) => {
-                dates.push(*date);
-            }
-            _ => {}
-        }
-    }
-    dates.into_iter().max()
-}
-
-fn get_next_scheduled_date_for(data: &HrtData, med_type: RegimenKey) -> Option<i64> {
-    let now = Date::now() as i64;
-    match med_type {
-        RegimenKey::InjectableEstradiol => {
-            let cfg = data.injectableEstradiol.as_ref()?;
-            let last = get_last_dose_date_for_type(data, RegimenKey::InjectableEstradiol);
-            if let (Some(next), Some(last)) = (cfg.nextDoseDate, last) {
-                if next > last {
-                    return Some(next);
-                }
-            }
-            if let Some(last) = last {
-                return Some(last + (cfg.frequency * DAY_MS as f64) as i64);
-            }
-            Some(now)
-        }
-        RegimenKey::OralEstradiol => {
-            let cfg = data.oralEstradiol.as_ref()?;
-            let last = get_last_dose_date_for_type(data, RegimenKey::OralEstradiol);
-            if let Some(last) = last {
-                return Some(last + (cfg.frequency * DAY_MS as f64) as i64);
-            }
-            Some(now)
-        }
-        RegimenKey::Antiandrogen => {
-            let cfg = data.antiandrogen.as_ref()?;
-            let last = get_last_dose_date_for_type(data, RegimenKey::Antiandrogen);
-            if let Some(last) = last {
-                return Some(last + (cfg.frequency * DAY_MS as f64) as i64);
-            }
-            Some(now)
-        }
-        RegimenKey::Progesterone => {
-            let cfg = data.progesterone.as_ref()?;
-            let last = get_last_dose_date_for_type(data, RegimenKey::Progesterone);
-            if let Some(last) = last {
-                return Some(last + (cfg.frequency * DAY_MS as f64) as i64);
-            }
-            Some(now)
-        }
-    }
-}
-
-fn get_next_scheduled_candidate(data: &HrtData, use_iu: bool) -> Option<NextDoseCandidate> {
-    let mut options: Vec<(RegimenKey, i64, String)> = Vec::new();
-    if let Some(cfg) = data.injectableEstradiol.as_ref() {
-        if let Some(date) = get_next_scheduled_date_for(data, RegimenKey::InjectableEstradiol) {
-            let dose_label = format_injectable_dose(
-                data,
-                cfg.dose,
-                &cfg.unit,
-                cfg.vialId.as_ref(),
-                cfg.vialId.as_ref(),
-                use_iu,
-            );
-            options.push((
-                RegimenKey::InjectableEstradiol,
-                date,
-                format!("Injection: {:?}, {dose_label}", cfg.kind),
-            ));
-        }
-    }
-    if let Some(cfg) = data.oralEstradiol.as_ref() {
-        if let Some(date) = get_next_scheduled_date_for(data, RegimenKey::OralEstradiol) {
-            options.push((
-                RegimenKey::OralEstradiol,
-                date,
-                format!(
-                    "Oral Estradiol: {:?}, {:.2} {:?}",
-                    cfg.kind, cfg.dose, cfg.unit
-                ),
-            ));
-        }
-    }
-    if let Some(cfg) = data.antiandrogen.as_ref() {
-        if let Some(date) = get_next_scheduled_date_for(data, RegimenKey::Antiandrogen) {
-            options.push((
-                RegimenKey::Antiandrogen,
-                date,
-                format!(
-                    "Antiandrogen: {:?}, {:.2} {:?}",
-                    cfg.kind, cfg.dose, cfg.unit
-                ),
-            ));
-        }
-    }
-    if let Some(cfg) = data.progesterone.as_ref() {
-        if let Some(date) = get_next_scheduled_date_for(data, RegimenKey::Progesterone) {
-            options.push((
-                RegimenKey::Progesterone,
-                date,
-                format!(
-                    "Progesterone ({:?}): {:?}, {:.2} {:?}",
-                    cfg.route, cfg.kind, cfg.dose, cfg.unit
-                ),
-            ));
-        }
-    }
-    if options.is_empty() {
-        return None;
-    }
-    let now = Date::now() as i64;
-    let mut future: Vec<_> = options
-        .iter()
-        .cloned()
-        .filter(|(_, date, _)| *date >= now)
-        .collect();
-    if !future.is_empty() {
-        future.sort_by_key(|(_, date, _)| *date);
-        let (med_type, _, label) = future[0].clone();
-        return Some(NextDoseCandidate { med_type, label });
-    }
-    options.sort_by(|a, b| b.1.cmp(&a.1));
-    let (med_type, _, label) = options[0].clone();
-    Some(NextDoseCandidate { med_type, label })
-}
-
-fn generate_estrannaise_url(data: &HrtData, fudge_factor: Option<f64>) -> Option<String> {
-    let regimen = data.injectableEstradiol.as_ref();
-    let mut historical: Vec<(i64, InjectableEstradiols, f64)> = data
-        .dosageHistory
-        .iter()
-        .filter_map(|entry| match entry {
-            DosageHistoryEntry::InjectableEstradiol {
-                date, kind, dose, ..
-            } => Some((*date, kind.clone(), *dose)),
-            _ => None,
-        })
-        .collect();
-    historical.sort_by_key(|(date, _, _)| *date);
-
-    if historical.is_empty() && regimen.is_none() {
-        return None;
-    }
-
-    let mut all_doses = historical.clone();
-    let mut last_dose_date = Date::now() as i64;
-    let mut total_duration_days = 0.0;
-
-    if !historical.is_empty() {
-        let first_date = historical.first().map(|(date, _, _)| *date).unwrap();
-        last_dose_date = historical.last().map(|(date, _, _)| *date).unwrap();
-        total_duration_days = (last_dose_date - first_date) as f64 / DAY_MS as f64;
-    } else if let Some(reg) = regimen {
-        all_doses.push((last_dose_date, reg.kind.clone(), reg.dose));
-    }
-
-    if let Some(reg) = regimen {
-        if total_duration_days < 80.0 {
-            let frequency_ms = (reg.frequency * DAY_MS as f64) as i64;
-            let mut next_dose = last_dose_date + frequency_ms;
-            while total_duration_days < 80.0 {
-                all_doses.push((next_dose, reg.kind.clone(), reg.dose));
-                let first_date = all_doses.first().map(|(date, _, _)| *date).unwrap();
-                total_duration_days = (next_dose - first_date) as f64 / DAY_MS as f64;
-                next_dose += frequency_ms;
-            }
-        }
-    }
-
-    if all_doses.is_empty() {
-        return None;
-    }
-
-    let mut dose_strings = Vec::new();
-    let mut last_date_for_interval: Option<i64> = None;
-    for (date, kind, dose) in all_doses {
-        if let Some(model_id) = injectable_model_id(&kind) {
-            let time_days = if let Some(last) = last_date_for_interval {
-                (date - last) as f64 / DAY_MS as f64
-            } else {
-                0.0
-            };
-            last_date_for_interval = Some(date);
-            dose_strings.push(format!("{},{:.3},{}", dose, time_days, model_id));
-        }
-    }
-
-    if dose_strings.is_empty() {
-        return None;
-    }
-
-    let custom = dose_strings
-        .iter()
-        .enumerate()
-        .map(|(idx, ds)| {
-            if idx == 0 {
-                format!("cu,{ds}")
-            } else {
-                ds.clone()
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("-");
-    let suffix = fudge_factor
-        .filter(|value| value.is_finite())
-        .map(|value| format!("__{value}"))
-        .unwrap_or_else(|| "_".to_string());
-    Some(format!("https://estrannai.se/#i_{custom}{suffix}"))
-}
 
 #[component]
 pub fn ViewPage() -> impl IntoView {
@@ -1140,16 +672,6 @@ pub fn ViewPage() -> impl IntoView {
         _ => "",
     };
 
-    let entry_matches = |entry: &DosageHistoryEntry, key: &str| match entry {
-        DosageHistoryEntry::InjectableEstradiol { date, id, .. }
-        | DosageHistoryEntry::OralEstradiol { date, id, .. }
-        | DosageHistoryEntry::Antiandrogen { date, id, .. }
-        | DosageHistoryEntry::Progesterone { date, id, .. } => id
-            .as_ref()
-            .map(|v| v == key)
-            .unwrap_or_else(|| date.to_string() == key),
-    };
-
     let editing_photos = create_memo(move |_| {
         let key = editing_entry_id.get();
         if key.trim().is_empty() {
@@ -1157,7 +679,7 @@ pub fn ViewPage() -> impl IntoView {
         }
         let mut output = Vec::new();
         for entry in &data.get().dosageHistory {
-            if entry_matches(entry, &key) {
+            if dosage_entry_matches_key(entry, &key) {
                 if let DosageHistoryEntry::InjectableEstradiol { photos, .. } = entry {
                     if let Some(items) = photos {
                         output.extend(items.iter().map(dosage_photo_view));
@@ -1205,7 +727,7 @@ pub fn ViewPage() -> impl IntoView {
                 let mut iu_conversion_data = HrtData::default();
                 iu_conversion_data.vials = d.vials.clone();
                 for entry in &mut d.dosageHistory {
-                    if entry_matches(entry, &key) {
+                    if dosage_entry_matches_key(entry, &key) {
                         match entry {
                             DosageHistoryEntry::InjectableEstradiol {
                                 date,
@@ -1423,7 +945,7 @@ pub fn ViewPage() -> impl IntoView {
                     }
                     store.data.update(|data| {
                         for entry in &mut data.dosageHistory {
-                            if entry_matches(entry, &entry_id) {
+                            if dosage_entry_matches_key(entry, &entry_id) {
                                 if let DosageHistoryEntry::InjectableEstradiol { photos, .. } =
                                     entry
                                 {
@@ -1463,7 +985,7 @@ pub fn ViewPage() -> impl IntoView {
                 }
                 store.data.update(|data| {
                     for entry in &mut data.dosageHistory {
-                        if entry_matches(entry, &entry_id) {
+                        if dosage_entry_matches_key(entry, &entry_id) {
                             if let DosageHistoryEntry::InjectableEstradiol { photos, .. } = entry {
                                 if let Some(list) = photos.as_mut() {
                                     list.retain(|photo| match photo {
@@ -1494,7 +1016,7 @@ pub fn ViewPage() -> impl IntoView {
             }
             store.data.update(|data| {
                 for entry in &mut data.dosageHistory {
-                    if entry_matches(entry, &entry_id) {
+                    if dosage_entry_matches_key(entry, &entry_id) {
                         if let DosageHistoryEntry::InjectableEstradiol { photos, .. } = entry {
                             if let Some(list) = photos.as_mut() {
                                 for photo in list.iter_mut() {
@@ -2292,7 +1814,8 @@ pub fn ViewPage() -> impl IntoView {
                                                 let entry_key = entry_key.clone();
                                                 confirm_action.set(Some(Rc::new(move || {
                                                     store.data.update(|d| {
-                                                        d.dosageHistory.retain(|item| !entry_matches(item, &entry_key));
+                                                        d.dosageHistory
+                                                            .retain(|item| !dosage_entry_matches_key(item, &entry_key));
                                                     });
                                                     store.mark_dirty();
                                                     store.save();
@@ -2307,7 +1830,7 @@ pub fn ViewPage() -> impl IntoView {
                                                 let mut resolved_key = entry_key.clone();
                                                 store.data.update(|data| {
                                                     for item in &mut data.dosageHistory {
-                                                        if entry_matches(item, &entry_key) {
+                                                        if dosage_entry_matches_key(item, &entry_key) {
                                                             match item {
                                                                 DosageHistoryEntry::InjectableEstradiol { id, date, .. }
                                                                 | DosageHistoryEntry::OralEstradiol { id, date, .. }
