@@ -1,11 +1,15 @@
 use axum::http::{HeaderValue, Method};
 use axum::routing::{get, post};
 use axum::Router;
-use hrt_server::{api, ics};
+use hrt_server::{api, ics, storage};
 use tower_http::cors::{AllowOrigin, Any, CorsLayer};
 
 #[tokio::main]
 async fn main() {
+    storage::initialize_storage()
+        .await
+        .expect("Failed to initialize storage");
+
     // Get allowed origins from environment variable or use defaults
     let origins_str = std::env::var("HRT_ALLOWED_ORIGINS")
         .unwrap_or_else(|_| "http://127.0.0.1:4100,http://127.0.0.1:3000,http://localhost:4100,http://localhost:3000".to_string());

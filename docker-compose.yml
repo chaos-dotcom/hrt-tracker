@@ -12,6 +12,7 @@ services:
       HRT_WEB_ADDR: ${HRT_WEB_ADDR:-0.0.0.0:4100}
       HRT_SERVER_ADDR: ${HRT_SERVER_ADDR:-127.0.0.1:4200}
       HRT_ALLOWED_ORIGINS: ${HRT_ALLOWED_ORIGINS:-https://hrt.example.com,http://127.0.0.1:4100}
+      HRT_DATABASE_URL: ${HRT_DATABASE_URL:-sqlite://./data/hrt-data.db?mode=rwc}
     volumes:
       - ./data:/app/data
     restart: unless-stopped

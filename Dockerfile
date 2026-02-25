@@ -50,6 +50,7 @@ COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 ENV HRT_WEB_ADDR=0.0.0.0:4100
 ENV HRT_SERVER_ADDR=127.0.0.1:4200
 ENV HRT_ALLOWED_ORIGINS=https://hrt.example.com,http://127.0.0.1:4100
+ENV HRT_DATABASE_URL=sqlite://./data/hrt-data.db?mode=rwc
 
 EXPOSE 4100
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]

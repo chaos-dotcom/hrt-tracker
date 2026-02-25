@@ -5,7 +5,7 @@ use chrono::{Datelike, TimeZone, Timelike};
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::storage::{read_json, read_yaml, DATA_FILE_PATH, SETTINGS_FILE_PATH};
+use crate::storage::{read_data_value, read_settings_value};
 
 const DAY_MS: i64 = 24 * 60 * 60 * 1000;
 
@@ -25,7 +25,7 @@ pub struct IcsOptions {
 
 pub async fn get_public_ics(Query(query): Query<IcsQuery>) -> Response {
     let mut conf = serde_json::json!({});
-    if let Ok(Some(value)) = read_yaml::<Value>(SETTINGS_FILE_PATH).await {
+    if let Ok(Some(value)) = read_settings_value().await {
         conf = value;
     }
 
@@ -46,7 +46,7 @@ pub async fn get_public_ics(Query(query): Query<IcsQuery>) -> Response {
 
 pub async fn get_secret_ics(Path(secret): Path<String>, Query(query): Query<IcsQuery>) -> Response {
     let mut conf = serde_json::json!({});
-    if let Ok(Some(value)) = read_yaml::<Value>(SETTINGS_FILE_PATH).await {
+    if let Ok(Some(value)) = read_settings_value().await {
         conf = value;
     }
 
@@ -78,7 +78,7 @@ async fn build_ics(query: IcsQuery, conf: Value) -> Response {
         now_ms,
     };
 
-    let data = match read_json::<Value>(DATA_FILE_PATH).await {
+    let data = match read_data_value().await {
         Ok(Some(value)) => value,
         Ok(None) => serde_json::json!({}),
         Err(_) => serde_json::json!({}),

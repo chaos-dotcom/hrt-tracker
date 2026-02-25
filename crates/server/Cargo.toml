@@ -16,3 +16,4 @@ anyhow = "1.0"
 thiserror = "1.0"
 hrt-shared = { path = "../shared" }
 lopdf = "0.39"
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "any", "sqlite", "postgres"] }
