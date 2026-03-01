@@ -14,7 +14,38 @@ use crate::utils::{
     convert_progesterone_to_ng_ml, convert_testosterone_to_ng_dl, fmt_blood_value, fmt_date_label,
     hormone_unit_label,
 };
-use hrt_shared::types::{DosageHistoryEntry, HormoneUnits, HrtData, Settings};
+use hrt_shared::types::{BloodTest, DosageHistoryEntry, HormoneUnits, HrtData, Settings};
+
+fn inferred_fudge_factor(test: &BloodTest) -> Option<f64> {
+    if let Some(value) = test.fudgeFactor {
+        if value.is_finite() && value > 0.0 {
+            return Some(value);
+        }
+    }
+
+    let measured = test.estradiolLevel?;
+    if !measured.is_finite() {
+        return None;
+    }
+    let measured_pg_ml = if test.estradiolUnit == Some(HormoneUnits::E2PmolL) {
+        measured / 3.671
+    } else {
+        measured
+    };
+    if !measured_pg_ml.is_finite() {
+        return None;
+    }
+
+    let predicted = test
+        .estrannaiseNumber
+        .filter(|value| value.is_finite() && *value > 0.0)?;
+    let ratio = measured_pg_ml / predicted;
+    if ratio.is_finite() && ratio > 0.0 {
+        Some((ratio * 1000.0).round() / 1000.0)
+    } else {
+        None
+    }
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ViewChartPoint {
@@ -53,6 +84,7 @@ pub fn compute_view_chart_state(
     show_prolactin: bool,
     show_shbg: bool,
     show_fai: bool,
+    show_fudge_factor: bool,
 ) -> ViewChartState {
     let now = js_sys::Date::now() as i64;
     let start_time = now - time_range_days * 24 * 60 * 60 * 1000;
@@ -264,6 +296,25 @@ pub fn compute_view_chart_state(
                     color: RGBColor(0, 0, 0),
                 });
                 all_values.push(value);
+                has_data = true;
+            }
+        }
+        if show_fudge_factor {
+            if let Some(fudge_factor) = inferred_fudge_factor(test) {
+                let efficacy_percent = fudge_factor * 100.0;
+                let tooltip = format!(
+                    "Efficacy (FF): {}% ({}x) ({})",
+                    fmt_blood_value(efficacy_percent),
+                    fmt_blood_value(fudge_factor),
+                    date_short
+                );
+                points.push(ViewChartPoint {
+                    x,
+                    y: efficacy_percent,
+                    label: tooltip,
+                    color: RGBColor(255, 99, 132),
+                });
+                all_values.push(efficacy_percent);
                 has_data = true;
             }
         }
