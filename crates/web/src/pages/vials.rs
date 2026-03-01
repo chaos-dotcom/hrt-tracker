@@ -8,8 +8,8 @@ use std::rc::Rc;
 
 use crate::layout::page_layout;
 use crate::store::use_store;
-use crate::utils::{fmt_decimal, parse_date_or_now, parse_decimal};
-use hrt_shared::types::{InjectableEstradiols, SubVial, Vial};
+use crate::utils::{fmt_decimal, injectable_iu_from_dose, parse_date_or_now, parse_decimal};
+use hrt_shared::types::{DosageHistoryEntry, InjectableEstradiols, SubVial, Vial};
 
 const ESTER_OPTIONS: [InjectableEstradiols; 6] = [
     InjectableEstradiols::Benzoate,
@@ -73,6 +73,70 @@ pub fn VialsPage() -> impl IntoView {
     };
     let new_sub_numbers = create_rw_signal(HashMap::<String, String>::new());
     let new_sub_iu = create_rw_signal(HashMap::<String, String>::new());
+
+    let cartridge_usage = {
+        let store = store.clone();
+        move || {
+            let data_value = store.data.get();
+            let include_spent = show_spent.get();
+            let mut items = Vec::new();
+            for vial in &data_value.vials {
+                if !include_spent && vial.isSpent.unwrap_or(false) {
+                    continue;
+                }
+                for sub in &vial.subVials {
+                    let initial = sub.initialIu;
+                    let mut used = 0.0;
+                    let mut skipped = 0;
+                    for entry in &data_value.dosageHistory {
+                        let (dose, unit, sub_id, entry_vial) = match entry {
+                            DosageHistoryEntry::InjectableEstradiol {
+                                dose,
+                                unit,
+                                subVialId,
+                                vialId,
+                                ..
+                            } => (dose, unit, subVialId.as_ref(), vialId.as_ref()),
+                            _ => continue,
+                        };
+                        if sub_id != Some(&sub.id) {
+                            continue;
+                        }
+                        let iu = injectable_iu_from_dose(
+                            &data_value,
+                            *dose,
+                            unit,
+                            entry_vial.or(Some(&vial.id)),
+                            Some(&vial.id),
+                        );
+                        if let Some(value) = iu {
+                            used += value;
+                        } else {
+                            skipped += 1;
+                        }
+                    }
+                    if initial.is_some() || used > 0.0 || skipped > 0 {
+                        let label = format!(
+                            "{} · #{}",
+                            vial.esterKind
+                                .clone()
+                                .unwrap_or_else(|| "Unknown".to_string()),
+                            sub.personalNumber
+                        );
+                        items.push((
+                            sub.id.clone(),
+                            label,
+                            initial,
+                            used,
+                            initial.map(|v| v - used),
+                            skipped,
+                        ));
+                    }
+                }
+            }
+            items
+        }
+    };
 
     let update_sub_number = {
         let new_sub_numbers = new_sub_numbers;
@@ -241,6 +305,40 @@ pub fn VialsPage() -> impl IntoView {
                         </label>
                         <A href="/vials/create">"Create New Vial"</A>
                     </div>
+                </div>
+                <div class="card">
+                    <h3>"Cartridge Balance"</h3>
+                    <p class="muted">"Used and remaining IU for tracked cartridges."</p>
+                    <Show
+                        when=move || !cartridge_usage().is_empty()
+                        fallback=move || view! { <p class="muted">"No cartridge tracking yet."</p> }
+                    >
+                        <ul class="muted">
+                            <For
+                                each=cartridge_usage
+                                key=|(sub_id, _, _, _, _, _)| sub_id.clone()
+                                children=move |(_, label, initial, used, remaining, skipped)| {
+                                    let initial_label = initial
+                                        .map(|v| format!("{} IU", fmt_decimal(v, 0)))
+                                        .unwrap_or_else(|| "Set starting IU".to_string());
+                                    let used_label = format!("{} IU used", fmt_decimal(used, 0));
+                                    let remaining_label = remaining
+                                        .map(|v| format!("{} IU left", fmt_decimal(v, 0)))
+                                        .unwrap_or_else(|| "Unknown remaining".to_string());
+                                    let skipped_label = if skipped > 0 {
+                                        format!(" · {skipped} entry(s) missing concentration")
+                                    } else {
+                                        "".to_string()
+                                    };
+                                    view! {
+                                        <li>
+                                            {format!("{label}: {initial_label} · {used_label} · {remaining_label}{skipped_label}")}
+                                        </li>
+                                    }
+                                }
+                            />
+                        </ul>
+                    </Show>
                 </div>
                 <Show
                     when=move || !vials().is_empty()
