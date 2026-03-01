@@ -136,6 +136,7 @@ pub fn ViewPage() -> impl IntoView {
     let show_prolactin = create_rw_signal(false);
     let show_shbg = create_rw_signal(false);
     let show_fai = create_rw_signal(false);
+    let show_fudge_factor = create_rw_signal(true);
     let view_zoom = create_rw_signal(ViewZoom::default());
     let view_tooltip = create_rw_signal(None::<ChartTooltip>);
 
@@ -158,6 +159,7 @@ pub fn ViewPage() -> impl IntoView {
                 show_prolactin.get(),
                 show_shbg.get(),
                 show_fai.get(),
+                show_fudge_factor.get(),
             )
         }
     });
@@ -1244,6 +1246,12 @@ pub fn ViewPage() -> impl IntoView {
                         <button class:active=move || show_fai.get() on:click=move |_| show_fai.set(!show_fai.get())>
                             "FAI"
                         </button>
+                        <button
+                            class:active=move || show_fudge_factor.get()
+                            on:click=move |_| show_fudge_factor.set(!show_fudge_factor.get())
+                        >
+                            "FF %"
+                        </button>
                     </div>
 
                     <div class="chart-toolbar view-dosage-group">
@@ -1286,6 +1294,9 @@ pub fn ViewPage() -> impl IntoView {
                         <p>"* Hover over data points for details."</p>
                         <Show when=move || !store.data.get().bloodTests.is_empty()>
                             <p>"* Hormone measurements are normalized to display units for charting; hover shows recorded units."</p>
+                        </Show>
+                        <Show when=move || show_fudge_factor.get()>
+                            <p>"* FF is shown as efficacy percent (fudge factor x 100)."</p>
                         </Show>
                     </div>
                 </div>
