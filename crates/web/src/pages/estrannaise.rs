@@ -14,7 +14,7 @@ use crate::estrannaise::compute_estrannaise_series;
 use crate::layout::page_layout;
 use crate::store::use_store;
 use crate::utils::{
-    compute_fudge_factor, fmt_blood_value, fmt_date_label, hormone_unit_label,
+    compute_fudge_factor, fmt_blood_value, fmt_date_label, fmt_decimal, hormone_unit_label,
     injectable_dose_from_iu, parse_decimal,
 };
 use hrt_shared::logic::predict_e2_pg_ml;
@@ -106,6 +106,77 @@ pub fn EstrannaisePage() -> impl IntoView {
             injectable_dose_from_iu(&data_value, 1.0, schedule_vial_id, schedule_vial_id).is_some()
         }
     });
+
+    let concentration_target_vial = create_memo({
+        let store = store.clone();
+        move |_| {
+            let data_value = store.data.get();
+            let schedule_vial_id = data_value
+                .injectableEstradiol
+                .as_ref()
+                .and_then(|cfg| cfg.vialId.clone())?;
+            let vial = data_value
+                .vials
+                .iter()
+                .find(|vial| vial.id == schedule_vial_id)?;
+            let mut label = vial
+                .esterKind
+                .clone()
+                .unwrap_or_else(|| "Unknown ester".to_string());
+            if let Some(batch) = &vial.batchNumber {
+                label.push_str(&format!(" · {batch}"));
+            }
+            Some((schedule_vial_id, label, vial.concentrationMgPerMl))
+        }
+    });
+
+    let concentration_input = create_rw_signal(String::new());
+    create_effect({
+        let concentration_target_vial = concentration_target_vial.clone();
+        move |_| {
+            let value = concentration_target_vial
+                .get()
+                .and_then(|(_, _, concentration)| concentration)
+                .map(|concentration| fmt_decimal(concentration, 3))
+                .unwrap_or_default();
+            concentration_input.set(value);
+        }
+    });
+
+    let apply_concentration_update = {
+        let store = store.clone();
+        let concentration_target_vial = concentration_target_vial.clone();
+        let concentration_input = concentration_input;
+        move |raw_value: String| {
+            let Some((vial_id, _, current)) = concentration_target_vial.get() else {
+                return;
+            };
+            let trimmed = raw_value.trim().to_string();
+            let next = if trimmed.is_empty() {
+                None
+            } else {
+                parse_decimal(&trimmed).filter(|value| *value > 0.0)
+            };
+            if !trimmed.is_empty() && next.is_none() {
+                concentration_input.set(
+                    current
+                        .map(|value| fmt_decimal(value, 3))
+                        .unwrap_or_default(),
+                );
+                return;
+            }
+            if next == current {
+                return;
+            }
+            store.data.update(|data| {
+                if let Some(vial) = data.vials.iter_mut().find(|vial| vial.id == vial_id) {
+                    vial.concentrationMgPerMl = next;
+                }
+            });
+            store.mark_dirty();
+        }
+    };
+    let apply_concentration_update = StoredValue::new(Rc::new(apply_concentration_update));
 
     let estrannaise_series = create_memo({
         let settings = store.settings;
@@ -383,6 +454,44 @@ pub fn EstrannaisePage() -> impl IntoView {
                             <option value="8" selected=move || forecast_weeks.get() == 8>"8"</option>
                         </select>
                     </div>
+                    <Show when=move || store.settings.get().displayInjectableInIU.unwrap_or(false)>
+                        <Show
+                            when=move || concentration_target_vial.get().is_some()
+                            fallback=move || view! {
+                                <div class="chart-toolbar-group">
+                                    <span class="muted">
+                                        "Select a schedule vial to set concentration here."
+                                    </span>
+                                </div>
+                            }
+                        >
+                            <div class="chart-toolbar-group">
+                                <label class="muted">"Concentration (mg/mL)"</label>
+                                <input
+                                    type="text"
+                                    step="any"
+                                    min="0"
+                                    class="chart-input"
+                                    placeholder="auto"
+                                    on:input=move |ev| concentration_input.set(event_target_value(&ev))
+                                    on:change=move |ev| {
+                                        let apply_concentration_update =
+                                            apply_concentration_update.get_value();
+                                        apply_concentration_update(event_target_value(&ev))
+                                    }
+                                    prop:value=move || concentration_input.get()
+                                />
+                                <span class="muted">
+                                    {move || {
+                                        concentration_target_vial
+                                            .get()
+                                            .map(|(_, label, _)| format!("Schedule vial: {label}"))
+                                            .unwrap_or_default()
+                                    }}
+                                </span>
+                            </div>
+                        </Show>
+                    </Show>
                     <div class="chart-toolbar-group">
                         <label class="muted">
                             {move || if forecast_dose_in_iu.get() { "Dose (IU)" } else { "Dose (mg)" }}
@@ -402,7 +511,7 @@ pub fn EstrannaisePage() -> impl IntoView {
                                     && !forecast_dose_in_iu.get()
                             }
                         >
-                            <span class="muted">"Set injectable vial concentration to enter IU."</span>
+                            <span class="muted">"Set concentration above to enter IU."</span>
                         </Show>
                     </div>
                     <div class="chart-toolbar-group">
