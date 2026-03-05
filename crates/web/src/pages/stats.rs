@@ -1,4 +1,5 @@
 use leptos::*;
+use leptos_router::A;
 
 use crate::layout::page_layout;
 use crate::store::use_store;
@@ -582,6 +583,11 @@ pub fn StatsPage() -> impl IntoView {
                         <h2>"Stats"</h2>
                         <p class="muted">
                             "Totals and usage stats based on your recorded doses."
+                        </p>
+                        <p class="muted">
+                            "Cartridge balance now lives on the "
+                            <A href="/vials">"Vials page"</A>
+                            "."
                         </p>
                     </div>
                 </div>
