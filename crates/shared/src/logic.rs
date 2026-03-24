@@ -87,7 +87,7 @@ pub fn migrate_blood_tests_fudge_factor(data: &mut HrtData) -> bool {
         let predicted = predicted_values
             .get(idx)
             .and_then(|value| *value)
-            .or_else(|| test.estrannaiseNumber);
+            .or(test.estrannaiseNumber);
         let fudge_factor = if let Some(predicted) = predicted.filter(|value| *value > 0.0) {
             let ratio = measured / predicted;
             if ratio.is_finite() {
@@ -163,7 +163,7 @@ pub fn snap_to_next_injection_boundary(data: &HrtData, ts: UnixTime) -> UnixTime
 pub fn backfill_scheduled_doses(data: &mut HrtData) {
     let settings = data.settings.as_ref();
     if matches!(
-        settings.and_then(|s| Some(s.enableAutoBackfill)),
+        settings.map(|s| s.enableAutoBackfill),
         Some(false)
     ) {
         return;
@@ -225,7 +225,7 @@ pub fn backfill_scheduled_doses(data: &mut HrtData) {
         if !last_taken_dates.is_empty() {
             let last_taken = *last_taken_dates.iter().max().unwrap();
             let next_after_last = last_taken + interval_ms;
-            if next_time.map_or(true, |t| t < next_after_last) {
+            if next_time.is_none_or(|t| t < next_after_last) {
                 next_time = Some(next_after_last);
             }
         }

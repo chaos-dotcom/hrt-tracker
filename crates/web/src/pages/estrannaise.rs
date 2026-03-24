@@ -132,7 +132,7 @@ pub fn EstrannaisePage() -> impl IntoView {
 
     let concentration_input = create_rw_signal(String::new());
     create_effect({
-        let concentration_target_vial = concentration_target_vial.clone();
+        let concentration_target_vial = concentration_target_vial;
         move |_| {
             let value = concentration_target_vial
                 .get()
@@ -145,7 +145,7 @@ pub fn EstrannaisePage() -> impl IntoView {
 
     let apply_concentration_update = {
         let store = store.clone();
-        let concentration_target_vial = concentration_target_vial.clone();
+        let concentration_target_vial = concentration_target_vial;
         let concentration_input = concentration_input;
         move |raw_value: String| {
             let Some((vial_id, _, current)) = concentration_target_vial.get() else {
@@ -212,7 +212,7 @@ pub fn EstrannaisePage() -> impl IntoView {
     let estrannaise_drag = Rc::new(RefCell::new(None::<DragState>));
 
     let on_mouse_move = {
-        let estrannaise_series = estrannaise_series.clone();
+        let estrannaise_series = estrannaise_series;
         let estrannaise_zoom = estrannaise_zoom;
         let estrannaise_tooltip = estrannaise_tooltip;
         let estrannaise_drag = estrannaise_drag.clone();
@@ -296,7 +296,7 @@ pub fn EstrannaisePage() -> impl IntoView {
     let on_mouse_down = {
         let estrannaise_drag = estrannaise_drag.clone();
         let estrannaise_zoom = estrannaise_zoom;
-        let estrannaise_series = estrannaise_series.clone();
+        let estrannaise_series = estrannaise_series;
         move |ev: leptos::ev::MouseEvent| {
             let Some(canvas) = window()
                 .document()
@@ -328,7 +328,7 @@ pub fn EstrannaisePage() -> impl IntoView {
 
     let on_wheel = {
         let estrannaise_zoom = estrannaise_zoom;
-        let estrannaise_series = estrannaise_series.clone();
+        let estrannaise_series = estrannaise_series;
         move |ev: leptos::ev::WheelEvent| {
             ev.prevent_default();
             let Some(canvas) = window()
@@ -370,7 +370,7 @@ pub fn EstrannaisePage() -> impl IntoView {
     };
 
     create_effect({
-        let estrannaise_series = estrannaise_series.clone();
+        let estrannaise_series = estrannaise_series;
         let estrannaise_zoom = estrannaise_zoom;
         move |_| {
             let series = estrannaise_series.get();
@@ -383,7 +383,7 @@ pub fn EstrannaisePage() -> impl IntoView {
 
     let resize_listener: Rc<RefCell<Option<EventListener>>> = Rc::new(RefCell::new(None));
     create_effect({
-        let estrannaise_series = estrannaise_series.clone();
+        let estrannaise_series = estrannaise_series;
         let estrannaise_zoom = estrannaise_zoom;
         let resize_listener = resize_listener.clone();
         move |_| {
@@ -571,7 +571,7 @@ pub fn EstrannaisePage() -> impl IntoView {
                             on:mouseleave=on_mouse_leave.clone()
                             on:mousedown=on_mouse_down.clone()
                             on:mouseup=on_mouse_up.clone()
-                            on:wheel=on_wheel.clone()
+                            on:wheel=on_wheel
                         ></canvas>
                         <Show when=move || tooltip_value().is_some()>
                             <div

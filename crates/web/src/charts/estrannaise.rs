@@ -35,6 +35,7 @@ pub struct EstrannaiseSeries {
     pub use_days: bool,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn find_nearest_estrannaise_point(
     points: &[EstrannaisePoint],
     domain_min: f64,
@@ -134,7 +135,7 @@ pub fn draw_estrannaise_chart(canvas_id: &str, series: &EstrannaiseSeries, zoom:
         .x_label_formatter(&x_label_formatter)
         .label_style(label_style)
         .axis_desc_style(axis_desc_style)
-        .axis_style(&RGBColor(96, 86, 120))
+        .axis_style(RGBColor(96, 86, 120))
         .bold_line_style(bold_grid)
         .light_line_style(light_grid)
         .x_desc(series.x_label.clone())

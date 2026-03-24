@@ -79,8 +79,7 @@ fn prefix_exponents() -> HashMap<&'static str, i32> {
 fn normalize_token(token: &str) -> String {
     token
         .trim()
-        .replace('ℓ', "L")
-        .replace('l', "L")
+        .replace(['ℓ', 'l'], "L")
         .replace(' ', "")
 }
 

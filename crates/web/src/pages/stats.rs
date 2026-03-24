@@ -445,7 +445,7 @@ pub fn StatsPage() -> impl IntoView {
             record.0 += 1;
             if let Some(mm) = needle_length
                 .as_deref()
-                .and_then(|value| parse_needle_length_mm(value))
+                .and_then(&parse_needle_length_mm)
             {
                 if mm.is_finite() && mm > 0.0 {
                     record.1 += mm;

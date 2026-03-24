@@ -194,9 +194,7 @@ fn parse_ocr_number(token: &str) -> Option<String> {
     let trimmed = trimmed.trim_matches(|c: char| c == '<' || c == '>' || c == '=');
     let mut cleaned = String::new();
     for c in trimmed.chars() {
-        if c.is_ascii_digit() {
-            cleaned.push(c);
-        } else if c == '.' {
+        if c.is_ascii_digit() || c == '.' {
             cleaned.push(c);
         } else if c == ',' {
             cleaned.push('.');
@@ -220,7 +218,7 @@ fn normalize_ocr_unit(token: &str) -> Option<String> {
     let mut cleaned = trimmed
         .trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '/' && c != '|' && c != '\\')
         .to_lowercase();
-    cleaned = cleaned.replace('|', "/").replace('\\', "/");
+    cleaned = cleaned.replace(['|', '\\'], "/");
     cleaned = cleaned.replace("/i", "/l").replace("/1", "/l");
     cleaned = cleaned.replace("mlu", "miu");
     match cleaned.as_str() {
@@ -802,7 +800,7 @@ pub fn CreateBloodTest() -> impl IntoView {
             if let Some(existing) = feedback_timeout.borrow_mut().take() {
                 drop(existing);
             }
-            let show_feedback = show_feedback.clone();
+            let show_feedback = show_feedback;
             *feedback_timeout.borrow_mut() = Some(Timeout::new(3000, move || {
                 show_feedback.set(false);
             }));

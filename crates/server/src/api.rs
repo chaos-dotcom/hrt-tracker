@@ -45,7 +45,7 @@ pub async fn post_data(body: Bytes) -> Response {
         obj.remove("settings");
     }
 
-    if let Err(_) = write_data_value(&value).await {
+    if write_data_value(&value).await.is_err() {
         return json_error("Failed to write data", StatusCode::INTERNAL_SERVER_ERROR);
     }
 
@@ -78,7 +78,7 @@ pub async fn post_settings(body: Bytes) -> Response {
 
     let payload = if value.is_object() { value } else { json!({}) };
 
-    if let Err(_) = write_settings_value(&payload).await {
+    if write_settings_value(&payload).await.is_err() {
         return json_error(
             "Failed to write settings",
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -197,7 +197,7 @@ pub async fn get_dosage_photo(Path((entry_id, filename)): Path<(String, String)>
         }
     };
 
-    let ext = filename.split('.').last().unwrap_or("");
+    let ext = filename.split('.').next_back().unwrap_or("");
     let mut headers = HeaderMap::new();
     if let Ok(value) = HeaderValue::from_str(content_type_from_ext(ext)) {
         headers.insert("Content-Type", value);
@@ -302,7 +302,7 @@ pub async fn get_bloodtest_pdf(Path(filename): Path<String>) -> Response {
         }
     };
 
-    let ext = filename.split('.').last().unwrap_or("");
+    let ext = filename.split('.').next_back().unwrap_or("");
     let mut headers = HeaderMap::new();
     if let Ok(value) = HeaderValue::from_str(content_type_from_ext(ext)) {
         headers.insert("Content-Type", value);
@@ -323,7 +323,7 @@ pub async fn delete_bloodtest_pdf(Path(filename): Path<String>) -> Response {
 
 fn ext_from_name_or_type(name: Option<&str>, content_type: Option<&str>) -> String {
     if let Some(name) = name {
-        if let Some(ext) = name.split('.').last() {
+        if let Some(ext) = name.split('.').next_back() {
             if !ext.is_empty() {
                 return ext.to_lowercase();
             }

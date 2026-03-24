@@ -50,12 +50,7 @@ pub fn parse_decimal(value: &str) -> Option<f64> {
         return None;
     }
     let normalized = trimmed
-        .replace('\u{00a0}', "")
-        .replace('\u{202f}', "")
-        .replace('\u{2009}', "")
-        .replace(' ', "")
-        .replace('_', "")
-        .replace('\'', "");
+        .replace(['\u{00a0}', '\u{202f}', '\u{2009}', ' ', '_', '\''], "");
     if normalized.is_empty() {
         return None;
     }
@@ -282,9 +277,7 @@ pub fn compute_fudge_factor(
     measured_pg_ml: Option<f64>,
     predicted_pg_ml: Option<f64>,
 ) -> Option<f64> {
-    let Some(measured) = measured_pg_ml else {
-        return None;
-    };
+    let measured = measured_pg_ml?;
     if !measured.is_finite() {
         return None;
     }

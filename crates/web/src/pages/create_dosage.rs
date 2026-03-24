@@ -453,11 +453,7 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
             };
 
             if let Some(next_value) = converted {
-                estrogen_dose.set(if target_iu_mode {
-                    fmt(next_value, 3)
-                } else {
-                    fmt(next_value, 3)
-                });
+                estrogen_dose.set(fmt(next_value, 3));
                 estrogen_dose_in_iu.set(target_iu_mode);
             } else if target_iu_mode {
                 estrogen_dose_in_iu.set(false);
@@ -887,7 +883,7 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
             if let Some(existing) = feedback_timeout.borrow_mut().take() {
                 drop(existing);
             }
-            let schedule_feedback = schedule_feedback.clone();
+            let schedule_feedback = schedule_feedback;
             *feedback_timeout.borrow_mut() = Some(Timeout::new(3000, move || {
                 schedule_feedback.set(false);
             }));

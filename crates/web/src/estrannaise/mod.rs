@@ -74,6 +74,7 @@ fn step_fudge(series: &[(i64, f64)], target: i64) -> f64 {
     series[series.len() - 1].1
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn compute_estrannaise_series(
     data: &HrtData,
     settings: &Settings,
@@ -257,7 +258,7 @@ pub fn compute_estrannaise_series(
     let mut y_min = y_values.iter().cloned().fold(f64::INFINITY, f64::min);
     let mut y_max = y_values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
     if (y_min - y_max).abs() < f64::EPSILON {
-        y_min = y_min - 1.0;
+        y_min -= 1.0;
         y_max += 1.0;
     } else {
         let pad = (y_max - y_min) * 0.08;

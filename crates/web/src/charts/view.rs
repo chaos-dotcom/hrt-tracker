@@ -70,6 +70,7 @@ pub struct ViewChartState {
     pub has_data: bool,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn compute_view_chart_state(
     data: &HrtData,
     settings: &Settings,
@@ -444,6 +445,7 @@ pub fn compute_view_chart_state(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn find_nearest_point(
     points: &[ViewChartPoint],
     domain_min: f64,
@@ -543,7 +545,7 @@ pub fn draw_view_chart(canvas_id: &str, state: &ViewChartState, zoom: ViewZoom) 
         .x_label_formatter(&x_label_formatter)
         .label_style(label_style)
         .axis_desc_style(axis_desc_style)
-        .axis_style(&RGBColor(96, 86, 120))
+        .axis_style(RGBColor(96, 86, 120))
         .bold_line_style(bold_grid)
         .light_line_style(light_grid)
         .x_desc(state.x_label.clone())

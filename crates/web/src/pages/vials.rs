@@ -36,7 +36,7 @@ fn format_date(ms: i64) -> String {
         .timestamp_millis_opt(ms)
         .single()
         .map(|d| d.format("%Y-%m-%d").to_string())
-        .unwrap_or_else(|| "".to_string())
+        .unwrap_or_default()
 }
 
 fn format_datetime(ms: i64) -> String {
@@ -44,7 +44,7 @@ fn format_datetime(ms: i64) -> String {
         .timestamp_millis_opt(ms)
         .single()
         .map(|d| d.format("%Y-%m-%d %H:%M").to_string())
-        .unwrap_or_else(|| "".to_string())
+        .unwrap_or_default()
 }
 
 fn parse_optional_date(value: &str) -> Option<i64> {

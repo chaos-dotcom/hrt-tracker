@@ -1,3 +1,5 @@
+#![allow(clippy::redundant_locals)]
+
 use leptos::*;
 use leptos_router::*;
 
