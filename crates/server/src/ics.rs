@@ -334,7 +334,7 @@ fn to_ics_date_time(ms: i64) -> String {
     let dt = chrono::Utc
         .timestamp_millis_opt(ms)
         .single()
-        .unwrap_or_else(|| chrono::Utc::now());
+        .unwrap_or_else(chrono::Utc::now);
     format!(
         "{:04}{:02}{:02}T{:02}{:02}{:02}Z",
         dt.year(),
@@ -350,7 +350,7 @@ fn add_months_utc(ms: i64, months: i64) -> i64 {
     let dt = chrono::Utc
         .timestamp_millis_opt(ms)
         .single()
-        .unwrap_or_else(|| chrono::Utc::now());
+        .unwrap_or_else(chrono::Utc::now);
     let target_month = dt.month0() as i64 + months;
     let year = dt.year() + (target_month / 12) as i32;
     let month0 = (target_month % 12) as u32;
@@ -372,7 +372,7 @@ fn set_local_morning_10(ms: i64) -> i64 {
     let dt = chrono::Local
         .timestamp_millis_opt(ms)
         .single()
-        .unwrap_or_else(|| chrono::Local::now());
+        .unwrap_or_else(chrono::Local::now);
     let dt = dt
         .with_hour(10)
         .and_then(|d| d.with_minute(0))
@@ -386,7 +386,7 @@ fn utc_day_start(ms: i64) -> i64 {
     let dt = chrono::Utc
         .timestamp_millis_opt(ms)
         .single()
-        .unwrap_or_else(|| chrono::Utc::now());
+        .unwrap_or_else(chrono::Utc::now);
     chrono::Utc
         .with_ymd_and_hms(dt.year(), dt.month(), dt.day(), 0, 0, 0)
         .single()

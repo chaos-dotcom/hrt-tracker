@@ -46,7 +46,7 @@ pub fn ViewPage() -> impl IntoView {
     let data = store.data;
     let rows = move || {
         let mut entries = data.get().dosageHistory.clone();
-        entries.sort_by(|a, b| dosage_entry_date(b).cmp(&dosage_entry_date(a)));
+        entries.sort_by_key(|e| std::cmp::Reverse(dosage_entry_date(e)));
         entries
     };
     let editing_key = create_rw_signal(None::<String>);
@@ -170,7 +170,7 @@ pub fn ViewPage() -> impl IntoView {
     let days_since_first_dose = create_memo(move |_| {
         first_dose_date.get().map(|first| {
             let now = Date::now() as i64;
-            ((now - first).abs() / DAY_MS) as i64
+            (now - first).abs() / DAY_MS
         })
     });
 
@@ -447,7 +447,7 @@ pub fn ViewPage() -> impl IntoView {
     let view_drag = Rc::new(RefCell::new(None::<DragState>));
 
     let on_view_mouse_move = {
-        let view_chart_state = view_chart_state.clone();
+        let view_chart_state = view_chart_state;
         let view_zoom = view_zoom;
         let view_drag = view_drag.clone();
         let view_tooltip = view_tooltip;
@@ -544,7 +544,7 @@ pub fn ViewPage() -> impl IntoView {
     let on_view_mouse_down = {
         let view_drag = view_drag.clone();
         let view_zoom = view_zoom;
-        let view_chart_state = view_chart_state.clone();
+        let view_chart_state = view_chart_state;
         move |ev: leptos::ev::MouseEvent| {
             let Some(canvas) = window()
                 .document()
@@ -576,7 +576,7 @@ pub fn ViewPage() -> impl IntoView {
 
     let on_view_wheel = {
         let view_zoom = view_zoom;
-        let view_chart_state = view_chart_state.clone();
+        let view_chart_state = view_chart_state;
         move |ev: leptos::ev::WheelEvent| {
             ev.prevent_default();
             let Some(canvas) = window()
@@ -618,7 +618,7 @@ pub fn ViewPage() -> impl IntoView {
     };
 
     create_effect({
-        let view_chart_state = view_chart_state.clone();
+        let view_chart_state = view_chart_state;
         let view_zoom = view_zoom;
         move |_| {
             let state = view_chart_state.get();
@@ -631,7 +631,7 @@ pub fn ViewPage() -> impl IntoView {
 
     let view_resize_listener: Rc<RefCell<Option<EventListener>>> = Rc::new(RefCell::new(None));
     create_effect({
-        let view_chart_state = view_chart_state.clone();
+        let view_chart_state = view_chart_state;
         let view_zoom = view_zoom;
         let view_resize_listener = view_resize_listener.clone();
         move |_| {
@@ -682,10 +682,8 @@ pub fn ViewPage() -> impl IntoView {
         let mut output = Vec::new();
         for entry in &data.get().dosageHistory {
             if dosage_entry_matches_key(entry, &key) {
-                if let DosageHistoryEntry::InjectableEstradiol { photos, .. } = entry {
-                    if let Some(items) = photos {
-                        output.extend(items.iter().map(dosage_photo_view));
-                    }
+                if let DosageHistoryEntry::InjectableEstradiol { photos: Some(items), .. } = entry {
+                    output.extend(items.iter().map(dosage_photo_view));
                 }
             }
         }
@@ -726,8 +724,10 @@ pub fn ViewPage() -> impl IntoView {
                     .injectableEstradiol
                     .as_ref()
                     .and_then(|cfg| cfg.vialId.clone());
-                let mut iu_conversion_data = HrtData::default();
-                iu_conversion_data.vials = d.vials.clone();
+                let iu_conversion_data = HrtData {
+                    vials: d.vials.clone(),
+                    ..Default::default()
+                };
                 for entry in &mut d.dosageHistory {
                     if dosage_entry_matches_key(entry, &key) {
                         match entry {
@@ -1187,7 +1187,7 @@ pub fn ViewPage() -> impl IntoView {
                             <button
                                 class:active=move || x_axis_mode.get() == "days"
                                 on:click=move |_| x_axis_mode.set("days".to_string())
-                                prop:disabled=move || x_axis_days_disabled()
+                                prop:disabled=x_axis_days_disabled
                             >
                                 "Days since first dose"
                             </button>
@@ -1274,7 +1274,7 @@ pub fn ViewPage() -> impl IntoView {
                             on:mouseleave=on_view_mouse_leave.clone()
                             on:mousedown=on_view_mouse_down.clone()
                             on:mouseup=on_view_mouse_up.clone()
-                            on:wheel=on_view_wheel.clone()
+                            on:wheel=on_view_wheel
                         ></canvas>
                         <Show when=move || view_tooltip_value().is_some()>
                             <div
@@ -1948,7 +1948,7 @@ pub fn ViewPage() -> impl IntoView {
                                                     }
                                                     DosageHistoryEntry::Progesterone { pillQuantity, route, .. } => {
                                                         editing_pill_qty.set(pillQuantity.map(|v| v.to_string()).unwrap_or_default());
-                                                        editing_route.set(progesterone_route_label(&route).to_string());
+                                                        editing_route.set(progesterone_route_label(route).to_string());
                                                     }
                                                     _ => {}
                                                 }
@@ -2444,7 +2444,7 @@ pub fn ViewPage() -> impl IntoView {
                         <p>"This action cannot be undone."</p>
                         <div class="modal-actions">
                             <button type="button" on:click={
-                                let confirm_action = confirm_action.clone();
+                                let confirm_action = confirm_action;
                                 let confirm_delete = confirm_delete;
                                 move |_| {
                                     if let Some(action) = confirm_action.get() {

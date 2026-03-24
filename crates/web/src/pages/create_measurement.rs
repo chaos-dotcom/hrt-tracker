@@ -246,12 +246,8 @@ pub fn CreateMeasurement() -> impl IntoView {
     let bra_calculation = create_memo(move |_| {
         let underbust_val = parse_optional(&underbust.get());
         let bust_val = parse_optional(&bust.get());
-        let Some(underbust_val) = underbust_val else {
-            return None;
-        };
-        let Some(bust_val) = bust_val else {
-            return None;
-        };
+        let underbust_val = underbust_val?;
+        let bust_val = bust_val?;
         let system = store
             .settings
             .get()
@@ -316,7 +312,7 @@ pub fn CreateMeasurement() -> impl IntoView {
             if let Some(existing) = feedback_timeout.borrow_mut().take() {
                 drop(existing);
             }
-            let show_feedback = show_feedback.clone();
+            let show_feedback = show_feedback;
             *feedback_timeout.borrow_mut() = Some(Timeout::new(3000, move || {
                 show_feedback.set(false);
             }));

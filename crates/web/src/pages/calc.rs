@@ -76,6 +76,7 @@ fn fmt_pct(value: f64) -> String {
     }
 }
 
+#[allow(clippy::neg_cmp_op_on_partial_ord)]
 fn calc_for(gear: Gear, dose: f64, freq: f64, vial_ml: f64, conc: f64) -> GearResult {
     if !(vial_ml > 0.0) || !(conc > 0.0) || !(dose > 0.0) || !(freq > 0.0) {
         return GearResult {

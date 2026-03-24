@@ -114,7 +114,7 @@ impl AppStore {
 
         let settings_value = self.settings.get();
         if settings_value.enableAutoBackfill {
-            self.data.update(|data| backfill_scheduled_doses(data));
+            self.data.update(backfill_scheduled_doses);
         }
         let data_value = self.data.get();
         let is_saving = self.is_saving;

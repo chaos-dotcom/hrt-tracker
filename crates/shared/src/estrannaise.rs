@@ -28,6 +28,7 @@ fn e2_steady_state_3c(t: f64, dose: f64, t_cycle: f64, d: f64, k1: f64, k2: f64,
             + f64::exp(-k3 * frac) / (1.0 - f64::exp(-k3 * t_cycle)) / (k1 - k3) / (k2 - k3))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn e2_curve_3c(
     t: f64,
     dose: f64,

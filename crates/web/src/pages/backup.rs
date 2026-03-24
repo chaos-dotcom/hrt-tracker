@@ -150,7 +150,7 @@ pub fn BackupPage() -> impl IntoView {
                                     "hrt-data-backup-{}.json",
                                     Local::now().format("%Y-%m-%d")
                                 ));
-                                let _ = link.click();
+                                link.click();
                                 let _ = web_sys::Url::revoke_object_url(&url);
                             }
                         }
@@ -188,7 +188,7 @@ pub fn BackupPage() -> impl IntoView {
                                             store.mark_dirty();
                                         }
                                     }
-                                    prop:checked=move || auto_backfill()
+                                    prop:checked=auto_backfill
                                 />
                                 <span class="toggle-track" aria-hidden="true"></span>
                                 <span class="toggle-label">"Enable auto backfill"</span>

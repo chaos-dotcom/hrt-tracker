@@ -255,13 +255,10 @@ async fn ensure_sqlite_parent_dir(database_url: &str) -> Result<(), StorageError
         return Ok(());
     }
 
-    let path = if let Some(rest) = database_url.strip_prefix("sqlite://") {
-        rest
-    } else if let Some(rest) = database_url.strip_prefix("sqlite:") {
-        rest
-    } else {
-        ""
-    };
+    let path = database_url
+        .strip_prefix("sqlite://")
+        .or_else(|| database_url.strip_prefix("sqlite:"))
+        .unwrap_or_default();
 
     let path = path.split('?').next().unwrap_or("");
     let path = path.trim();

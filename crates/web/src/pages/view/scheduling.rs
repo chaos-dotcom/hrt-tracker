@@ -146,9 +146,7 @@ pub(super) fn get_next_scheduled_candidate(
     }
     let now = Date::now() as i64;
     let mut future: Vec<_> = options
-        .iter()
-        .cloned()
-        .filter(|(_, date, _)| *date >= now)
+        .iter().filter(|&(_, date, _)| *date >= now).cloned()
         .collect();
     if !future.is_empty() {
         future.sort_by_key(|(_, date, _)| *date);
