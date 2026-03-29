@@ -174,3 +174,116 @@ pub fn e2_multidose_3c(
 
     total
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::EstrannaiseModel;
+
+    #[test]
+    fn pk_parameters_has_all_models() {
+        let params = pk_parameters();
+        assert!(params.contains_key(&EstrannaiseModel::EvIm));
+        assert!(params.contains_key(&EstrannaiseModel::EEnIm));
+        assert!(params.contains_key(&EstrannaiseModel::EcIm));
+        assert!(params.contains_key(&EstrannaiseModel::EbIm));
+        assert!(params.contains_key(&EstrannaiseModel::EUnIm));
+        assert!(params.contains_key(&EstrannaiseModel::EUnCasubq));
+        assert!(params.contains_key(&EstrannaiseModel::PatchTw));
+        assert!(params.contains_key(&EstrannaiseModel::PatchOw));
+        assert_eq!(params.len(), 8);
+    }
+
+    #[test]
+    fn single_dose_ev_peaks_then_decays() {
+        // A single 4mg EV injection should peak within first few days then decay
+        let doses = vec![4.0];
+        let times = vec![0.0];
+        let models = vec![EstrannaiseModel::EvIm];
+
+        let at_zero = e2_multidose_3c(0.0, &doses, &times, &models, 1.0, false);
+        let at_peak = e2_multidose_3c(2.0, &doses, &times, &models, 1.0, false);
+        let at_late = e2_multidose_3c(14.0, &doses, &times, &models, 1.0, false);
+
+        assert!(at_zero < at_peak, "should rise from t=0: {at_zero} vs {at_peak}");
+        assert!(at_peak > at_late, "should decay after peak: {at_peak} vs {at_late}");
+        assert!(at_peak > 0.0, "peak should be positive");
+        assert!(at_late > 0.0, "late value should still be positive");
+    }
+
+    #[test]
+    fn single_dose_ec_peaks_later_than_ev() {
+        // EC (cypionate) has slower kinetics than EV (valerate)
+        let doses = vec![5.0];
+        let times = vec![0.0];
+
+        let ev_at_1 = e2_multidose_3c(1.0, &doses, &times, &[EstrannaiseModel::EvIm], 1.0, false);
+        let ec_at_1 = e2_multidose_3c(1.0, &doses, &times, &[EstrannaiseModel::EcIm], 1.0, false);
+
+        // EV should be higher at day 1 (faster absorption)
+        assert!(ev_at_1 > ec_at_1, "EV should rise faster: EV={ev_at_1} EC={ec_at_1}");
+    }
+
+    #[test]
+    fn multidose_superposition() {
+        let model = EstrannaiseModel::EvIm;
+        // Two doses at different times
+        let single_a = e2_multidose_3c(10.0, &[4.0], &[0.0], std::slice::from_ref(&model), 1.0, false);
+        let single_b = e2_multidose_3c(10.0, &[4.0], &[5.0], std::slice::from_ref(&model), 1.0, false);
+        let combined = e2_multidose_3c(10.0, &[4.0, 4.0], &[0.0, 5.0], &[model.clone(), model], 1.0, false);
+
+        assert!((combined - (single_a + single_b)).abs() < 0.01,
+            "multidose should be sum of individual: {combined} vs {}", single_a + single_b);
+    }
+
+    #[test]
+    fn conversion_factor_scales_output() {
+        let doses = vec![4.0];
+        let times = vec![0.0];
+        let models = vec![EstrannaiseModel::EvIm];
+
+        let base = e2_multidose_3c(3.0, &doses, &times, &models, 1.0, false);
+        let scaled = e2_multidose_3c(3.0, &doses, &times, &models, 2.0, false);
+
+        assert!((scaled - base * 2.0).abs() < 0.01, "factor should scale linearly: {scaled} vs {}", base * 2.0);
+    }
+
+    #[test]
+    fn intervals_mode_converts_to_absolute() {
+        let model = EstrannaiseModel::EvIm;
+        // intervals: [7, 7] means doses at day 0 and day 7
+        let from_intervals = e2_multidose_3c(10.0, &[4.0, 4.0], &[7.0, 7.0], &[model.clone(), model.clone()], 1.0, true);
+        let from_absolute = e2_multidose_3c(10.0, &[4.0, 4.0], &[0.0, 7.0], &[model.clone(), model.clone()], 1.0, false);
+
+        assert!((from_intervals - from_absolute).abs() < 0.01,
+            "intervals and absolute should match: {from_intervals} vs {from_absolute}");
+    }
+
+    #[test]
+    fn empty_doses_returns_zero() {
+        let result = e2_multidose_3c(5.0, &[], &[], &[], 1.0, false);
+        assert_eq!(result, 0.0);
+    }
+
+    #[test]
+    fn negative_time_returns_zero() {
+        // Before injection, level should be 0
+        let result = e2_multidose_3c(-1.0, &[4.0], &[0.0], &[EstrannaiseModel::EvIm], 1.0, false);
+        assert_eq!(result, 0.0);
+    }
+
+    #[test]
+    fn zero_dose_returns_zero() {
+        let result = e2_multidose_3c(5.0, &[0.0], &[0.0], &[EstrannaiseModel::EvIm], 1.0, false);
+        assert_eq!(result, 0.0);
+    }
+
+    #[test]
+    fn all_models_produce_positive_values() {
+        let params = pk_parameters();
+        for model in params.keys() {
+            let result = e2_multidose_3c(3.0, &[5.0], &[0.0], std::slice::from_ref(model), 1.0, false);
+            assert!(result > 0.0, "{:?} produced non-positive value: {result}", model);
+        }
+    }
+}

@@ -385,3 +385,47 @@ fn is_safe_storage_name(value: &str) -> bool {
 fn json_error(message: &str, status: StatusCode) -> Response {
     (status, Json(json!({ "error": message }))).into_response()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn safe_storage_name_accepts_valid() {
+        assert!(is_safe_storage_name("photo.jpg"));
+        assert!(is_safe_storage_name("123_test.png"));
+        assert!(is_safe_storage_name("file-name.webp"));
+    }
+
+    #[test]
+    fn safe_storage_name_rejects_traversal() {
+        assert!(!is_safe_storage_name("../secret.txt"));
+        assert!(!is_safe_storage_name(".."));
+        assert!(!is_safe_storage_name("foo/../bar.jpg"));
+    }
+
+    #[test]
+    fn safe_storage_name_rejects_empty() {
+        assert!(!is_safe_storage_name(""));
+    }
+
+    #[test]
+    fn ext_from_name_uses_filename() {
+        assert_eq!(ext_from_name_or_type(Some("photo.jpg"), None), "jpg");
+        assert_eq!(ext_from_name_or_type(Some("test.PNG"), None), "png");
+    }
+
+    #[test]
+    fn ext_from_name_falls_back_to_content_type() {
+        assert_eq!(ext_from_name_or_type(None, Some("image/jpeg")), "jpg");
+        assert_eq!(ext_from_name_or_type(None, Some("image/png")), "png");
+        assert_eq!(ext_from_name_or_type(None, Some("image/webp")), "webp");
+        assert_eq!(ext_from_name_or_type(None, Some("application/pdf")), "pdf");
+    }
+
+    #[test]
+    fn ext_from_name_defaults_to_bin() {
+        assert_eq!(ext_from_name_or_type(None, None), "bin");
+        assert_eq!(ext_from_name_or_type(None, Some("application/unknown")), "bin");
+    }
+}

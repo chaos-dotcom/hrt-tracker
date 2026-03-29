@@ -391,4 +391,270 @@ mod tests {
         assert!(injectable_iu_from_dose(&data, 4.0, &HormoneUnits::Mg, vial, None,).is_none());
         assert!(injectable_dose_from_iu(&data, 10.0, vial, None).is_none());
     }
+
+    #[test]
+    fn parse_hormone_unit_all_variants() {
+        use super::parse_hormone_unit;
+        assert_eq!(parse_hormone_unit("pg/mL"), Some(HormoneUnits::E2PgMl));
+        assert_eq!(parse_hormone_unit("pmol/L"), Some(HormoneUnits::E2PmolL));
+        assert_eq!(parse_hormone_unit("ng/dL"), Some(HormoneUnits::TNgDl));
+        assert_eq!(parse_hormone_unit("nmol/L"), Some(HormoneUnits::TNmolL));
+        assert_eq!(parse_hormone_unit("mg"), Some(HormoneUnits::Mg));
+        assert_eq!(parse_hormone_unit("ng/mL"), Some(HormoneUnits::NgMl));
+        assert_eq!(parse_hormone_unit("mIU/mL"), Some(HormoneUnits::MIuMl));
+        assert_eq!(parse_hormone_unit("mIU/L"), Some(HormoneUnits::MIuL));
+        assert_eq!(parse_hormone_unit("U/L"), Some(HormoneUnits::UL));
+        assert_eq!(parse_hormone_unit("invalid"), None);
+    }
+
+    #[test]
+    fn parse_length_unit_variants() {
+        use super::parse_length_unit;
+        use hrt_shared::types::LengthUnit;
+        assert_eq!(parse_length_unit("cm"), Some(LengthUnit::CM));
+        assert_eq!(parse_length_unit("in"), Some(LengthUnit::IN));
+        assert_eq!(parse_length_unit("m"), None);
+    }
+
+    #[test]
+    fn hormone_unit_label_roundtrips() {
+        use super::{hormone_unit_label, parse_hormone_unit};
+        let units = ["pg/mL", "pmol/L", "ng/dL", "nmol/L", "mg", "ng/mL", "mIU/mL", "mIU/L", "U/L"];
+        for label in units {
+            let parsed = parse_hormone_unit(label).unwrap();
+            assert_eq!(hormone_unit_label(&parsed), label);
+        }
+    }
+
+    #[test]
+    fn fmt_decimal_basic() {
+        use super::fmt_decimal;
+        assert_eq!(fmt_decimal(1.0, 3), "1");
+        assert_eq!(fmt_decimal(1.5, 3), "1.5");
+        assert_eq!(fmt_decimal(1.500, 3), "1.5");
+        assert_eq!(fmt_decimal(0.125, 3), "0.125");
+        assert_eq!(fmt_decimal(1234.0, 2), "1234");
+    }
+
+    #[test]
+    fn fmt_decimal_non_finite() {
+        use super::fmt_decimal;
+        assert_eq!(fmt_decimal(f64::NAN, 3), "-");
+        assert_eq!(fmt_decimal(f64::INFINITY, 3), "-");
+        assert_eq!(fmt_decimal(f64::NEG_INFINITY, 3), "-");
+    }
+
+    #[test]
+    fn fmt_blood_value_uses_4_decimals() {
+        use super::fmt_blood_value;
+        assert_eq!(fmt_blood_value(1.23456), "1.2346");
+        assert_eq!(fmt_blood_value(100.0), "100");
+        assert_eq!(fmt_blood_value(f64::NAN), "-");
+    }
+
+    #[test]
+    fn convert_estradiol_to_display_pg_to_pmol() {
+        use super::convert_estradiol_to_display;
+        let result = convert_estradiol_to_display(100.0, &HormoneUnits::E2PgMl, &HormoneUnits::E2PmolL);
+        assert!((result - 367.13).abs() < 0.1, "got {result}");
+    }
+
+    #[test]
+    fn convert_estradiol_to_display_pmol_to_pg() {
+        use super::convert_estradiol_to_display;
+        let result = convert_estradiol_to_display(367.13, &HormoneUnits::E2PmolL, &HormoneUnits::E2PgMl);
+        assert!((result - 100.0).abs() < 0.1, "got {result}");
+    }
+
+    #[test]
+    fn convert_estradiol_to_display_same_unit() {
+        use super::convert_estradiol_to_display;
+        assert_eq!(convert_estradiol_to_display(42.0, &HormoneUnits::E2PgMl, &HormoneUnits::E2PgMl), 42.0);
+        assert_eq!(convert_estradiol_to_display(42.0, &HormoneUnits::E2PmolL, &HormoneUnits::E2PmolL), 42.0);
+    }
+
+    #[test]
+    fn estradiol_conversion_factor_values() {
+        use super::estradiol_conversion_factor;
+        assert_eq!(estradiol_conversion_factor(&HormoneUnits::E2PmolL), 3.6713);
+        assert_eq!(estradiol_conversion_factor(&HormoneUnits::E2PgMl), 1.0);
+    }
+
+    #[test]
+    fn convert_testosterone_to_ng_dl_from_nmol() {
+        use super::convert_testosterone_to_ng_dl;
+        let result = convert_testosterone_to_ng_dl(1.0, &HormoneUnits::TNmolL);
+        assert!((result - 28.818).abs() < 0.001);
+    }
+
+    #[test]
+    fn convert_testosterone_to_ng_dl_passthrough() {
+        use super::convert_testosterone_to_ng_dl;
+        assert_eq!(convert_testosterone_to_ng_dl(50.0, &HormoneUnits::TNgDl), 50.0);
+    }
+
+    #[test]
+    fn convert_fsh_to_miu_ml_from_miu_l() {
+        use super::convert_fsh_to_miu_ml;
+        assert_eq!(convert_fsh_to_miu_ml(5000.0, &HormoneUnits::MIuL), 5.0);
+    }
+
+    #[test]
+    fn convert_fsh_to_miu_ml_from_u_l() {
+        use super::convert_fsh_to_miu_ml;
+        assert_eq!(convert_fsh_to_miu_ml(5.0, &HormoneUnits::UL), 5.0);
+    }
+
+    #[test]
+    fn convert_lh_to_miu_ml_from_miu_l() {
+        use super::convert_lh_to_miu_ml;
+        assert_eq!(convert_lh_to_miu_ml(3000.0, &HormoneUnits::MIuL), 3.0);
+    }
+
+    #[test]
+    fn convert_progesterone_to_ng_ml_from_nmol() {
+        use super::convert_progesterone_to_ng_ml;
+        let result = convert_progesterone_to_ng_ml(10.0, &HormoneUnits::TNmolL);
+        assert!((result - 3.1).abs() < 0.001);
+    }
+
+    #[test]
+    fn compute_fudge_factor_basic() {
+        use super::compute_fudge_factor;
+        // measured 200, predicted 100 -> fudge = 2.0
+        assert_eq!(compute_fudge_factor(Some(200.0), Some(100.0)), Some(2.0));
+    }
+
+    #[test]
+    fn compute_fudge_factor_no_measured() {
+        use super::compute_fudge_factor;
+        assert_eq!(compute_fudge_factor(None, Some(100.0)), None);
+    }
+
+    #[test]
+    fn compute_fudge_factor_no_predicted() {
+        use super::compute_fudge_factor;
+        // No prediction -> default to 1.0
+        assert_eq!(compute_fudge_factor(Some(200.0), None), Some(1.0));
+    }
+
+    #[test]
+    fn compute_fudge_factor_zero_predicted() {
+        use super::compute_fudge_factor;
+        assert_eq!(compute_fudge_factor(Some(200.0), Some(0.0)), Some(1.0));
+    }
+
+    #[test]
+    fn compute_fudge_factor_nan_measured() {
+        use super::compute_fudge_factor;
+        assert_eq!(compute_fudge_factor(Some(f64::NAN), Some(100.0)), None);
+    }
+
+    #[test]
+    fn compute_fudge_factor_rounding() {
+        use super::compute_fudge_factor;
+        // 100 / 300 = 0.33333... -> rounded to 0.333
+        assert_eq!(compute_fudge_factor(Some(100.0), Some(300.0)), Some(0.333));
+    }
+
+    #[test]
+    fn injectable_iu_rejects_non_mg_unit() {
+        let data = HrtData::default();
+        let result = injectable_iu_from_dose(&data, 4.0, &HormoneUnits::E2PgMl, None, None);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn injectable_iu_rejects_negative_dose() {
+        let data = HrtData::default();
+        let result = injectable_iu_from_dose(&data, -1.0, &HormoneUnits::Mg, None, None);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn injectable_dose_from_iu_rejects_negative() {
+        let data = HrtData::default();
+        assert!(injectable_dose_from_iu(&data, -10.0, None, None).is_none());
+        assert!(injectable_dose_from_iu(&data, 0.0, None, None).is_none());
+    }
+
+    #[test]
+    fn format_injectable_dose_without_iu() {
+        use super::format_injectable_dose;
+        let data = HrtData::default();
+        let result = format_injectable_dose(&data, 4.0, &HormoneUnits::Mg, None, None, false);
+        assert_eq!(result, "4 mg");
+    }
+
+    #[test]
+    fn format_injectable_dose_non_finite() {
+        use super::format_injectable_dose;
+        let data = HrtData::default();
+        assert_eq!(format_injectable_dose(&data, f64::NAN, &HormoneUnits::Mg, None, None, false), "-");
+    }
+
+    #[test]
+    fn format_injectable_dose_with_iu_and_vial() {
+        use super::format_injectable_dose;
+        use hrt_shared::types::Vial;
+        let mut data = HrtData::default();
+        data.vials.push(Vial {
+            id: "v1".to_string(),
+            esterKind: None,
+            suspensionOil: None,
+            otherIngredients: None,
+            batchNumber: None,
+            source: None,
+            concentrationMgPerMl: Some(40.0),
+            isSpent: None,
+            spentAt: None,
+            useBy: None,
+            createdAt: 0,
+            subVials: Vec::new(),
+        });
+        let vid = "v1".to_string();
+        let result = format_injectable_dose(&data, 4.0, &HormoneUnits::Mg, Some(&vid), None, true);
+        assert_eq!(result, "10 IU (4 mg)");
+    }
+
+    #[test]
+    fn parse_decimal_negative_values() {
+        assert_eq!(parse_decimal("-1.5"), Some(-1.5));
+        assert_eq!(parse_decimal("-0.25"), Some(-0.25));
+        assert_eq!(parse_decimal("+3.25"), Some(3.25));
+    }
+
+    #[test]
+    fn parse_decimal_unicode_spaces() {
+        // Non-breaking space, narrow no-break space, thin space
+        assert_eq!(parse_decimal("1\u{00a0}234,5"), Some(1234.5));
+        assert_eq!(parse_decimal("1\u{202f}234,5"), Some(1234.5));
+        assert_eq!(parse_decimal("1\u{2009}234,5"), Some(1234.5));
+    }
+
+    #[test]
+    fn injectable_concentration_uses_fallback() {
+        use super::injectable_concentration_mg_ml;
+        use hrt_shared::types::Vial;
+        let mut data = HrtData::default();
+        data.vials.push(Vial {
+            id: "schedule-vial".to_string(),
+            esterKind: None,
+            suspensionOil: None,
+            otherIngredients: None,
+            batchNumber: None,
+            source: None,
+            concentrationMgPerMl: Some(20.0),
+            isSpent: None,
+            spentAt: None,
+            useBy: None,
+            createdAt: 0,
+            subVials: Vec::new(),
+        });
+        let missing = "nonexistent".to_string();
+        let schedule_id = "schedule-vial".to_string();
+        // Primary vial not found, falls back to schedule vial
+        let result = injectable_concentration_mg_ml(&data, Some(&missing), Some(&schedule_id));
+        assert_eq!(result, Some(20.0));
+    }
 }
