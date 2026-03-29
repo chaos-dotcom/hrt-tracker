@@ -1347,12 +1347,16 @@ pub fn ViewPage() -> impl IntoView {
                                 children=move |note| {
                                     let note_id = note.id.clone();
                                     let note_id_for_edit = note_id.clone();
-                                    let note_title = StoredValue::new(note.title.clone().unwrap_or_default());
-                                    let note_content = StoredValue::new(note.content.clone());
-                                    let note_has_title = !note_title.get_value().is_empty();
+                                    let lookup_id = note_id.clone();
+                                    let current = create_memo(move |_| {
+                                        sorted_notes.get().into_iter().find(|n| n.id == lookup_id).unwrap_or_else(|| DiaryEntry {
+                                            id: String::new(),
+                                            date: 0,
+                                            title: None,
+                                            content: String::new(),
+                                        })
+                                    });
                                     let is_editing = move || editing_note_id.get().as_ref() == Some(&note_id_for_edit);
-                                    let date_label = move || fmt_date_label(note.date, &x_axis_mode.get(), first_dose_date.get());
-                                    let edit_note = StoredValue::new(note.clone());
                                     let note_id_value = StoredValue::new(note_id.clone());
                                     let save_edit_note = save_edit_note;
                                     view! {
@@ -1360,17 +1364,19 @@ pub fn ViewPage() -> impl IntoView {
                                             <Show when=is_editing fallback=move || view! {
                                                 <div class="note-display">
                                                     <div>
-                                                        <div class="note-date">{date_label}</div>
-                                                        <Show when=move || note_has_title>
-                                                            <div class="note-title">{note_title.get_value()}</div>
+                                                        <div class="note-date">{move || fmt_date_label(current.get().date, &x_axis_mode.get(), first_dose_date.get())}</div>
+                                                        <Show when=move || current.get().title.as_ref().is_some_and(|t| !t.is_empty())>
+                                                            <div class="note-title">{move || current.get().title.clone().unwrap_or_default()}</div>
                                                         </Show>
-                                                        <div class="note-content">{note_content.get_value()}</div>
+                                                        <div class="note-content">{move || current.get().content.clone()}</div>
                                                     </div>
                                                     <div class="note-actions">
                                                         <button
                                                             type="button"
                                                             class="action-button"
-                                                            on:click=move |_| start_edit_note(edit_note.get_value())
+                                                            on:click=move |_| {
+                                                                start_edit_note(current.get());
+                                                            }
                                                         >
                                                             "Edit"
                                                         </button>
