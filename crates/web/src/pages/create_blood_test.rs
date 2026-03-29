@@ -50,6 +50,7 @@ struct OcrExtraction {
     prolactin: Option<OcrValue>,
     shbg: Option<OcrValue>,
     fai: Option<OcrValue>,
+    sample_date: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -85,8 +86,13 @@ fn apply_ocr_extraction(
     shbg_level: RwSignal<String>,
     shbg_unit: RwSignal<String>,
     free_androgen_index: RwSignal<String>,
+    test_date_time: RwSignal<String>,
 ) -> usize {
     let mut filled = 0;
+    if let Some(date) = extracted.sample_date {
+        test_date_time.set(date);
+        filled += 1;
+    }
     if let Some(value) = extracted.estradiol {
         estradiol_level.set(value.value);
         if let Some(unit) = value.unit {
@@ -259,6 +265,94 @@ fn extract_ocr_value(text: &str, labels: &[&str]) -> Option<OcrValue> {
     None
 }
 
+fn month_from_name(name: &str) -> Option<u32> {
+    match name {
+        "jan" | "january" => Some(1),
+        "feb" | "february" => Some(2),
+        "mar" | "march" => Some(3),
+        "apr" | "april" => Some(4),
+        "may" => Some(5),
+        "jun" | "june" => Some(6),
+        "jul" | "july" => Some(7),
+        "aug" | "august" => Some(8),
+        "sep" | "september" => Some(9),
+        "oct" | "october" => Some(10),
+        "nov" | "november" => Some(11),
+        "dec" | "december" => Some(12),
+        _ => None,
+    }
+}
+
+fn try_parse_date(tokens: &[&str]) -> Option<String> {
+    if tokens.is_empty() {
+        return None;
+    }
+    // Try DD/MM/YYYY or DD-MM-YYYY
+    let first = tokens[0];
+    for sep in ['/', '-'] {
+        let parts: Vec<&str> = first.split(sep).collect();
+        if parts.len() == 3 {
+            let a: u32 = parts[0].parse().ok()?;
+            let b: u32 = parts[1].parse().ok()?;
+            let c: u32 = parts[2].parse().ok()?;
+            let (year, month, day) = if c > 100 {
+                // DD/MM/YYYY
+                (c, b, a)
+            } else if a > 100 {
+                // YYYY/MM/DD
+                (a, b, c)
+            } else {
+                return None;
+            };
+            if (1..=12).contains(&month) && (1..=31).contains(&day) {
+                return Some(format!("{year:04}-{month:02}-{day:02}T12:00"));
+            }
+        }
+    }
+    // Try DD MMM YYYY (tokens: ["15", "Mar", "2025"])
+    if tokens.len() >= 3 {
+        if let Ok(day) = tokens[0].parse::<u32>() {
+            if let Some(month) = month_from_name(&tokens[1].to_lowercase()) {
+                if let Ok(year) = tokens[2].trim_end_matches(|c: char| !c.is_ascii_digit()).parse::<u32>() {
+                    if (1..=31).contains(&day) && year > 1900 {
+                        return Some(format!("{year:04}-{month:02}-{day:02}T12:00"));
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+fn extract_sample_date(text: &str) -> Option<String> {
+    let lower = text.to_lowercase();
+    let labels = [
+        "sample collection date",
+        "collection date",
+        "date collected",
+        "date of collection",
+        "sample date",
+        "specimen collection date",
+        "specimen date",
+        "collected on",
+        "collected date",
+        "date of sample",
+    ];
+    for label in labels {
+        if let Some(idx) = lower.find(label) {
+            let start = idx + label.len();
+            let end = (start + 80).min(text.len());
+            let window = &text[start..end];
+            let trimmed = window.trim_start_matches([':', ' ', '\t']);
+            let tokens: Vec<&str> = trimmed.split_whitespace().collect();
+            if let Some(date) = try_parse_date(&tokens) {
+                return Some(date);
+            }
+        }
+    }
+    None
+}
+
 fn extract_ocr_values(text: &str) -> OcrExtraction {
     let cleaned = text.replace('\r', "\n");
     OcrExtraction {
@@ -280,6 +374,7 @@ fn extract_ocr_values(text: &str) -> OcrExtraction {
         prolactin: extract_ocr_value(&cleaned, &["prolactin"]),
         shbg: extract_ocr_value(&cleaned, &["sex hormone binding globulin", "shbg"]),
         fai: extract_ocr_value(&cleaned, &["free androgen index", "fai"]),
+        sample_date: extract_sample_date(&cleaned),
     }
 }
 
@@ -369,6 +464,7 @@ pub fn CreateBloodTest() -> impl IntoView {
         let shbg_level = shbg_level;
         let shbg_unit = shbg_unit;
         let free_androgen_index = free_androgen_index;
+        let test_date_time = test_date_time;
         move |ev: leptos::ev::Event| {
             if ocr_busy.get() {
                 return;
@@ -481,6 +577,7 @@ pub fn CreateBloodTest() -> impl IntoView {
                         shbg_level,
                         shbg_unit,
                         free_androgen_index,
+                        test_date_time,
                     );
                     if filled == 0 {
                         ocr_error.set(Some("OCR ran, but no lab values were found.".to_string()));
@@ -523,6 +620,7 @@ pub fn CreateBloodTest() -> impl IntoView {
         let shbg_level = shbg_level;
         let shbg_unit = shbg_unit;
         let free_androgen_index = free_androgen_index;
+        let test_date_time = test_date_time;
         move |ev: leptos::ev::Event| {
             if pdf_busy.get() {
                 return;
@@ -643,6 +741,7 @@ pub fn CreateBloodTest() -> impl IntoView {
                             shbg_level,
                             shbg_unit,
                             free_androgen_index,
+                            test_date_time,
                         );
                     }
                     if item.extract_error.is_some() {
