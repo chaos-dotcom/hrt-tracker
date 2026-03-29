@@ -361,3 +361,24 @@ async fn write_db_json(store: &DbStore, key: &str, value: &Value) -> Result<(), 
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn content_type_known_extensions() {
+        assert_eq!(content_type_from_ext("jpg"), "image/jpeg");
+        assert_eq!(content_type_from_ext("jpeg"), "image/jpeg");
+        assert_eq!(content_type_from_ext("png"), "image/png");
+        assert_eq!(content_type_from_ext("webp"), "image/webp");
+        assert_eq!(content_type_from_ext("heic"), "image/heic");
+        assert_eq!(content_type_from_ext("pdf"), "application/pdf");
+    }
+
+    #[test]
+    fn content_type_unknown_extension() {
+        assert_eq!(content_type_from_ext("xyz"), "application/octet-stream");
+        assert_eq!(content_type_from_ext(""), "application/octet-stream");
+    }
+}

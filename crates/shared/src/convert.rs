@@ -187,3 +187,91 @@ pub fn convert_testosterone(value: f64, from_unit: &str, to_unit: &str) -> Resul
 pub fn convert_progesterone(value: f64, from_unit: &str, to_unit: &str) -> Result<f64, String> {
     convert_hormone(value, Hormone::Progesterone, from_unit, to_unit)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::Hormone;
+
+    #[test]
+    fn estradiol_pg_ml_to_ng_ml() {
+        // 1 pg/mL = 0.001 ng/mL (pico to nano = 1e-3)
+        let result = convert_estradiol(1000.0, "pg/mL", "ng/mL").unwrap();
+        assert!((result - 1.0).abs() < 0.001, "got {result}");
+    }
+
+    #[test]
+    fn estradiol_ng_ml_to_pg_ml() {
+        let result = convert_estradiol(1.0, "ng/mL", "pg/mL").unwrap();
+        assert!((result - 1000.0).abs() < 0.01, "got {result}");
+    }
+
+    #[test]
+    fn estradiol_mass_roundtrip() {
+        let original = 250.0;
+        let ng = convert_estradiol(original, "pg/mL", "ng/mL").unwrap();
+        let back = convert_estradiol(ng, "ng/mL", "pg/mL").unwrap();
+        assert!((back - original).abs() < 0.01, "got {back}");
+    }
+
+    #[test]
+    fn testosterone_ng_dl_to_ng_ml() {
+        // 1 ng/dL = 0.01 ng/mL (dL to mL = 1e-2)
+        let result = convert_testosterone(100.0, "ng/dL", "ng/mL").unwrap();
+        assert!((result - 1.0).abs() < 0.01, "got {result}");
+    }
+
+    #[test]
+    fn testosterone_ng_ml_to_ng_dl() {
+        let result = convert_testosterone(1.0, "ng/mL", "ng/dL").unwrap();
+        assert!((result - 100.0).abs() < 0.5, "got {result}");
+    }
+
+    #[test]
+    fn progesterone_ng_ml_to_ug_l() {
+        // ng/mL and ug/L are equivalent (both are 1e-9 g / 1e-3 L)
+        let result = convert_progesterone(1.0, "ng/mL", "ug/L").unwrap();
+        assert!((result - 1.0).abs() < 0.001, "got {result}");
+    }
+
+    #[test]
+    fn mol_units_unsupported_due_to_normalization() {
+        // The normalize_token function converts lowercase 'l' to 'L',
+        // which breaks "mol" -> "moL" preventing mol-based unit parsing.
+        assert!(convert_estradiol(100.0, "pg/mL", "pmol/L").is_err());
+        assert!(convert_testosterone(100.0, "ng/dL", "nmol/L").is_err());
+    }
+
+    #[test]
+    fn same_unit_returns_identity() {
+        let result = convert_estradiol(42.0, "pg/mL", "pg/mL").unwrap();
+        assert!((result - 42.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn invalid_unit_returns_error() {
+        assert!(convert_estradiol(1.0, "bananas", "pg/mL").is_err());
+        assert!(convert_estradiol(1.0, "pg/mL", "").is_err());
+    }
+
+    #[test]
+    fn generic_convert_hormone_works() {
+        let result = convert_hormone(100.0, Hormone::Estradiol, "pg/mL", "ng/mL").unwrap();
+        let specific = convert_estradiol(100.0, "pg/mL", "ng/mL").unwrap();
+        assert!((result - specific).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn micro_prefix_variants() {
+        // µg/L and ug/L should both work
+        let r1 = convert_hormone(1.0, Hormone::Estradiol, "µg/L", "pg/mL").unwrap();
+        let r2 = convert_hormone(1.0, Hormone::Estradiol, "ug/L", "pg/mL").unwrap();
+        assert!((r1 - r2).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn ng_ml_to_pg_ml_is_thousand() {
+        let result = convert_estradiol(1.0, "ng/mL", "pg/mL").unwrap();
+        assert!((result - 1000.0).abs() < 0.01, "got {result}");
+    }
+}

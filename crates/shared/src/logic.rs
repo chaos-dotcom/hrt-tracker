@@ -329,3 +329,346 @@ impl ScheduleFields for ProgesteroneSchedule {
         self.nextDoseDate = Some(ts);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::*;
+
+    fn make_injectable_entry(date: i64, kind: InjectableEstradiols, dose: f64) -> DosageHistoryEntry {
+        DosageHistoryEntry::InjectableEstradiol {
+            date,
+            id: None,
+            kind,
+            dose,
+            unit: HormoneUnits::Mg,
+            note: None,
+            bonusDose: None,
+            injectionSite: None,
+            vialId: None,
+            subVialId: None,
+            syringeKind: None,
+            needleLength: None,
+            needleGauge: None,
+            photos: None,
+        }
+    }
+
+    fn make_oral_entry(date: i64) -> DosageHistoryEntry {
+        DosageHistoryEntry::OralEstradiol {
+            date,
+            id: None,
+            kind: OralEstradiols::Hemihydrate,
+            dose: 2.0,
+            unit: HormoneUnits::Mg,
+            pillQuantity: None,
+            note: None,
+        }
+    }
+
+    #[test]
+    fn predict_e2_returns_none_for_empty_history() {
+        let data = HrtData::default();
+        assert!(predict_e2_pg_ml(&data, 1700000000000).is_none());
+    }
+
+    #[test]
+    fn predict_e2_returns_none_for_oral_only() {
+        let mut data = HrtData::default();
+        data.dosageHistory.push(make_oral_entry(1700000000000));
+        assert!(predict_e2_pg_ml(&data, 1700100000000).is_none());
+    }
+
+    #[test]
+    fn predict_e2_returns_none_before_first_dose() {
+        let mut data = HrtData::default();
+        data.dosageHistory.push(make_injectable_entry(
+            1700000000000,
+            InjectableEstradiols::Valerate,
+            4.0,
+        ));
+        // Query before the dose
+        assert!(predict_e2_pg_ml(&data, 1699999000000).is_none());
+    }
+
+    #[test]
+    fn predict_e2_returns_some_after_dose() {
+        let mut data = HrtData::default();
+        let dose_time = 1700000000000_i64;
+        data.dosageHistory.push(make_injectable_entry(
+            dose_time,
+            InjectableEstradiols::Valerate,
+            4.0,
+        ));
+        // 3 days later
+        let result = predict_e2_pg_ml(&data, dose_time + 3 * DAY_MS);
+        assert!(result.is_some(), "should predict after dose");
+        assert!(result.unwrap() > 0.0, "prediction should be positive");
+    }
+
+    #[test]
+    fn predict_e2_returns_none_for_polyestradiol_phosphate_only() {
+        let mut data = HrtData::default();
+        data.dosageHistory.push(make_injectable_entry(
+            1700000000000,
+            InjectableEstradiols::PolyestradiolPhosphate,
+            40.0,
+        ));
+        // PEP has no estrannaise model
+        assert!(predict_e2_pg_ml(&data, 1700100000000).is_none());
+    }
+
+    #[test]
+    fn predict_e2_higher_dose_gives_higher_level() {
+        let dose_time = 1700000000000_i64;
+        let query_time = dose_time + 3 * DAY_MS;
+
+        let mut data_low = HrtData::default();
+        data_low.dosageHistory.push(make_injectable_entry(
+            dose_time,
+            InjectableEstradiols::Valerate,
+            2.0,
+        ));
+
+        let mut data_high = HrtData::default();
+        data_high.dosageHistory.push(make_injectable_entry(
+            dose_time,
+            InjectableEstradiols::Valerate,
+            8.0,
+        ));
+
+        let low = predict_e2_pg_ml(&data_low, query_time).unwrap();
+        let high = predict_e2_pg_ml(&data_high, query_time).unwrap();
+        assert!(high > low, "higher dose should give higher level: {high} vs {low}");
+    }
+
+    #[test]
+    fn migrate_fudge_factor_returns_false_for_no_blood_tests() {
+        let mut data = HrtData::default();
+        assert!(!migrate_blood_tests_fudge_factor(&mut data));
+    }
+
+    #[test]
+    fn migrate_fudge_factor_skips_existing() {
+        let mut data = HrtData::default();
+        data.dosageHistory.push(make_injectable_entry(
+            1700000000000,
+            InjectableEstradiols::Valerate,
+            4.0,
+        ));
+        data.bloodTests.push(BloodTest {
+            date: 1700000000000 + 3 * DAY_MS,
+            estradiolLevel: Some(200.0),
+            estradiolUnit: Some(HormoneUnits::E2PgMl),
+            fudgeFactor: Some(1.5),
+            testLevel: None,
+            testUnit: None,
+            progesteroneLevel: None,
+            progesteroneUnit: None,
+            fshLevel: None,
+            fshUnit: None,
+            lhLevel: None,
+            lhUnit: None,
+            prolactinLevel: None,
+            prolactinUnit: None,
+            shbgLevel: None,
+            shbgUnit: None,
+            freeAndrogenIndex: None,
+            estrannaiseNumber: None,
+            notes: None,
+            estrogenType: None,
+            pdfFiles: None,
+        });
+        // Already has fudge factor, should not migrate
+        assert!(!migrate_blood_tests_fudge_factor(&mut data));
+        assert_eq!(data.bloodTests[0].fudgeFactor, Some(1.5));
+    }
+
+    #[test]
+    fn migrate_fudge_factor_sets_value() {
+        let mut data = HrtData::default();
+        let dose_time = 1700000000000_i64;
+        data.dosageHistory.push(make_injectable_entry(
+            dose_time,
+            InjectableEstradiols::Valerate,
+            4.0,
+        ));
+        data.bloodTests.push(BloodTest {
+            date: dose_time + 3 * DAY_MS,
+            estradiolLevel: Some(200.0),
+            estradiolUnit: Some(HormoneUnits::E2PgMl),
+            fudgeFactor: None,
+            testLevel: None,
+            testUnit: None,
+            progesteroneLevel: None,
+            progesteroneUnit: None,
+            fshLevel: None,
+            fshUnit: None,
+            lhLevel: None,
+            lhUnit: None,
+            prolactinLevel: None,
+            prolactinUnit: None,
+            shbgLevel: None,
+            shbgUnit: None,
+            freeAndrogenIndex: None,
+            estrannaiseNumber: None,
+            notes: None,
+            estrogenType: None,
+            pdfFiles: None,
+        });
+        assert!(migrate_blood_tests_fudge_factor(&mut data));
+        assert!(data.bloodTests[0].fudgeFactor.is_some());
+        let ff = data.bloodTests[0].fudgeFactor.unwrap();
+        assert!(ff > 0.0, "fudge factor should be positive: {ff}");
+    }
+
+    #[test]
+    fn migrate_fudge_factor_handles_pmol_l_unit() {
+        let mut data = HrtData::default();
+        let dose_time = 1700000000000_i64;
+        data.dosageHistory.push(make_injectable_entry(
+            dose_time,
+            InjectableEstradiols::Valerate,
+            4.0,
+        ));
+        data.bloodTests.push(BloodTest {
+            date: dose_time + 3 * DAY_MS,
+            estradiolLevel: Some(734.26), // ~200 pg/mL in pmol/L
+            estradiolUnit: Some(HormoneUnits::E2PmolL),
+            fudgeFactor: None,
+            testLevel: None,
+            testUnit: None,
+            progesteroneLevel: None,
+            progesteroneUnit: None,
+            fshLevel: None,
+            fshUnit: None,
+            lhLevel: None,
+            lhUnit: None,
+            prolactinLevel: None,
+            prolactinUnit: None,
+            shbgLevel: None,
+            shbgUnit: None,
+            freeAndrogenIndex: None,
+            estrannaiseNumber: None,
+            notes: None,
+            estrogenType: None,
+            pdfFiles: None,
+        });
+        assert!(migrate_blood_tests_fudge_factor(&mut data));
+        let ff = data.bloodTests[0].fudgeFactor.unwrap();
+        assert!(ff > 0.0, "fudge factor should be positive: {ff}");
+    }
+
+    #[test]
+    fn snap_returns_ts_when_no_injectable() {
+        let data = HrtData::default();
+        let ts = 1700000000000_i64;
+        assert_eq!(snap_to_next_injection_boundary(&data, ts), ts);
+    }
+
+    #[test]
+    fn snap_returns_ts_when_zero_frequency() {
+        let mut data = HrtData::default();
+        data.injectableEstradiol = Some(InjectableSchedule {
+            kind: InjectableEstradiols::Valerate,
+            dose: 4.0,
+            unit: HormoneUnits::Mg,
+            frequency: 0.0,
+            vialId: None,
+            subVialId: None,
+            syringeKind: None,
+            needleLength: None,
+            needleGauge: None,
+            nextDoseDate: None,
+        });
+        let ts = 1700000000000_i64;
+        assert_eq!(snap_to_next_injection_boundary(&data, ts), ts);
+    }
+
+    #[test]
+    fn snap_advances_to_next_boundary() {
+        let dose_time = 1700000000000_i64;
+        let mut data = HrtData::default();
+        data.injectableEstradiol = Some(InjectableSchedule {
+            kind: InjectableEstradiols::Valerate,
+            dose: 4.0,
+            unit: HormoneUnits::Mg,
+            frequency: 7.0,
+            vialId: None,
+            subVialId: None,
+            syringeKind: None,
+            needleLength: None,
+            needleGauge: None,
+            nextDoseDate: None,
+        });
+        data.dosageHistory.push(make_injectable_entry(
+            dose_time,
+            InjectableEstradiols::Valerate,
+            4.0,
+        ));
+
+        // Query 1 day after dose - should snap to next boundary (dose_time + 7 days, at 10:00 AM)
+        let result = snap_to_next_injection_boundary(&data, dose_time + DAY_MS);
+        assert!(result > dose_time, "snapped time should be after dose: {result} vs {dose_time}");
+        assert!(result >= dose_time + 7 * DAY_MS - DAY_MS, "should be near next boundary");
+    }
+
+    #[test]
+    fn backfill_skips_when_disabled() {
+        let mut data = HrtData::default();
+        data.settings = Some(Settings {
+            enableAutoBackfill: false,
+            icsSecret: None,
+            enableBloodTestSchedule: None,
+            bloodTestIntervalMonths: None,
+            statsBreakdownBySyringeKind: None,
+            displayEstradiolUnit: None,
+            displayInjectableInIU: None,
+            braSizeSystem: None,
+            pdfPassword: None,
+        });
+        data.injectableEstradiol = Some(InjectableSchedule {
+            kind: InjectableEstradiols::Valerate,
+            dose: 4.0,
+            unit: HormoneUnits::Mg,
+            frequency: 7.0,
+            vialId: None,
+            subVialId: None,
+            syringeKind: None,
+            needleLength: None,
+            needleGauge: None,
+            nextDoseDate: None,
+        });
+        backfill_scheduled_doses(&mut data);
+        assert!(data.injectableEstradiol.as_ref().unwrap().nextDoseDate.is_none());
+    }
+
+    #[test]
+    fn backfill_sets_next_dose_from_history() {
+        let mut data = HrtData::default();
+        let dose_time = chrono::Local::now().timestamp_millis() - 2 * DAY_MS; // 2 days ago
+        data.injectableEstradiol = Some(InjectableSchedule {
+            kind: InjectableEstradiols::Valerate,
+            dose: 4.0,
+            unit: HormoneUnits::Mg,
+            frequency: 7.0,
+            vialId: None,
+            subVialId: None,
+            syringeKind: None,
+            needleLength: None,
+            needleGauge: None,
+            nextDoseDate: None,
+        });
+        data.dosageHistory.push(make_injectable_entry(
+            dose_time,
+            InjectableEstradiols::Valerate,
+            4.0,
+        ));
+        backfill_scheduled_doses(&mut data);
+        let next = data.injectableEstradiol.as_ref().unwrap().nextDoseDate;
+        assert!(next.is_some(), "should have set nextDoseDate");
+        let next = next.unwrap();
+        // Should be dose_time + 7 days
+        assert!(next > dose_time, "next dose should be after last dose");
+    }
+}

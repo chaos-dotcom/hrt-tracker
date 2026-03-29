@@ -393,3 +393,210 @@ fn utc_day_start(ms: i64) -> i64 {
         .map(|d| d.timestamp_millis())
         .unwrap_or(ms)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn generate_ics_empty_data() {
+        let data = json!({});
+        let conf = json!({});
+        let options = IcsOptions {
+            horizon_days: 30,
+            include_past: true,
+            now_ms: 1700000000000,
+        };
+        let cal = generate_ics(&data, &conf, options);
+        assert!(cal.contains("BEGIN:VCALENDAR"));
+        assert!(cal.contains("END:VCALENDAR"));
+        assert!(cal.contains("VERSION:2.0"));
+        assert!(cal.contains("PRODID:-//HRT Tracker//EN"));
+    }
+
+    #[test]
+    fn generate_ics_includes_dosage_history() {
+        let data = json!({
+            "dosageHistory": [{
+                "date": 1700000000000_i64,
+                "medicationType": "injectableEstradiol",
+                "type": "Estradiol Valerate",
+                "dose": 4,
+                "unit": "mg"
+            }]
+        });
+        let conf = json!({});
+        let options = IcsOptions {
+            horizon_days: 30,
+            include_past: true,
+            now_ms: 1700100000000,
+        };
+        let cal = generate_ics(&data, &conf, options);
+        assert!(cal.contains("Injection"), "should contain medication summary");
+        assert!(cal.contains("Estradiol Valerate"), "should contain drug name");
+        assert!(cal.contains("Recorded dose"), "should contain description");
+    }
+
+    #[test]
+    fn generate_ics_excludes_history_when_disabled() {
+        let data = json!({
+            "dosageHistory": [{
+                "date": 1700000000000_i64,
+                "medicationType": "injectableEstradiol",
+                "type": "Estradiol Valerate",
+                "dose": 4,
+                "unit": "mg"
+            }]
+        });
+        let conf = json!({});
+        let options = IcsOptions {
+            horizon_days: 30,
+            include_past: false,
+            now_ms: 1700100000000,
+        };
+        let cal = generate_ics(&data, &conf, options);
+        assert!(!cal.contains("Recorded dose"), "should not contain past events");
+    }
+
+    #[test]
+    fn generate_ics_includes_scheduled_doses() {
+        let now = 1700000000000_i64;
+        let data = json!({
+            "injectableEstradiol": {
+                "type": "Estradiol Valerate",
+                "dose": 4,
+                "unit": "mg",
+                "frequency": 7,
+                "nextDoseDate": now + 86400000
+            }
+        });
+        let conf = json!({});
+        let options = IcsOptions {
+            horizon_days: 30,
+            include_past: false,
+            now_ms: now,
+        };
+        let cal = generate_ics(&data, &conf, options);
+        assert!(cal.contains("Scheduled Injection"), "should contain scheduled events");
+    }
+
+    #[test]
+    fn generate_ics_includes_blood_test_schedule() {
+        let now = 1700000000000_i64;
+        let data = json!({
+            "bloodTests": [{"date": now - 86400000 * 90}]
+        });
+        let conf = json!({
+            "enableBloodTestSchedule": true,
+            "bloodTestIntervalMonths": 3
+        });
+        let options = IcsOptions {
+            horizon_days: 365,
+            include_past: false,
+            now_ms: now,
+        };
+        let cal = generate_ics(&data, &conf, options);
+        assert!(cal.contains("Scheduled Blood Test"), "should contain blood test events");
+    }
+
+    #[test]
+    fn generate_ics_oral_estradiol_summary() {
+        let now = 1700000000000_i64;
+        let data = json!({
+            "dosageHistory": [{
+                "date": now,
+                "medicationType": "oralEstradiol",
+                "type": "Estradiol Hemihydrate",
+                "dose": 2,
+                "unit": "mg"
+            }]
+        });
+        let conf = json!({});
+        let options = IcsOptions {
+            horizon_days: 30,
+            include_past: true,
+            now_ms: now + 1000,
+        };
+        let cal = generate_ics(&data, &conf, options);
+        assert!(cal.contains("Oral Estradiol"), "should use oral estradiol summary");
+    }
+
+    #[test]
+    fn generate_ics_progesterone_includes_route() {
+        let now = 1700000000000_i64;
+        let data = json!({
+            "progesterone": {
+                "type": "Micronized Progesterone",
+                "route": "Oral",
+                "dose": 200,
+                "unit": "mg",
+                "frequency": 1,
+                "nextDoseDate": now + 86400000
+            }
+        });
+        let conf = json!({});
+        let options = IcsOptions {
+            horizon_days: 7,
+            include_past: false,
+            now_ms: now,
+        };
+        let cal = generate_ics(&data, &conf, options);
+        assert!(cal.contains("Progesterone"), "should contain progesterone events");
+        assert!(cal.contains("Oral"), "should include route");
+    }
+
+    #[test]
+    fn generate_ics_escapes_special_chars() {
+        let now = 1700000000000_i64;
+        let data = json!({
+            "dosageHistory": [{
+                "date": now,
+                "medicationType": "injectableEstradiol",
+                "type": "Test; Drug, Name",
+                "dose": 4,
+                "unit": "mg",
+                "note": "line1\nline2"
+            }]
+        });
+        let conf = json!({});
+        let options = IcsOptions {
+            horizon_days: 30,
+            include_past: true,
+            now_ms: now + 1000,
+        };
+        let cal = generate_ics(&data, &conf, options);
+        assert!(cal.contains("\\;"), "should escape semicolons");
+        assert!(cal.contains("\\,"), "should escape commas");
+    }
+
+    #[test]
+    fn generate_ics_multiple_medication_types() {
+        let now = 1700000000000_i64;
+        let data = json!({
+            "injectableEstradiol": {
+                "type": "Estradiol Valerate",
+                "dose": 4,
+                "unit": "mg",
+                "frequency": 7,
+                "nextDoseDate": now + 86400000
+            },
+            "antiandrogen": {
+                "type": "Cyproterone Acetate",
+                "dose": 12.5,
+                "unit": "mg",
+                "frequency": 1,
+                "nextDoseDate": now + 86400000
+            }
+        });
+        let conf = json!({});
+        let options = IcsOptions {
+            horizon_days: 14,
+            include_past: false,
+            now_ms: now,
+        };
+        let cal = generate_ics(&data, &conf, options);
+        assert!(cal.contains("Injection"), "should have injection events");
+        assert!(cal.contains("Antiandrogen"), "should have antiandrogen events");
+    }
+}
