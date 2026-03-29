@@ -390,3 +390,121 @@ pub fn CalcPage() -> impl IntoView {
         .into_view(),
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fmt_trims_trailing_zeros() {
+        assert_eq!(fmt(1.0, 3), "1");
+        assert_eq!(fmt(1.5, 3), "1.5");
+        assert_eq!(fmt(1.500, 3), "1.5");
+        assert_eq!(fmt(0.125, 3), "0.125");
+        assert_eq!(fmt(1234.0, 2), "1234");
+    }
+
+    #[test]
+    fn fmt_non_finite() {
+        assert_eq!(fmt(f64::NAN, 3), "\u{2014}");
+        assert_eq!(fmt(f64::INFINITY, 3), "\u{2014}");
+    }
+
+    #[test]
+    fn fmt_iu_from_ml_basic() {
+        assert_eq!(fmt_iu_from_ml(0.1), "10");
+        assert_eq!(fmt_iu_from_ml(0.25), "25");
+        assert_eq!(fmt_iu_from_ml(1.0), "100");
+    }
+
+    #[test]
+    fn fmt_iu_from_ml_non_finite() {
+        assert_eq!(fmt_iu_from_ml(f64::NAN), "\u{2014}");
+    }
+
+    #[test]
+    fn fmt_pct_small_values() {
+        assert_eq!(fmt_pct(0.5), "0.5");
+        assert_eq!(fmt_pct(1.0), "1");
+        assert_eq!(fmt_pct(1.5), "1.5");
+        assert_eq!(fmt_pct(1.99), "2");
+    }
+
+    #[test]
+    fn fmt_pct_large_values() {
+        assert_eq!(fmt_pct(5.0), "5");
+        assert_eq!(fmt_pct(10.7), "11");
+        assert_eq!(fmt_pct(50.0), "50");
+    }
+
+    #[test]
+    fn fmt_pct_non_finite() {
+        assert_eq!(fmt_pct(f64::NAN), "\u{2014}");
+        assert_eq!(fmt_pct(f64::INFINITY), "\u{2014}");
+    }
+
+    #[test]
+    fn calc_for_regular_syringe_known_values() {
+        let gear = Gear { name: "Test", dead_ul: 92.0 };
+        let result = calc_for(gear, 4.0, 7.0, 10.0, 40.0);
+        // dose_ml = 4/40 = 0.1, dead_ml = 0.092, drawn = 0.192
+        // raw_count = 10/0.192 = 52.08..., doses = 52
+        // days = 52.08 * 7 = 364.58 -> 365
+        // pct_waste = 100 * 0.092 / 0.192 = 47.9%
+        assert_eq!(result.doses, 52);
+        assert_eq!(result.days, 365);
+        assert!((result.pct_waste - 47.9).abs() < 1.0, "got {}", result.pct_waste);
+    }
+
+    #[test]
+    fn calc_for_insulin_syringe_known_values() {
+        let gear = Gear { name: "Insulin", dead_ul: 3.0 };
+        let result = calc_for(gear, 4.0, 7.0, 10.0, 40.0);
+        // dose_ml = 0.1, dead_ml = 0.003, drawn = 0.103
+        // raw_count = 10/0.103 = 97.08..., doses = 97
+        // days = 97.08 * 7 = 679.6 -> 680
+        assert_eq!(result.doses, 97);
+        assert_eq!(result.days, 680);
+    }
+
+    #[test]
+    fn calc_for_zero_dose_returns_empty() {
+        let gear = Gear { name: "Test", dead_ul: 92.0 };
+        let result = calc_for(gear, 0.0, 7.0, 10.0, 40.0);
+        assert_eq!(result.doses, 0);
+        assert_eq!(result.days, 0);
+        assert!(result.pct_waste.is_nan());
+    }
+
+    #[test]
+    fn calc_for_zero_conc_returns_empty() {
+        let gear = Gear { name: "Test", dead_ul: 92.0 };
+        let result = calc_for(gear, 4.0, 7.0, 10.0, 0.0);
+        assert_eq!(result.doses, 0);
+    }
+
+    #[test]
+    fn calc_for_nan_input_returns_empty() {
+        let gear = Gear { name: "Test", dead_ul: 92.0 };
+        let result = calc_for(gear, f64::NAN, 7.0, 10.0, 40.0);
+        assert_eq!(result.doses, 0);
+    }
+
+    #[test]
+    fn calc_for_all_gears_positive() {
+        for gear in GEARS {
+            let result = calc_for(gear, 4.0, 7.0, 10.0, 40.0);
+            assert!(result.doses > 0, "{} produced 0 doses", gear.name);
+            assert!(result.days > 0, "{} produced 0 days", gear.name);
+            assert!(result.pct_waste > 0.0, "{} produced 0% waste", gear.name);
+        }
+    }
+
+    #[test]
+    fn lower_dead_volume_means_more_doses() {
+        let regular = calc_for(GEARS[0], 4.0, 7.0, 10.0, 40.0);  // 92 uL dead
+        let insulin = calc_for(GEARS[3], 4.0, 7.0, 10.0, 40.0);  // 3 uL dead
+        assert!(insulin.doses > regular.doses, "insulin {} vs regular {}", insulin.doses, regular.doses);
+        assert!(insulin.pct_waste < regular.pct_waste);
+    }
+}
