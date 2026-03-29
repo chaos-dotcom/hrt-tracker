@@ -77,10 +77,13 @@ fn prefix_exponents() -> HashMap<&'static str, i32> {
 }
 
 fn normalize_token(token: &str) -> String {
-    token
-        .trim()
-        .replace(['ℓ', 'l'], "L")
-        .replace(' ', "")
+    let t = token.trim().replace(' ', "");
+    // Only replace l/ℓ → L when it's a liter suffix, not part of "mol"
+    if t.ends_with("mol") {
+        t
+    } else {
+        t.replace(['ℓ', 'l'], "L")
+    }
 }
 
 fn parse_unit_single(token: &str) -> Result<UnitSingle, String> {
@@ -235,11 +238,42 @@ mod tests {
     }
 
     #[test]
-    fn mol_units_unsupported_due_to_normalization() {
-        // The normalize_token function converts lowercase 'l' to 'L',
-        // which breaks "mol" -> "moL" preventing mol-based unit parsing.
-        assert!(convert_estradiol(100.0, "pg/mL", "pmol/L").is_err());
-        assert!(convert_testosterone(100.0, "ng/dL", "nmol/L").is_err());
+    fn estradiol_pg_ml_to_pmol_l() {
+        // 1 pg/mL = 3.6713 pmol/L for estradiol (molar mass 272.38)
+        let result = convert_estradiol(100.0, "pg/mL", "pmol/L").unwrap();
+        assert!((result - 367.13).abs() < 0.5, "got {result}");
+    }
+
+    #[test]
+    fn estradiol_pmol_l_to_pg_ml() {
+        let result = convert_estradiol(367.13, "pmol/L", "pg/mL").unwrap();
+        assert!((result - 100.0).abs() < 0.5, "got {result}");
+    }
+
+    #[test]
+    fn estradiol_mol_roundtrip() {
+        let original = 250.0;
+        let pmol = convert_estradiol(original, "pg/mL", "pmol/L").unwrap();
+        let back = convert_estradiol(pmol, "pmol/L", "pg/mL").unwrap();
+        assert!((back - original).abs() < 0.01, "got {back}");
+    }
+
+    #[test]
+    fn testosterone_ng_dl_to_nmol_l() {
+        let result = convert_testosterone(100.0, "ng/dL", "nmol/L").unwrap();
+        assert!((result - 3.467).abs() < 0.05, "got {result}");
+    }
+
+    #[test]
+    fn testosterone_nmol_l_to_ng_dl() {
+        let result = convert_testosterone(3.467, "nmol/L", "ng/dL").unwrap();
+        assert!((result - 100.0).abs() < 1.0, "got {result}");
+    }
+
+    #[test]
+    fn progesterone_ng_ml_to_nmol_l() {
+        let result = convert_progesterone(1.0, "ng/mL", "nmol/L").unwrap();
+        assert!((result - 3.18).abs() < 0.05, "got {result}");
     }
 
     #[test]
