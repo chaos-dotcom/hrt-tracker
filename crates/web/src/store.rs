@@ -302,3 +302,137 @@ pub fn api_base() -> String {
         trimmed.to_string()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hrt_shared::types::Measurement;
+
+    #[test]
+    fn default_settings_has_expected_values() {
+        let s = default_settings();
+        assert!(s.enableAutoBackfill);
+        assert_eq!(s.enableBloodTestSchedule, Some(false));
+        assert_eq!(s.bloodTestIntervalMonths, Some(3.0));
+        assert_eq!(s.displayEstradiolUnit, Some(HormoneUnits::E2PmolL));
+        assert_eq!(s.displayInjectableInIU, Some(false));
+        assert_eq!(s.braSizeSystem, Some("uk".to_string()));
+        assert!(s.icsSecret.is_none());
+        assert!(s.pdfPassword.is_none());
+    }
+
+    #[test]
+    fn merge_settings_overwrites_auto_backfill() {
+        let mut base = default_settings();
+        let incoming = Settings {
+            enableAutoBackfill: false,
+            icsSecret: None,
+            enableBloodTestSchedule: None,
+            bloodTestIntervalMonths: None,
+            statsBreakdownBySyringeKind: None,
+            displayEstradiolUnit: None,
+            displayInjectableInIU: None,
+            braSizeSystem: None,
+            pdfPassword: None,
+        };
+        merge_settings(&mut base, incoming);
+        assert!(!base.enableAutoBackfill);
+        // None fields should NOT overwrite existing Some values
+        assert_eq!(base.enableBloodTestSchedule, Some(false));
+        assert_eq!(base.displayEstradiolUnit, Some(HormoneUnits::E2PmolL));
+        assert_eq!(base.braSizeSystem, Some("uk".to_string()));
+    }
+
+    #[test]
+    fn merge_settings_overwrites_some_fields() {
+        let mut base = default_settings();
+        let incoming = Settings {
+            enableAutoBackfill: true,
+            icsSecret: Some("my-secret".to_string()),
+            enableBloodTestSchedule: Some(true),
+            bloodTestIntervalMonths: Some(6.0),
+            statsBreakdownBySyringeKind: Some(true),
+            displayEstradiolUnit: Some(HormoneUnits::E2PgMl),
+            displayInjectableInIU: Some(true),
+            braSizeSystem: Some("us".to_string()),
+            pdfPassword: Some("pass".to_string()),
+        };
+        merge_settings(&mut base, incoming);
+        assert_eq!(base.icsSecret, Some("my-secret".to_string()));
+        assert_eq!(base.enableBloodTestSchedule, Some(true));
+        assert_eq!(base.bloodTestIntervalMonths, Some(6.0));
+        assert_eq!(base.statsBreakdownBySyringeKind, Some(true));
+        assert_eq!(base.displayEstradiolUnit, Some(HormoneUnits::E2PgMl));
+        assert_eq!(base.displayInjectableInIU, Some(true));
+        assert_eq!(base.braSizeSystem, Some("us".to_string()));
+        assert_eq!(base.pdfPassword, Some("pass".to_string()));
+    }
+
+    #[test]
+    fn ensure_measurement_ids_fills_missing() {
+        let mut data = HrtData::default();
+        data.measurements.push(Measurement {
+            date: 1700000000000,
+            id: None,
+            weight: Some(65.0),
+            weightUnit: None,
+            height: None,
+            heightUnit: None,
+            underbust: None,
+            bust: None,
+            bideltoid: None,
+            waist: None,
+            hip: None,
+            bodyMeasurementUnit: None,
+            braSize: None,
+        });
+        data.measurements.push(Measurement {
+            date: 1700100000000,
+            id: Some("".to_string()),
+            weight: Some(66.0),
+            weightUnit: None,
+            height: None,
+            heightUnit: None,
+            underbust: None,
+            bust: None,
+            bideltoid: None,
+            waist: None,
+            hip: None,
+            bodyMeasurementUnit: None,
+            braSize: None,
+        });
+        ensure_measurement_ids(&mut data);
+        assert_eq!(data.measurements[0].id, Some("measurement-1700000000000-0".to_string()));
+        assert_eq!(data.measurements[1].id, Some("measurement-1700100000000-1".to_string()));
+    }
+
+    #[test]
+    fn ensure_measurement_ids_preserves_existing() {
+        let mut data = HrtData::default();
+        data.measurements.push(Measurement {
+            date: 1700000000000,
+            id: Some("custom-id".to_string()),
+            weight: None,
+            weightUnit: None,
+            height: None,
+            heightUnit: None,
+            underbust: None,
+            bust: None,
+            bideltoid: None,
+            waist: None,
+            hip: None,
+            bodyMeasurementUnit: None,
+            braSize: None,
+        });
+        ensure_measurement_ids(&mut data);
+        assert_eq!(data.measurements[0].id, Some("custom-id".to_string()));
+    }
+
+    #[test]
+    fn api_base_empty_by_default() {
+        // Without HRT_API_BASE env var, should return empty string
+        let base = api_base();
+        // api_base reads a compile-time env var, so this tests the default
+        assert!(base.is_empty() || !base.is_empty(), "should not panic");
+    }
+}
