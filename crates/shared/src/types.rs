@@ -397,6 +397,8 @@ pub struct InjectableSchedule {
     pub needleGauge: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub nextDoseDate: Option<UnixTime>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub startDate: Option<UnixTime>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -408,6 +410,8 @@ pub struct OralSchedule {
     pub frequency: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub nextDoseDate: Option<UnixTime>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub startDate: Option<UnixTime>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -419,6 +423,8 @@ pub struct AntiandrogenSchedule {
     pub frequency: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub nextDoseDate: Option<UnixTime>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub startDate: Option<UnixTime>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -431,6 +437,8 @@ pub struct ProgesteroneSchedule {
     pub frequency: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub nextDoseDate: Option<UnixTime>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub startDate: Option<UnixTime>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]

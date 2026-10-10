@@ -1,4 +1,5 @@
 use chrono::{Local, TimeZone, Timelike};
+use std::collections::HashSet;
 
 use crate::estrannaise::e2_multidose_3c;
 use crate::types::{
@@ -162,10 +163,7 @@ pub fn snap_to_next_injection_boundary(data: &HrtData, ts: UnixTime) -> UnixTime
 
 pub fn backfill_scheduled_doses(data: &mut HrtData) {
     let settings = data.settings.as_ref();
-    if matches!(
-        settings.map(|s| s.enableAutoBackfill),
-        Some(false)
-    ) {
+    if matches!(settings.map(|s| s.enableAutoBackfill), Some(false)) {
         return;
     }
 
@@ -263,6 +261,56 @@ pub fn backfill_scheduled_doses(data: &mut HrtData) {
     process_schedule(&mut data.progesterone, "progesterone", &data.dosageHistory);
 }
 
+/// Generate the timestamps at which a regimen started on `start` and repeating
+/// every `frequency_days` would have been taken, from `start` up to and
+/// including today.
+///
+/// Timestamps that fall on a day which already has an entry in `existing` are
+/// skipped, so backfilling a regimen never duplicates a dose the user has
+/// already logged. Returns timestamps in ascending order.
+pub fn scheduled_dose_dates(
+    start: UnixTime,
+    frequency_days: f64,
+    existing: &[UnixTime],
+) -> Vec<UnixTime> {
+    let mut dates = Vec::new();
+    if !frequency_days.is_finite() || frequency_days <= 0.0 {
+        return dates;
+    }
+    let step_ms = (frequency_days * DAY_MS as f64) as i64;
+    if step_ms <= 0 {
+        return dates;
+    }
+
+    let existing_days: HashSet<i64> = existing.iter().map(|date| day_start_ms(*date)).collect();
+
+    let today_start = Local
+        .timestamp_millis_opt(Local::now().timestamp_millis())
+        .single()
+        .map(|dt| {
+            dt.date_naive()
+                .and_hms_opt(0, 0, 0)
+                .and_then(|d| Local.from_local_datetime(&d).single())
+                .map(|d| d.timestamp_millis())
+                .unwrap_or_else(|| dt.timestamp_millis())
+        })
+        .unwrap_or_else(|| Local::now().timestamp_millis());
+
+    let mut cursor = start;
+    // Bounded to avoid a runaway loop on a pathological frequency; one day
+    // granularity means this covers decades of doses.
+    let mut guard = 0;
+    while day_start_ms(cursor) <= today_start && guard < 100_000 {
+        if !existing_days.contains(&day_start_ms(cursor)) {
+            dates.push(cursor);
+        }
+        cursor += step_ms;
+        guard += 1;
+    }
+
+    dates
+}
+
 fn day_start_ms(ms: i64) -> i64 {
     let dt = Local.timestamp_millis_opt(ms).single();
     let dt = match dt {
@@ -335,7 +383,11 @@ mod tests {
     use super::*;
     use crate::types::*;
 
-    fn make_injectable_entry(date: i64, kind: InjectableEstradiols, dose: f64) -> DosageHistoryEntry {
+    fn make_injectable_entry(
+        date: i64,
+        kind: InjectableEstradiols,
+        dose: f64,
+    ) -> DosageHistoryEntry {
         DosageHistoryEntry::InjectableEstradiol {
             date,
             id: None,
@@ -439,7 +491,10 @@ mod tests {
 
         let low = predict_e2_pg_ml(&data_low, query_time).unwrap();
         let high = predict_e2_pg_ml(&data_high, query_time).unwrap();
-        assert!(high > low, "higher dose should give higher level: {high} vs {low}");
+        assert!(
+            high > low,
+            "higher dose should give higher level: {high} vs {low}"
+        );
     }
 
     #[test]
@@ -580,6 +635,7 @@ mod tests {
             needleLength: None,
             needleGauge: None,
             nextDoseDate: None,
+            startDate: None,
         });
         let ts = 1700000000000_i64;
         assert_eq!(snap_to_next_injection_boundary(&data, ts), ts);
@@ -600,6 +656,7 @@ mod tests {
             needleLength: None,
             needleGauge: None,
             nextDoseDate: None,
+            startDate: None,
         });
         data.dosageHistory.push(make_injectable_entry(
             dose_time,
@@ -609,8 +666,14 @@ mod tests {
 
         // Query 1 day after dose - should snap to next boundary (dose_time + 7 days, at 10:00 AM)
         let result = snap_to_next_injection_boundary(&data, dose_time + DAY_MS);
-        assert!(result > dose_time, "snapped time should be after dose: {result} vs {dose_time}");
-        assert!(result >= dose_time + 7 * DAY_MS - DAY_MS, "should be near next boundary");
+        assert!(
+            result > dose_time,
+            "snapped time should be after dose: {result} vs {dose_time}"
+        );
+        assert!(
+            result >= dose_time + 7 * DAY_MS - DAY_MS,
+            "should be near next boundary"
+        );
     }
 
     #[test]
@@ -638,9 +701,15 @@ mod tests {
             needleLength: None,
             needleGauge: None,
             nextDoseDate: None,
+            startDate: None,
         });
         backfill_scheduled_doses(&mut data);
-        assert!(data.injectableEstradiol.as_ref().unwrap().nextDoseDate.is_none());
+        assert!(data
+            .injectableEstradiol
+            .as_ref()
+            .unwrap()
+            .nextDoseDate
+            .is_none());
     }
 
     #[test]
@@ -658,6 +727,7 @@ mod tests {
             needleLength: None,
             needleGauge: None,
             nextDoseDate: None,
+            startDate: None,
         });
         data.dosageHistory.push(make_injectable_entry(
             dose_time,
@@ -670,5 +740,40 @@ mod tests {
         let next = next.unwrap();
         // Should be dose_time + 7 days
         assert!(next > dose_time, "next dose should be after last dose");
+    }
+
+    fn start_days_ago(days: i64) -> i64 {
+        let today = Local::now().date_naive();
+        let dt = (today - chrono::Duration::days(days))
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+        Local
+            .from_local_datetime(&dt)
+            .single()
+            .unwrap()
+            .timestamp_millis()
+    }
+
+    #[test]
+    fn scheduled_dose_dates_returns_each_interval_since_start() {
+        let start = start_days_ago(10);
+        let dates = scheduled_dose_dates(start, 7.0, &[]);
+        // 10 days at a weekly interval: today-10 and today-3 (today+4 is future).
+        assert_eq!(dates.len(), 2, "dates: {dates:?}");
+        assert_eq!(dates[0], start);
+    }
+
+    #[test]
+    fn scheduled_dose_dates_skips_days_already_logged() {
+        let start = start_days_ago(10);
+        let dates = scheduled_dose_dates(start, 7.0, &[start]);
+        assert_eq!(dates.len(), 1, "dates: {dates:?}");
+    }
+
+    #[test]
+    fn scheduled_dose_dates_empty_for_invalid_frequency() {
+        let start = start_days_ago(10);
+        assert!(scheduled_dose_dates(start, 0.0, &[]).is_empty());
+        assert!(scheduled_dose_dates(start, f64::NAN, &[]).is_empty());
     }
 }
