@@ -49,7 +49,7 @@ pub fn App() -> impl IntoView {
                         <Routes>
                             <Route path="/" view=ViewPage />
                             <Route path="/create/dosage" view=CreateDosage />
-                            <Route path="/edit/schedule" view=EditSchedulePage />
+                            <Route path="/create/dosage/schedule" view=EditSchedulePage />
                             <Route path="/create/blood-test" view=CreateBloodTest />
                             <Route path="/create/measurement" view=CreateMeasurement />
                             <Route path="/view" view=ViewPage />

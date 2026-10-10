@@ -682,7 +682,11 @@ pub fn ViewPage() -> impl IntoView {
         let mut output = Vec::new();
         for entry in &data.get().dosageHistory {
             if dosage_entry_matches_key(entry, &key) {
-                if let DosageHistoryEntry::InjectableEstradiol { photos: Some(items), .. } = entry {
+                if let DosageHistoryEntry::InjectableEstradiol {
+                    photos: Some(items),
+                    ..
+                } = entry
+                {
                     output.extend(items.iter().map(dosage_photo_view));
                 }
             }
@@ -1086,7 +1090,7 @@ pub fn ViewPage() -> impl IntoView {
                             >
                                 "Record next dose now"
                             </button>
-                            <A href="/edit/schedule">"Edit Schedule"</A>
+                            <A href="/create/dosage/schedule">"Edit Schedule"</A>
                         </div>
                     </div>
                     <div class="view-summary">

@@ -283,7 +283,7 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
             move |_| {
                 let search = window().location().search().unwrap_or_default();
                 if search.contains("mode=schedule") {
-                    navigate("/edit/schedule", Default::default());
+                    navigate("/create/dosage/schedule", Default::default());
                 }
             }
         });
@@ -365,6 +365,12 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
     let record_prog = create_rw_signal(false);
     let bonus_dose = create_rw_signal(false);
 
+    // Whether each medication has an active recurring schedule (schedule mode only).
+    let schedule_estrogen = create_rw_signal(true);
+    let schedule_aa = create_rw_signal(false);
+    let schedule_prog = create_rw_signal(false);
+    let form_error = create_rw_signal(None::<String>);
+
     let estrogen_note = create_rw_signal(String::new());
     let aa_note = create_rw_signal(String::new());
     let prog_note = create_rw_signal(String::new());
@@ -416,51 +422,39 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                 return;
             }
 
-            let value = parse_optional_num(&estrogen_dose.get());
-            let Some(current_value) = value else {
-                if !target_iu_mode {
-                    estrogen_dose_in_iu.set(false);
+            // Read the field value without subscribing, so typing in the dose
+            // field doesn't re-trigger a conversion on every keystroke.
+            if target_iu_mode {
+                if let Some(current_value) = parse_optional_num(&estrogen_dose.get_untracked()) {
+                    let data_value = store.data.get();
+                    let selected_vial = selected_vial_id.get();
+                    let selected_vial_id = if selected_vial.trim().is_empty() {
+                        None
+                    } else {
+                        Some(&selected_vial)
+                    };
+                    let schedule_vial_id = data_value
+                        .injectableEstradiol
+                        .as_ref()
+                        .and_then(|cfg| cfg.vialId.as_ref());
+                    // Converting into IU is the only meaningful direction (a
+                    // concentration is now available). If it fails we leave the
+                    // value untouched.
+                    if let Some(iu) = injectable_iu_from_dose(
+                        &data_value,
+                        current_value,
+                        &HormoneUnits::Mg,
+                        selected_vial_id,
+                        schedule_vial_id,
+                    ) {
+                        estrogen_dose.set(fmt(iu, 3));
+                    }
                 }
-                return;
-            };
-
-            let data_value = store.data.get();
-            let selected_vial = selected_vial_id.get();
-            let selected_vial_id = if selected_vial.trim().is_empty() {
-                None
-            } else {
-                Some(&selected_vial)
-            };
-            let schedule_vial_id = data_value
-                .injectableEstradiol
-                .as_ref()
-                .and_then(|cfg| cfg.vialId.as_ref());
-            let converted = if target_iu_mode {
-                injectable_iu_from_dose(
-                    &data_value,
-                    current_value,
-                    &HormoneUnits::Mg,
-                    selected_vial_id,
-                    schedule_vial_id,
-                )
-            } else {
-                injectable_dose_from_iu(
-                    &data_value,
-                    current_value,
-                    selected_vial_id,
-                    schedule_vial_id,
-                )
-            };
-
-            if let Some(next_value) = converted {
-                estrogen_dose.set(fmt(next_value, 3));
-                estrogen_dose_in_iu.set(target_iu_mode);
-            } else if target_iu_mode {
-                estrogen_dose_in_iu.set(false);
-            } else {
-                estrogen_dose.set(String::new());
-                estrogen_dose_in_iu.set(false);
             }
+            // Leaving IU mode (vial concentration removed, or the method changed
+            // away from injection) keeps the typed value and just relabels it
+            // rather than wiping or silently reinterpreting it.
+            estrogen_dose_in_iu.set(target_iu_mode);
         }
     });
 
@@ -538,7 +532,7 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                 estrogen_dose.set(dose_label);
                 estrogen_dose_in_iu.set(dose_in_iu);
                 estrogen_unit.set(hormone_unit_label(&HormoneUnits::Mg).to_string());
-                injection_frequency.set(format!("{:.2}", inj.frequency));
+                injection_frequency.set(fmt(inj.frequency, 2));
                 estrogen_next_date.set(
                     inj.nextDoseDate
                         .map(to_local_input_value)
@@ -555,7 +549,7 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                 estrogen_dose.set(fmt(oral.dose, 3));
                 estrogen_dose_in_iu.set(false);
                 estrogen_unit.set(hormone_unit_label(&oral.unit).to_string());
-                oral_frequency.set(format!("{:.2}", oral.frequency));
+                oral_frequency.set(fmt(oral.frequency, 2));
                 estrogen_next_date.set(
                     oral.nextDoseDate
                         .map(to_local_input_value)
@@ -572,7 +566,7 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                 aa_type.set(antiandrogen_label(&aa.kind).to_string());
                 aa_dose.set(fmt(aa.dose, 3));
                 aa_unit.set(hormone_unit_label(&aa.unit).to_string());
-                aa_frequency.set(format!("{:.2}", aa.frequency));
+                aa_frequency.set(fmt(aa.frequency, 2));
                 aa_next_date.set(
                     aa.nextDoseDate
                         .map(to_local_input_value)
@@ -585,13 +579,17 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                 prog_dose.set(fmt(prog.dose, 3));
                 prog_unit.set(hormone_unit_label(&prog.unit).to_string());
                 prog_route.set(progesterone_route_label(&prog.route).to_string());
-                prog_frequency.set(format!("{:.2}", prog.frequency));
+                prog_frequency.set(fmt(prog.frequency, 2));
                 prog_next_date.set(
                     prog.nextDoseDate
                         .map(to_local_input_value)
                         .unwrap_or_default(),
                 );
             }
+            schedule_estrogen
+                .set(data.injectableEstradiol.is_some() || data.oralEstradiol.is_some());
+            schedule_aa.set(data.antiandrogen.is_some());
+            schedule_prog.set(data.progesterone.is_some());
             initialized.set(true);
         }
     });
@@ -655,6 +653,7 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
         let feedback_timeout = feedback_timeout.clone();
         move |ev: leptos::ev::SubmitEvent| {
             ev.prevent_default();
+            form_error.set(None);
             let mode_value = mode.get();
             let estrogen_method_value = estrogen_method.get();
             let estrogen_input_dose = parse_num(&estrogen_dose.get());
@@ -686,6 +685,80 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                 } else {
                     estrogen_input_dose
                 };
+
+            let mut errors: Vec<String> = Vec::new();
+            if mode_value == "record" {
+                if !record_estrogen.get() && !record_aa.get() && !record_prog.get() {
+                    errors.push("Select at least one medication to record.".to_string());
+                }
+                if record_estrogen.get()
+                    && (!estrogen_dose_value.is_finite() || estrogen_dose_value <= 0.0)
+                {
+                    errors.push("Enter a valid estrogen dose.".to_string());
+                }
+                if record_aa.get() {
+                    if aa_type.get().trim().is_empty() {
+                        errors.push("Select an antiandrogen type.".to_string());
+                    }
+                    let dose = parse_num(&aa_dose.get());
+                    if !dose.is_finite() || dose <= 0.0 {
+                        errors.push("Enter a valid antiandrogen dose.".to_string());
+                    }
+                }
+                if record_prog.get() {
+                    if prog_type.get().trim().is_empty() {
+                        errors.push("Select a progesterone type.".to_string());
+                    }
+                    let dose = parse_num(&prog_dose.get());
+                    if !dose.is_finite() || dose <= 0.0 {
+                        errors.push("Enter a valid progesterone dose.".to_string());
+                    }
+                }
+            } else {
+                if schedule_estrogen.get() {
+                    if !estrogen_dose_value.is_finite() || estrogen_dose_value <= 0.0 {
+                        errors.push("Enter a valid estrogen dose.".to_string());
+                    }
+                    let frequency = if estrogen_method_value == "injection" {
+                        parse_num(&injection_frequency.get())
+                    } else {
+                        parse_num(&oral_frequency.get())
+                    };
+                    if !frequency.is_finite() || frequency <= 0.0 {
+                        errors.push("Enter a valid estrogen frequency.".to_string());
+                    }
+                }
+                if schedule_aa.get() {
+                    if aa_type.get().trim().is_empty() {
+                        errors.push("Select an antiandrogen type.".to_string());
+                    }
+                    let dose = parse_num(&aa_dose.get());
+                    if !dose.is_finite() || dose <= 0.0 {
+                        errors.push("Enter a valid antiandrogen dose.".to_string());
+                    }
+                    let frequency = parse_num(&aa_frequency.get());
+                    if !frequency.is_finite() || frequency <= 0.0 {
+                        errors.push("Enter a valid antiandrogen frequency.".to_string());
+                    }
+                }
+                if schedule_prog.get() {
+                    if prog_type.get().trim().is_empty() {
+                        errors.push("Select a progesterone type.".to_string());
+                    }
+                    let dose = parse_num(&prog_dose.get());
+                    if !dose.is_finite() || dose <= 0.0 {
+                        errors.push("Enter a valid progesterone dose.".to_string());
+                    }
+                    let frequency = parse_num(&prog_frequency.get());
+                    if !frequency.is_finite() || frequency <= 0.0 {
+                        errors.push("Enter a valid progesterone frequency.".to_string());
+                    }
+                }
+            }
+            if !errors.is_empty() {
+                form_error.set(Some(errors.join(" ")));
+                return;
+            }
 
             if mode_value == "record" {
                 let record_ms = parse_datetime_local(&record_date_time.get());
@@ -799,7 +872,10 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
             }
 
             store.data.update(|data| {
-                if estrogen_method_value == "injection" {
+                if !schedule_estrogen.get() {
+                    data.injectableEstradiol = None;
+                    data.oralEstradiol = None;
+                } else if estrogen_method_value == "injection" {
                     let schedule = InjectableSchedule {
                         kind: injectable_from_label(&injectable_type.get()),
                         dose: estrogen_dose_value,
@@ -846,7 +922,7 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                     data.injectableEstradiol = None;
                 }
 
-                if aa_type.get().trim().is_empty() {
+                if !schedule_aa.get() || aa_type.get().trim().is_empty() {
                     data.antiandrogen = None;
                 } else {
                     let schedule = AntiandrogenSchedule {
@@ -859,7 +935,7 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                     data.antiandrogen = Some(schedule);
                 }
 
-                if prog_type.get().trim().is_empty() {
+                if !schedule_prog.get() || prog_type.get().trim().is_empty() {
                     data.progesterone = None;
                 } else {
                     let schedule = ProgesteroneSchedule {
@@ -900,7 +976,6 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
             <div class="view-layout">
                 <div class="view-header">
                     <div>
-                        <h2>{if schedule_only { "Edit schedule" } else { "Record dosage" }}</h2>
                         <p class="muted">
                             {if schedule_only {
                                 "Configure recurring schedules for each medication."
@@ -918,7 +993,14 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                 </div>
 
                 <form class="form-wide" on:submit=on_submit>
-                    <Show when=move || estrogen_method.get() == "injection">
+                    <Show when=move || {
+                        estrogen_method.get() == "injection"
+                            && if schedule_only {
+                                schedule_estrogen.get()
+                            } else {
+                                record_estrogen.get()
+                            }
+                    }>
                         <section class="card">
                             <h3>"Injection helper"</h3>
                             <div class="calc-grid">
@@ -936,6 +1018,7 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                                             <input
                                                 type="text"
                                                 step="any"
+                                                inputmode="decimal"
                                                 on:input=move |ev| inj_conv_dose_mg.set(event_target_value(&ev))
                                                 prop:value=move || inj_conv_dose_mg.get()
                                             />
@@ -945,6 +1028,7 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                                             <input
                                                 type="text"
                                                 step="any"
+                                                inputmode="decimal"
                                                 on:input=move |ev| inj_conv_conc_mg_ml.set(event_target_value(&ev))
                                                 prop:value=move || inj_conv_conc_mg_ml.get()
                                             />
@@ -994,6 +1078,7 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                                             <input
                                                 type="text"
                                                 step="any"
+                                                inputmode="decimal"
                                                 on:input=move |ev| inj_conv_vol2_ml.set(event_target_value(&ev))
                                                 prop:value=move || inj_conv_vol2_ml.get()
                                             />
@@ -1003,6 +1088,7 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                                             <input
                                                 type="text"
                                                 step="any"
+                                                inputmode="decimal"
                                                 on:input=move |ev| inj_conv_conc2_mg_ml.set(event_target_value(&ev))
                                                 prop:value=move || inj_conv_conc2_mg_ml.get()
                                             />
@@ -1034,7 +1120,22 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                     </Show>
 
                     <section class="card dose-card">
-                        <h3>"Estrogen"</h3>
+                        <div class="card-header">
+                            <h3>"Estrogen"</h3>
+                            <Show when=move || schedule_only>
+                                <label class="toggle">
+                                    <input
+                                        type="checkbox"
+                                        aria-label="Enable estrogen schedule"
+                                        on:change=move |ev| schedule_estrogen.set(event_target_checked(&ev))
+                                        prop:checked=move || schedule_estrogen.get()
+                                    />
+                                    <span class="toggle-track" aria-hidden="true"></span>
+                                    <span class="toggle-label">"Enabled"</span>
+                                </label>
+                            </Show>
+                        </div>
+                        <Show when=move || !schedule_only || schedule_estrogen.get()>
                         <div class="option-group">
                             <label class="toggle toggle-wide">
                                 <input
@@ -1116,9 +1217,8 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                         </Show>
 
                         <Show when=move || estrogen_method.get() == "injection">
-                            <label>
-                                "Vial (optional)"
-                                <div class="inline-equal">
+                            <label>"Vial (optional)"</label>
+                            <div class="inline-equal">
                                     <select
                                         on:change=move |ev| selected_vial_id.set(event_target_value(&ev))
                                         prop:value=move || selected_vial_id.get()
@@ -1149,9 +1249,8 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                                             }
                                         />
                                     </select>
-                                    <A class="pill-button" href="/vials/create">"New..."</A>
-                                </div>
-                            </label>
+                                <A class="pill-button" href="/vials/create">"New..."</A>
+                            </div>
 
                             <Show when=move || !selected_vial_id.get().is_empty()>
                                 <label>
@@ -1227,13 +1326,15 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                                     type="text"
                                     min="1"
                                     step="any"
+                                    inputmode="decimal"
                                     on:input=move |ev| estrogen_pill_qty.set(event_target_value(&ev))
                                     prop:value=move || estrogen_pill_qty.get()
                                 />
                                 <p class="muted">
                                     "Total = "
                                     <strong>{move || fmt(estrogen_pill_total.get(), 2)}</strong>
-                                    " mg"
+                                    " "
+                                    {move || estrogen_unit.get()}
                                 </p>
                             </label>
                         </Show>
@@ -1296,6 +1397,7 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                                     <input
                                         type="text"
                                         step="any"
+                                        inputmode="decimal"
                                         on:input=move |ev| {
                                             if estrogen_method.get() == "injection" {
                                                 injection_frequency.set(event_target_value(&ev));
@@ -1327,6 +1429,7 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                                 <input
                                     type="text"
                                     step="any"
+                                    inputmode="decimal"
                                     on:input=move |ev| estrogen_dose.set(event_target_value(&ev))
                                     prop:value=move || estrogen_dose.get()
                                 />
@@ -1380,10 +1483,34 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                                 </label>
                             </Show>
                         </div>
+                        </Show>
                     </section>
 
                     <section class="card dose-card">
-                        <h3>"Antiandrogen"</h3>
+                        <div class="card-header">
+                            <h3>"Antiandrogen"</h3>
+                            <Show when=move || schedule_only>
+                                <label class="toggle">
+                                    <input
+                                        type="checkbox"
+                                        aria-label="Enable antiandrogen schedule"
+                                        on:change=move |ev| {
+                                            let enabled = event_target_checked(&ev);
+                                            schedule_aa.set(enabled);
+                                            if enabled && aa_type.get().trim().is_empty() {
+                                                aa_type.set(
+                                                    antiandrogen_label(&ANTIANDROGEN_OPTIONS[0]).to_string(),
+                                                );
+                                            }
+                                        }
+                                        prop:checked=move || schedule_aa.get()
+                                    />
+                                    <span class="toggle-track" aria-hidden="true"></span>
+                                    <span class="toggle-label">"Enabled"</span>
+                                </label>
+                            </Show>
+                        </div>
+                        <Show when=move || !schedule_only || schedule_aa.get()>
                         <Show when=move || mode.get() == "record">
                             <label class="toggle toggle-wide">
                                 <input
@@ -1424,7 +1551,9 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                                     on:change=move |ev| aa_type.set(event_target_value(&ev))
                                     prop:value=move || aa_type.get()
                                 >
-                                    <option value="">"None"</option>
+                                    {move || {
+                                        (!schedule_only).then(|| view! { <option value="">"None"</option> })
+                                    }}
                                     <For
                                         each=move || {
                                             ANTIANDROGEN_OPTIONS
@@ -1444,6 +1573,7 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                                     <input
                                         type="text"
                                         step="any"
+                                        inputmode="decimal"
                                         on:input=move |ev| aa_frequency.set(event_target_value(&ev))
                                         prop:value=move || aa_frequency.get()
                                     />
@@ -1456,6 +1586,7 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                                     <input
                                         type="text"
                                         step="any"
+                                        inputmode="decimal"
                                         on:input=move |ev| aa_dose.set(event_target_value(&ev))
                                         prop:value=move || aa_dose.get()
                                     />
@@ -1475,10 +1606,34 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                                 </label>
                             </Show>
                         </div>
+                        </Show>
                     </section>
 
                     <section class="card dose-card">
-                        <h3>"Progesterone"</h3>
+                        <div class="card-header">
+                            <h3>"Progesterone"</h3>
+                            <Show when=move || schedule_only>
+                                <label class="toggle">
+                                    <input
+                                        type="checkbox"
+                                        aria-label="Enable progesterone schedule"
+                                        on:change=move |ev| {
+                                            let enabled = event_target_checked(&ev);
+                                            schedule_prog.set(enabled);
+                                            if enabled && prog_type.get().trim().is_empty() {
+                                                prog_type.set(
+                                                    progesterone_label(&PROGESTERONE_OPTIONS[0]).to_string(),
+                                                );
+                                            }
+                                        }
+                                        prop:checked=move || schedule_prog.get()
+                                    />
+                                    <span class="toggle-track" aria-hidden="true"></span>
+                                    <span class="toggle-label">"Enabled"</span>
+                                </label>
+                            </Show>
+                        </div>
+                        <Show when=move || !schedule_only || schedule_prog.get()>
                         <Show when=move || mode.get() == "record">
                             <label class="toggle toggle-wide">
                                 <input
@@ -1504,13 +1659,15 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                                         type="text"
                                         min="1"
                                         step="any"
+                                        inputmode="decimal"
                                         on:input=move |ev| prog_pill_qty.set(event_target_value(&ev))
                                         prop:value=move || prog_pill_qty.get()
                                     />
                                     <p class="muted">
                                         "Total = "
                                         <strong>{move || fmt(prog_pill_total.get(), 2)}</strong>
-                                        " mg"
+                                        " "
+                                        {move || prog_unit.get()}
                                     </p>
                                 </label>
                             </Show>
@@ -1534,7 +1691,9 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                                     on:change=move |ev| prog_type.set(event_target_value(&ev))
                                     prop:value=move || prog_type.get()
                                 >
-                                    <option value="">"None"</option>
+                                    {move || {
+                                        (!schedule_only).then(|| view! { <option value="">"None"</option> })
+                                    }}
                                     <For
                                         each=move || {
                                             PROGESTERONE_OPTIONS
@@ -1555,6 +1714,7 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                                         <input
                                             type="text"
                                             step="any"
+                                            inputmode="decimal"
                                             on:input=move |ev| prog_frequency.set(event_target_value(&ev))
                                             prop:value=move || prog_frequency.get()
                                         />
@@ -1565,6 +1725,7 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                                     <input
                                         type="text"
                                         step="any"
+                                        inputmode="decimal"
                                         on:input=move |ev| prog_dose.set(event_target_value(&ev))
                                         prop:value=move || prog_dose.get()
                                     />
@@ -1602,7 +1763,12 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                                 </label>
                             </Show>
                         </div>
+                        </Show>
                     </section>
+
+                    <Show when=move || form_error.get().is_some()>
+                        <p class="error">{move || form_error.get().unwrap_or_default()}</p>
+                    </Show>
 
                     <div class="form-actions">
                         <button type="submit">
