@@ -1252,6 +1252,57 @@ section section {
   background: rgba(243, 154, 181, 0.2);
 }
 
+.segmented {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(35, 36, 58, 0.85);
+  border: 1px solid rgba(243, 154, 181, 0.25);
+}
+
+.segmented-item {
+  padding: 6px 14px;
+  border-radius: 999px;
+  color: var(--muted);
+  text-decoration: none;
+  font-weight: 700;
+  font-size: 0.95rem;
+  white-space: nowrap;
+}
+
+.segmented-item:hover {
+  color: var(--ink);
+}
+
+.segmented-item.active {
+  color: #2a0f1f;
+  background: linear-gradient(120deg, #f39ab5, #ffc1d6);
+  box-shadow: 0 8px 18px rgba(243, 154, 181, 0.28);
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(243, 154, 181, 0.3);
+  background: rgba(35, 36, 58, 0.75);
+  color: var(--ink);
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.chip:hover {
+  background: rgba(243, 154, 181, 0.14);
+  border-color: rgba(243, 154, 181, 0.5);
+}
+
 .calc-field {
   display: grid;
   gap: 6px;

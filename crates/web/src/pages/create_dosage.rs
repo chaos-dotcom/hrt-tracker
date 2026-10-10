@@ -10,10 +10,10 @@ use wasm_bindgen::JsValue;
 use crate::layout::page_layout;
 use crate::store::use_store;
 use crate::utils::{
-    hormone_unit_label, injectable_dose_from_iu, injectable_iu_from_dose, parse_decimal,
-    parse_decimal_or_nan, parse_hormone_unit,
+    hormone_unit_label, injectable_dose_from_iu, injectable_iu_from_dose, parse_date_or_now,
+    parse_decimal, parse_decimal_or_nan, parse_hormone_unit,
 };
-use hrt_shared::logic::backfill_scheduled_doses;
+use hrt_shared::logic::{backfill_scheduled_doses, scheduled_dose_dates};
 use hrt_shared::types::{
     AntiandrogenSchedule, Antiandrogens, DosageHistoryEntry, HormoneUnits, InjectableEstradiols,
     InjectableSchedule, InjectionSites, OralEstradiols, OralSchedule, ProgesteroneRoutes,
@@ -214,6 +214,31 @@ fn to_local_input_value(ms: i64) -> String {
     )
 }
 
+fn to_local_date_value(ms: i64) -> String {
+    to_local_input_value(ms).chars().take(10).collect()
+}
+
+/// Local date `offset_days` from today at 10:00, formatted for a date/datetime input.
+fn day_at_ten(offset_days: f64) -> String {
+    let date = Date::new(&JsValue::from_f64(Date::now() + offset_days * 86_400_000.0));
+    format!(
+        "{:04}-{:02}-{:02}T10:00",
+        date.get_full_year(),
+        date.get_month() + 1,
+        date.get_date()
+    )
+}
+
+/// Parse a `<input type="date">` value into a local timestamp at 10:00, the
+/// time the app uses for scheduled doses. Returns `None` for an empty value.
+fn parse_regimen_start(value: &str) -> Option<i64> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    Some(parse_date_or_now(trimmed) + 10 * 60 * 60 * 1000)
+}
+
 fn parse_datetime_local(value: &str) -> i64 {
     let trimmed = value.trim();
     if trimmed.is_empty() {
@@ -369,6 +394,13 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
     let schedule_estrogen = create_rw_signal(true);
     let schedule_aa = create_rw_signal(false);
     let schedule_prog = create_rw_signal(false);
+    // Regimen start dates (used to backfill past doses).
+    let estrogen_start = create_rw_signal(String::new());
+    let aa_start = create_rw_signal(String::new());
+    let prog_start = create_rw_signal(String::new());
+    let backfill_estrogen = create_rw_signal(false);
+    let backfill_aa = create_rw_signal(false);
+    let backfill_prog = create_rw_signal(false);
     let form_error = create_rw_signal(None::<String>);
 
     let estrogen_note = create_rw_signal(String::new());
@@ -590,6 +622,28 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                 .set(data.injectableEstradiol.is_some() || data.oralEstradiol.is_some());
             schedule_aa.set(data.antiandrogen.is_some());
             schedule_prog.set(data.progesterone.is_some());
+            estrogen_start.set(
+                data.injectableEstradiol
+                    .as_ref()
+                    .and_then(|cfg| cfg.startDate)
+                    .or_else(|| data.oralEstradiol.as_ref().and_then(|cfg| cfg.startDate))
+                    .map(to_local_date_value)
+                    .unwrap_or_default(),
+            );
+            aa_start.set(
+                data.antiandrogen
+                    .as_ref()
+                    .and_then(|cfg| cfg.startDate)
+                    .map(to_local_date_value)
+                    .unwrap_or_default(),
+            );
+            prog_start.set(
+                data.progesterone
+                    .as_ref()
+                    .and_then(|cfg| cfg.startDate)
+                    .map(to_local_date_value)
+                    .unwrap_or_default(),
+            );
             initialized.set(true);
         }
     });
@@ -644,6 +698,83 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
             dose * qty
         } else {
             0.0
+        }
+    });
+
+    let estrogen_backfill_dates = create_memo({
+        let store = store.clone();
+        move |_| {
+            let Some(start) = parse_regimen_start(&estrogen_start.get()) else {
+                return Vec::new();
+            };
+            let injection = estrogen_method.get() == "injection";
+            let frequency = if injection {
+                parse_num(&injection_frequency.get())
+            } else {
+                parse_num(&oral_frequency.get())
+            };
+            if !frequency.is_finite() || frequency <= 0.0 {
+                return Vec::new();
+            }
+            let data_value = store.data.get();
+            let existing: Vec<_> = data_value
+                .dosageHistory
+                .iter()
+                .filter_map(|entry| match entry {
+                    DosageHistoryEntry::InjectableEstradiol { date, .. } if injection => {
+                        Some(*date)
+                    }
+                    DosageHistoryEntry::OralEstradiol { date, .. } if !injection => Some(*date),
+                    _ => None,
+                })
+                .collect();
+            scheduled_dose_dates(start, frequency, &existing)
+        }
+    });
+
+    let aa_backfill_dates = create_memo({
+        let store = store.clone();
+        move |_| {
+            let Some(start) = parse_regimen_start(&aa_start.get()) else {
+                return Vec::new();
+            };
+            let frequency = parse_num(&aa_frequency.get());
+            if !frequency.is_finite() || frequency <= 0.0 {
+                return Vec::new();
+            }
+            let data_value = store.data.get();
+            let existing: Vec<_> = data_value
+                .dosageHistory
+                .iter()
+                .filter_map(|entry| match entry {
+                    DosageHistoryEntry::Antiandrogen { date, .. } => Some(*date),
+                    _ => None,
+                })
+                .collect();
+            scheduled_dose_dates(start, frequency, &existing)
+        }
+    });
+
+    let prog_backfill_dates = create_memo({
+        let store = store.clone();
+        move |_| {
+            let Some(start) = parse_regimen_start(&prog_start.get()) else {
+                return Vec::new();
+            };
+            let frequency = parse_num(&prog_frequency.get());
+            if !frequency.is_finite() || frequency <= 0.0 {
+                return Vec::new();
+            }
+            let data_value = store.data.get();
+            let existing: Vec<_> = data_value
+                .dosageHistory
+                .iter()
+                .filter_map(|entry| match entry {
+                    DosageHistoryEntry::Progesterone { date, .. } => Some(*date),
+                    _ => None,
+                })
+                .collect();
+            scheduled_dose_dates(start, frequency, &existing)
         }
     });
 
@@ -907,6 +1038,7 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                             Some(needle_gauge.get())
                         },
                         nextDoseDate: parse_optional_datetime(&estrogen_next_date.get()),
+                        startDate: parse_regimen_start(&estrogen_start.get()),
                     };
                     data.injectableEstradiol = Some(schedule);
                     data.oralEstradiol = None;
@@ -917,6 +1049,7 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                         unit: estrogen_unit_value.clone(),
                         frequency: parse_num(&oral_frequency.get()).max(1.0),
                         nextDoseDate: parse_optional_datetime(&estrogen_next_date.get()),
+                        startDate: parse_regimen_start(&estrogen_start.get()),
                     };
                     data.oralEstradiol = Some(schedule);
                     data.injectableEstradiol = None;
@@ -931,6 +1064,7 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                         unit: parse_hormone_unit(&aa_unit.get()).unwrap_or(HormoneUnits::Mg),
                         frequency: parse_num(&aa_frequency.get()).max(1.0),
                         nextDoseDate: parse_optional_datetime(&aa_next_date.get()),
+                        startDate: parse_regimen_start(&aa_start.get()),
                     };
                     data.antiandrogen = Some(schedule);
                 }
@@ -945,8 +1079,121 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                         unit: parse_hormone_unit(&prog_unit.get()).unwrap_or(HormoneUnits::Mg),
                         frequency: parse_num(&prog_frequency.get()).max(1.0),
                         nextDoseDate: parse_optional_datetime(&prog_next_date.get()),
+                        startDate: parse_regimen_start(&prog_start.get()),
                     };
                     data.progesterone = Some(schedule);
+                }
+
+                // Backfill past doses for any regimen that started in the past.
+                if schedule_estrogen.get() && backfill_estrogen.get() {
+                    if let Some(start) = parse_regimen_start(&estrogen_start.get()) {
+                        if let Some(cfg) = data.injectableEstradiol.clone() {
+                            let existing: Vec<_> = data
+                                .dosageHistory
+                                .iter()
+                                .filter_map(|entry| match entry {
+                                    DosageHistoryEntry::InjectableEstradiol { date, .. } => {
+                                        Some(*date)
+                                    }
+                                    _ => None,
+                                })
+                                .collect();
+                            for date in scheduled_dose_dates(start, cfg.frequency, &existing) {
+                                data.dosageHistory
+                                    .push(DosageHistoryEntry::InjectableEstradiol {
+                                        date,
+                                        id: None,
+                                        kind: cfg.kind.clone(),
+                                        dose: cfg.dose,
+                                        unit: cfg.unit.clone(),
+                                        note: None,
+                                        bonusDose: None,
+                                        injectionSite: None,
+                                        vialId: cfg.vialId.clone(),
+                                        subVialId: cfg.subVialId.clone(),
+                                        syringeKind: cfg.syringeKind.clone(),
+                                        needleLength: cfg.needleLength.clone(),
+                                        needleGauge: cfg.needleGauge.clone(),
+                                        photos: None,
+                                    });
+                            }
+                        }
+                        if let Some(cfg) = data.oralEstradiol.clone() {
+                            let existing: Vec<_> = data
+                                .dosageHistory
+                                .iter()
+                                .filter_map(|entry| match entry {
+                                    DosageHistoryEntry::OralEstradiol { date, .. } => Some(*date),
+                                    _ => None,
+                                })
+                                .collect();
+                            for date in scheduled_dose_dates(start, cfg.frequency, &existing) {
+                                data.dosageHistory.push(DosageHistoryEntry::OralEstradiol {
+                                    date,
+                                    id: None,
+                                    kind: cfg.kind.clone(),
+                                    dose: cfg.dose,
+                                    unit: cfg.unit.clone(),
+                                    pillQuantity: Some(1.0),
+                                    note: None,
+                                });
+                            }
+                        }
+                    }
+                }
+
+                if schedule_aa.get() && backfill_aa.get() {
+                    if let (Some(start), Some(cfg)) = (
+                        parse_regimen_start(&aa_start.get()),
+                        data.antiandrogen.clone(),
+                    ) {
+                        let existing: Vec<_> = data
+                            .dosageHistory
+                            .iter()
+                            .filter_map(|entry| match entry {
+                                DosageHistoryEntry::Antiandrogen { date, .. } => Some(*date),
+                                _ => None,
+                            })
+                            .collect();
+                        for date in scheduled_dose_dates(start, cfg.frequency, &existing) {
+                            data.dosageHistory.push(DosageHistoryEntry::Antiandrogen {
+                                date,
+                                id: None,
+                                kind: cfg.kind.clone(),
+                                dose: cfg.dose,
+                                unit: cfg.unit.clone(),
+                                note: None,
+                            });
+                        }
+                    }
+                }
+
+                if schedule_prog.get() && backfill_prog.get() {
+                    if let (Some(start), Some(cfg)) = (
+                        parse_regimen_start(&prog_start.get()),
+                        data.progesterone.clone(),
+                    ) {
+                        let existing: Vec<_> = data
+                            .dosageHistory
+                            .iter()
+                            .filter_map(|entry| match entry {
+                                DosageHistoryEntry::Progesterone { date, .. } => Some(*date),
+                                _ => None,
+                            })
+                            .collect();
+                        for date in scheduled_dose_dates(start, cfg.frequency, &existing) {
+                            data.dosageHistory.push(DosageHistoryEntry::Progesterone {
+                                date,
+                                id: None,
+                                kind: cfg.kind.clone(),
+                                route: cfg.route.clone(),
+                                dose: cfg.dose,
+                                unit: cfg.unit.clone(),
+                                pillQuantity: Some(1.0),
+                                note: None,
+                            });
+                        }
+                    }
                 }
 
                 backfill_scheduled_doses(data);
@@ -985,10 +1232,25 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                         </p>
                     </div>
                     <div class="header-actions">
+                        <div class="segmented">
+                            <A
+                                class="segmented-item"
+                                active_class="active"
+                                exact=true
+                                href="/create/dosage"
+                            >
+                                "Record dose"
+                            </A>
+                            <A
+                                class="segmented-item"
+                                active_class="active"
+                                exact=true
+                                href="/create/dosage/schedule"
+                            >
+                                "Schedule"
+                            </A>
+                        </div>
                         <A href="/view">"View dosage history"</A>
-                        <Show when=move || schedule_only>
-                            <A href="/create/dosage">"Record dose"</A>
-                        </Show>
                     </div>
                 </div>
 
@@ -1107,6 +1369,38 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                     <Show when=move || !schedule_only>
                         <section class="card">
                             <h3>"Dose timing"</h3>
+                            <div class="chip-row">
+                                <button
+                                    type="button"
+                                    class="chip"
+                                    on:click=move |_| {
+                                        record_date_time.set(to_local_input_value(Date::now() as i64))
+                                    }
+                                >
+                                    "Now"
+                                </button>
+                                <button
+                                    type="button"
+                                    class="chip"
+                                    on:click=move |_| record_date_time.set(day_at_ten(0.0))
+                                >
+                                    "Today 10:00"
+                                </button>
+                                <button
+                                    type="button"
+                                    class="chip"
+                                    on:click=move |_| record_date_time.set(day_at_ten(-1.0))
+                                >
+                                    "Yesterday"
+                                </button>
+                                <button
+                                    type="button"
+                                    class="chip"
+                                    on:click=move |_| record_date_time.set(day_at_ten(-2.0))
+                                >
+                                    "2 days ago"
+                                </button>
+                            </div>
                             <label>
                                 "Date / time"
                                 <input
@@ -1341,6 +1635,36 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
 
                         <Show when=move || mode.get() == "schedule">
                             <label>
+                                "Started (regimen start)"
+                                <input
+                                    type="date"
+                                    on:input=move |ev| estrogen_start.set(event_target_value(&ev))
+                                    prop:value=move || estrogen_start.get()
+                                />
+                            </label>
+                            <label class="toggle toggle-wide">
+                                <input
+                                    type="checkbox"
+                                    aria-label="Fill in estrogen doses from the start date"
+                                    on:change=move |ev| backfill_estrogen.set(event_target_checked(&ev))
+                                    prop:checked=move || backfill_estrogen.get()
+                                />
+                                <span class="toggle-track" aria-hidden="true"></span>
+                                <span class="toggle-label">"Fill in doses from the start date"</span>
+                            </label>
+                            <Show when=move || backfill_estrogen.get() && !estrogen_start.get().is_empty()>
+                                <p class="muted">
+                                    {move || {
+                                        let count = estrogen_backfill_dates.get().len();
+                                        if count == 0 {
+                                            "No missing doses to add.".to_string()
+                                        } else {
+                                            format!("Will add {count} dose(s) up to today.")
+                                        }
+                                    }}
+                                </p>
+                            </Show>
+                            <label>
                                 "Next Dose Date"
                                 <input
                                     type="datetime-local"
@@ -1535,6 +1859,36 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
 
                         <Show when=move || mode.get() == "schedule" && !aa_type.get().is_empty()>
                             <label>
+                                "Started (regimen start)"
+                                <input
+                                    type="date"
+                                    on:input=move |ev| aa_start.set(event_target_value(&ev))
+                                    prop:value=move || aa_start.get()
+                                />
+                            </label>
+                            <label class="toggle toggle-wide">
+                                <input
+                                    type="checkbox"
+                                    aria-label="Fill in antiandrogen doses from the start date"
+                                    on:change=move |ev| backfill_aa.set(event_target_checked(&ev))
+                                    prop:checked=move || backfill_aa.get()
+                                />
+                                <span class="toggle-track" aria-hidden="true"></span>
+                                <span class="toggle-label">"Fill in doses from the start date"</span>
+                            </label>
+                            <Show when=move || backfill_aa.get() && !aa_start.get().is_empty()>
+                                <p class="muted">
+                                    {move || {
+                                        let count = aa_backfill_dates.get().len();
+                                        if count == 0 {
+                                            "No missing doses to add.".to_string()
+                                        } else {
+                                            format!("Will add {count} dose(s) up to today.")
+                                        }
+                                    }}
+                                </p>
+                            </Show>
+                            <label>
                                 "Next Dose Date"
                                 <input
                                     type="datetime-local"
@@ -1674,6 +2028,36 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                         </Show>
 
                         <Show when=move || mode.get() == "schedule" && !prog_type.get().is_empty()>
+                            <label>
+                                "Started (regimen start)"
+                                <input
+                                    type="date"
+                                    on:input=move |ev| prog_start.set(event_target_value(&ev))
+                                    prop:value=move || prog_start.get()
+                                />
+                            </label>
+                            <label class="toggle toggle-wide">
+                                <input
+                                    type="checkbox"
+                                    aria-label="Fill in progesterone doses from the start date"
+                                    on:change=move |ev| backfill_prog.set(event_target_checked(&ev))
+                                    prop:checked=move || backfill_prog.get()
+                                />
+                                <span class="toggle-track" aria-hidden="true"></span>
+                                <span class="toggle-label">"Fill in doses from the start date"</span>
+                            </label>
+                            <Show when=move || backfill_prog.get() && !prog_start.get().is_empty()>
+                                <p class="muted">
+                                    {move || {
+                                        let count = prog_backfill_dates.get().len();
+                                        if count == 0 {
+                                            "No missing doses to add.".to_string()
+                                        } else {
+                                            format!("Will add {count} dose(s) up to today.")
+                                        }
+                                    }}
+                                </p>
+                            </Show>
                             <label>
                                 "Next Dose Date"
                                 <input
