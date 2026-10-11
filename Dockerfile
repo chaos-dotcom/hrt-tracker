@@ -19,9 +19,15 @@ RUN cp cargo-binstall /usr/local/cargo/bin
 
 RUN rustup target add wasm32-unknown-unknown
 RUN cargo binstall cargo-leptos
-RUN cargo binstall wasm-bindgen-cli
 
 COPY Cargo.toml Cargo.lock cargo-leptos.toml ./
+
+# Install the wasm-bindgen CLI at the exact version pinned in Cargo.lock. The
+# CLI and the `wasm-bindgen` crate must share the same bindgen schema version,
+# so a floating "latest" CLI breaks the build as soon as the CLI release gets
+# ahead of the lock file.
+RUN cargo binstall wasm-bindgen-cli@$(awk '/^name = "wasm-bindgen"$/{getline; gsub(/[^0-9.]/, ""); print; exit}' Cargo.lock)
+
 COPY index.html ./
 COPY crates ./crates
 COPY static ./static
