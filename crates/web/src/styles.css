@@ -1,4 +1,27 @@
-@import url("https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700&family=Quicksand:wght@400;500;600;700&display=swap");
+/* Self-hosted fonts: latin subset, variable weight, files in static/fonts/.
+   One file per family covers every weight the app uses (300-700 Quicksand,
+   400-800 Baloo 2), so first paint never waits on a third-party font host. */
+@font-face {
+  font-family: "Quicksand";
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url("/fonts/quicksand-var.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Baloo 2";
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url("/fonts/baloo2-var.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
 
 :root {
   --bg: #0f111a;
@@ -11,6 +34,30 @@
   --accent-soft: #3a2231;
   --border: #3d2c3a;
   --shadow: 0 24px 60px rgba(8, 6, 16, 0.55);
+
+  /* spacing scale */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+
+  /* radii */
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+
+  /* type scale */
+  --text-xs: 0.78rem;
+  --text-sm: 0.875rem;
+  --text-md: 1rem;
+  --text-lg: 1.25rem;
+  --text-xl: 2rem;
+
+  /* ergonomics */
+  --touch: 44px;
+  --form-max: 640px;
 }
 
 * {
@@ -78,41 +125,78 @@ body {
 
 .top-bar {
   display: flex;
+  flex-wrap: nowrap;
   align-items: center;
   justify-content: space-between;
-  gap: 24px;
-  padding: 20px 24px;
-  background: rgba(18, 18, 30, 0.9);
+  gap: var(--space-3);
+  padding: var(--space-1) var(--space-4);
+  min-height: 56px;
+  background: rgba(18, 18, 30, 0.92);
   border-bottom: 1px solid rgba(243, 154, 181, 0.25);
   position: sticky;
   top: 0;
-  z-index: 10;
+  z-index: 30;
   backdrop-filter: blur(14px);
 }
 
 .brand {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
+  flex: 0 0 auto;
+  min-width: 0;
 }
 
 .brand-title {
-  font-size: 1.4rem;
+  font-size: var(--text-lg);
   font-weight: 700;
+  line-height: 1.1;
   letter-spacing: 0.02em;
   text-transform: none;
+  white-space: nowrap;
   font-family: "Baloo 2", "Quicksand", sans-serif;
 }
 
+/* the tagline only appears once the header has room for it */
 .brand-sub {
-  font-size: 0.9rem;
+  display: none;
+  font-size: var(--text-xs);
+  line-height: 1.2;
   color: var(--muted);
+  white-space: nowrap;
+}
+
+@media (min-width: 720px) {
+  .brand-sub {
+    display: block;
+  }
 }
 
 .nav-links {
   display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* the four primary links scroll sideways when the header is narrow; the
+   More disclosure stays pinned at the end so it is always reachable */
+.nav-scroll {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.nav-scroll::-webkit-scrollbar {
+  display: none;
 }
 
 .nav-links a,
@@ -120,11 +204,130 @@ body {
   text-decoration: none;
   color: var(--muted);
   font-weight: 600;
-  font-size: 0.95rem;
-  padding: 8px 14px;
+  font-size: var(--text-sm);
+  padding: 0 var(--space-3);
+  min-height: var(--touch);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  flex: 0 0 auto;
   border-radius: 999px;
   border: 1px solid transparent;
-  transition: all 0.2s ease;
+  transition: color 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+}
+
+/* when the current route sits inside the panel, the trigger says so
+   (duplicated strip links are excluded: they highlight in the strip itself) */
+.nav-links:has(.nav-more-panel a.active:not(.nav-dup)) .nav-more > summary {
+  color: var(--ink);
+  border-color: rgba(243, 154, 181, 0.5);
+}
+
+/* "More" disclosure in the header */
+.nav-more {
+  position: static;
+  flex: 0 0 auto;
+  margin-left: var(--space-1);
+  box-shadow: -10px 0 12px -8px rgba(18, 18, 30, 0.95);
+}
+
+.nav-more > summary {
+  list-style: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--touch);
+  padding: 0 var(--space-3);
+  border-radius: 999px;
+  border: 1px solid transparent;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  user-select: none;
+  transition: color 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+}
+
+.nav-more > summary::-webkit-details-marker {
+  display: none;
+}
+
+.nav-more > summary::marker {
+  content: "";
+}
+
+.nav-more > summary::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  margin-left: 2px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: translateY(-2px) rotate(45deg);
+  transition: transform 0.2s ease;
+}
+
+.nav-more[open] > summary::after {
+  transform: translateY(1px) rotate(225deg);
+}
+
+.nav-more > summary:hover,
+.nav-more[open] > summary {
+  color: var(--ink);
+  border-color: rgba(243, 154, 181, 0.5);
+  background: rgba(243, 154, 181, 0.12);
+}
+
+.nav-more-panel {
+  position: absolute;
+  top: calc(100% - 2px);
+  right: var(--space-4);
+  z-index: 40;
+  display: grid;
+  gap: 2px;
+  min-width: 216px;
+  max-width: calc(100vw - var(--space-8));
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(243, 154, 181, 0.3);
+  background: linear-gradient(160deg, rgba(35, 36, 58, 0.99), rgba(20, 20, 32, 0.99));
+  box-shadow: 0 24px 48px rgba(8, 6, 16, 0.6);
+}
+
+.nav-more-panel a {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  text-align: left;
+  min-height: var(--touch);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  color: var(--muted);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+/* duplicates of strip links are only shown when the strip is too narrow */
+.nav-more-panel .nav-narrow-only,
+.nav-more-panel .nav-compact-only {
+  display: none;
+}
+
+.nav-more-panel a:hover,
+.nav-more-panel a:focus-visible {
+  color: var(--ink);
+  background: rgba(243, 154, 181, 0.14);
+}
+
+.nav-more-panel a.active {
+  color: #2a0f1f;
+  background: linear-gradient(120deg, #f39ab5, #ffc1d6);
+  border-color: rgba(255, 193, 214, 0.5);
 }
 
 .primary-actions a {
@@ -360,9 +563,32 @@ body {
 .card {
   background: rgba(35, 36, 58, 0.8);
   border: 1px solid rgba(243, 154, 181, 0.25);
-  border-radius: 18px;
-  padding: 16px;
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
   box-shadow: 0 14px 30px rgba(8, 6, 16, 0.3);
+}
+
+.card h3 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-lg);
+  font-family: "Baloo 2", "Quicksand", sans-serif;
+}
+
+/* flatten the nesting: only the outermost card keeps a card surface, so a
+   card inside a card inside a card no longer reads as three stacked boxes */
+.card .card,
+.card .mini-card,
+.card .note-card,
+.card .history-card,
+.card .chart-card {
+  background: transparent;
+  border-color: rgba(243, 154, 181, 0.16);
+  box-shadow: none;
+}
+
+/* A lone chip in a card grid must not stretch to the full column. */
+.dose-card > .chip {
+  justify-self: start;
 }
 
 .dose-card {
@@ -371,7 +597,16 @@ body {
 }
 
 .dose-card .calc-grid {
-  gap: 16px;
+  gap: var(--space-4);
+  max-width: var(--form-max);
+  grid-template-columns: 1fr;
+}
+
+/* a dose field never stretches past a comfortable typing width */
+@media (min-width: 560px) {
+  .dose-card .calc-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .dose-card label:not(.toggle) {
@@ -900,6 +1135,10 @@ button {
   border: none;
   border-radius: 999px;
   padding: 8px 18px;
+  min-height: var(--touch);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-weight: 700;
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
@@ -932,6 +1171,8 @@ button:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible,
+a:focus-visible,
+summary:focus-visible,
 .nav-links a:focus-visible {
   outline: 2px solid var(--accent-strong);
   outline-offset: 2px;
@@ -944,7 +1185,7 @@ form {
 }
 
 .form-wide {
-  max-width: 100%;
+  max-width: var(--form-max);
   width: 100%;
 }
 
@@ -971,8 +1212,8 @@ label {
 }
 
 .toggle-track {
-  width: 52px;
-  height: 30px;
+  width: 56px;
+  height: 32px;
   border-radius: 999px;
   background: rgba(35, 36, 58, 0.9);
   border: 1px solid rgba(243, 154, 181, 0.35);
@@ -986,8 +1227,8 @@ label {
   position: absolute;
   top: 3px;
   left: 3px;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   background: rgba(246, 242, 248, 0.9);
   box-shadow: 0 4px 10px rgba(10, 8, 18, 0.45);
@@ -1006,7 +1247,7 @@ label {
 }
 
 .toggle input:checked + .toggle-track::after {
-  transform: translateX(22px);
+  transform: translateX(24px);
   background: #2a0f1f;
 }
 
@@ -1019,6 +1260,7 @@ input,
 select,
 textarea {
   width: 100%;
+  min-height: var(--touch);
   padding: 9px 12px;
   border-radius: 12px;
   border: 1px solid rgba(243, 154, 181, 0.25);
@@ -1050,7 +1292,7 @@ textarea {
 
 .muted {
   color: var(--muted);
-  font-size: 0.9rem;
+  font-size: var(--text-sm);
 }
 
 .table {
@@ -1092,11 +1334,12 @@ textarea {
 }
 
 section section {
-  margin-top: 24px;
-  padding: 16px;
-  border: 1px dashed rgba(243, 154, 181, 0.35);
-  border-radius: 16px;
-  background: rgba(35, 36, 58, 0.8);
+  margin-top: var(--space-4);
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .inline {
@@ -1124,7 +1367,7 @@ section section {
 
 .calc-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 12px;
   align-items: start;
 }
@@ -1205,8 +1448,22 @@ section section {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-3);
   flex-wrap: wrap;
+  position: sticky;
+  bottom: 0;
+  z-index: 12;
+  margin-top: var(--space-2);
+  padding: var(--space-6) 0 var(--space-3);
+  padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
+  /* the scrim is tinted with the card surface, so at rest it is invisible and
+     while stuck it darkens whatever slides underneath */
+  background: linear-gradient(
+    to top,
+    rgba(35, 36, 58, 0.97) 0%,
+    rgba(35, 36, 58, 0.9) 58%,
+    rgba(35, 36, 58, 0) 100%
+  );
 }
 
 .option-group {
@@ -1219,11 +1476,13 @@ section section {
 
 .toggle-wide {
   width: 100%;
-  padding: 10px 14px;
-  border-radius: 14px;
-  border: 1px solid rgba(243, 154, 181, 0.3);
-  background: rgba(35, 36, 58, 0.75);
+  min-height: var(--touch);
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
   justify-content: flex-start;
+  gap: var(--space-3);
 }
 
 .toggle-wide .toggle-label {
@@ -1288,14 +1547,25 @@ section section {
 }
 
 .chip {
-  padding: 6px 12px;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--touch);
+  padding: 6px 14px;
   border-radius: 999px;
   border: 1px solid rgba(243, 154, 181, 0.3);
   background: rgba(35, 36, 58, 0.75);
   color: var(--ink);
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: var(--text-sm);
   cursor: pointer;
+}
+
+.chip.active {
+  color: #2a0f1f;
+  font-weight: 700;
+  background: linear-gradient(120deg, #f39ab5, #ffc1d6);
+  border-color: rgba(255, 193, 214, 0.7);
+  box-shadow: 0 8px 18px rgba(243, 154, 181, 0.28);
 }
 
 .chip:hover {
@@ -1389,6 +1659,166 @@ section section {
   font-weight: 600;
 }
 
+/* ---- shared form/feedback components ------------------------------------ */
+
+/* input plus an inline unit suffix ("mg", "pg/mL"), suffix inside the box */
+.unit-field {
+  position: relative;
+  display: block;
+  min-width: 0;
+}
+
+.unit-field input {
+  width: 100%;
+  padding-right: 4.75rem;
+}
+
+.unit-field .unit {
+  position: absolute;
+  right: var(--space-3);
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: 1;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.unit-field:not(:has(.unit)) input {
+  padding-right: 12px;
+}
+
+.field-error {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0;
+  color: #ffb1c4;
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.field-error::before {
+  content: "!";
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: rgba(255, 177, 196, 0.16);
+  border: 1px solid rgba(255, 177, 196, 0.5);
+  font-size: var(--text-xs);
+}
+
+input[aria-invalid="true"],
+select[aria-invalid="true"],
+textarea[aria-invalid="true"] {
+  border-color: rgba(255, 177, 196, 0.7);
+  box-shadow: inset 0 0 0 1px rgba(255, 177, 196, 0.25);
+}
+
+/* commit row at the bottom of a dose card */
+.card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid rgba(243, 154, 181, 0.18);
+}
+
+.card-summary {
+  flex: 1 1 14rem;
+  min-width: 0;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  line-height: 1.4;
+}
+
+.card-commit {
+  flex: 0 0 auto;
+  min-height: var(--touch);
+  padding: 0 var(--space-6);
+}
+
+/* transient status line with an undo action */
+.toast {
+  position: fixed;
+  left: 50%;
+  /* clears the sticky .form-actions bar it often appears above */
+  bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: max-content;
+  max-width: min(92vw, 34rem);
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-4);
+  border-radius: 999px;
+  background: var(--ink);
+  color: #1a1220;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  box-shadow: 0 18px 40px rgba(8, 6, 16, 0.55);
+}
+
+.toast[hidden] {
+  display: none;
+}
+
+.toast-undo {
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  border-radius: 999px;
+  border: 1px solid rgba(26, 18, 32, 0.28);
+  background: rgba(26, 18, 32, 0.08);
+  color: #1a1220;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  box-shadow: none;
+}
+
+.toast-undo:hover {
+  transform: none;
+  background: rgba(26, 18, 32, 0.16);
+  box-shadow: none;
+}
+
+/* small inline advisory under a field or card */
+.inline-note {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(243, 154, 181, 0.25);
+  background: rgba(243, 154, 181, 0.1);
+  color: var(--muted);
+  font-size: var(--text-sm);
+  line-height: 1.4;
+}
+
+.inline-note.warn {
+  border-color: rgba(246, 194, 139, 0.45);
+  background: rgba(246, 194, 139, 0.12);
+  color: #f6c28b;
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  min-height: 0;
+  width: auto;
+}
+
 @keyframes fade-in {
   from {
     opacity: 0;
@@ -1433,12 +1863,89 @@ section section {
 }
 
 @media (max-width: 900px) {
-  .top-bar {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
   .main-content {
     padding: 18px;
+  }
+}
+
+/* ---- responsive header ------------------------------------------------
+   No destination is ever hidden behind a sideways scroll: below 700px the
+   strip keeps View, Stats and New Dose and Estrannaise moves into the More
+   panel; below 440px Stats moves into the panel too. Both copies of a moved
+   link carry active_class="active", so the More trigger still highlights when
+   that route is current. */
+@media (max-width: 699.98px) {
+  .nav-scroll .nav-wide-only {
+    display: none;
+  }
+
+  .nav-more-panel .nav-narrow-only {
+    display: flex;
+  }
+
+  /* Estrannaise now lives in the panel, so the trigger speaks for it */
+  .nav-links:has(.nav-more-panel a.nav-narrow-only.active) .nav-more > summary {
+    color: var(--ink);
+    border-color: rgba(243, 154, 181, 0.5);
+  }
+}
+
+@media (max-width: 439.98px) {
+  .nav-scroll .nav-roomy-only {
+    display: none;
+  }
+
+  .nav-more-panel .nav-compact-only {
+    display: flex;
+  }
+
+  .nav-links:has(.nav-more-panel a.nav-compact-only.active) .nav-more > summary {
+    color: var(--ink);
+    border-color: rgba(243, 154, 181, 0.5);
+  }
+}
+
+@media (max-width: 719px) {
+  .top-bar {
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-3);
+  }
+
+  .brand-title {
+    font-size: 1.05rem;
+  }
+
+  .nav-links a,
+  .nav-more > summary {
+    padding: 0 9px;
+  }
+}
+
+/* small phones: tighten the row enough that View + New Dose + More fit */
+@media (max-width: 419.98px) {
+  .top-bar {
+    gap: var(--space-1);
+    padding: var(--space-1) var(--space-2);
+  }
+
+  .brand-title {
+    font-size: 0.95rem;
+  }
+
+  .nav-links a,
+  .nav-more > summary {
+    padding: 0 8px;
+  }
+}
+
+/* 320px-class phones: six pixels of side padding back, same 44px targets */
+@media (max-width: 339.98px) {
+  .brand-title {
+    font-size: 0.9rem;
+  }
+
+  .nav-links a,
+  .nav-more > summary {
+    padding: 0 6px;
   }
 }

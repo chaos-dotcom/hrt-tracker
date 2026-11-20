@@ -34,15 +34,42 @@ pub fn App() -> impl IntoView {
                             <span class="brand-sub">"Get Absolutely Estrogen'd Idiot"</span>
                         </div>
                         <nav class="nav-links">
-                            <A href="/view" active_class="active">"View"</A>
-                            <A href="/stats" active_class="active">"Stats"</A>
-                            <A href="/estrannaise" active_class="active">"Estrannaise"</A>
-                            <A href="/create/dosage" active_class="active">"New Dose"</A>
-                            <A href="/create/blood-test" active_class="active">"New Blood Test"</A>
-                            <A href="/create/measurement" active_class="active">"New Measurement"</A>
-                            <A href="/calc" active_class="active">"Calculator"</A>
-                            <A href="/vials" active_class="active">"Vials"</A>
-                            <A href="/backup" active_class="active">"Settings & Backup"</A>
+                            <div class="nav-scroll">
+                                <A href="/view" active_class="active">"View"</A>
+                                <A href="/stats" class="nav-roomy-only" active_class="active">
+                                    "Stats"
+                                </A>
+                                <A href="/create/dosage" active_class="active">"New Dose"</A>
+                                <A href="/estrannaise" class="nav-wide-only" active_class="active">
+                                    "Estrannaise"
+                                </A>
+                            </div>
+                            <details class="nav-more">
+                                <summary>"More"</summary>
+                                <div class="nav-more-panel">
+                                    // Narrow screens show these here instead of in the strip above,
+                                    // so no destination is ever hidden behind a sideways scroll.
+                                    <A
+                                        href="/estrannaise"
+                                        class="nav-narrow-only nav-dup"
+                                        active_class="active"
+                                    >
+                                        "Estrannaise"
+                                    </A>
+                                    <A
+                                        href="/stats"
+                                        class="nav-compact-only nav-dup"
+                                        active_class="active"
+                                    >
+                                        "Stats"
+                                    </A>
+                                    <A href="/create/blood-test" active_class="active">"New Blood Test"</A>
+                                    <A href="/create/measurement" active_class="active">"New Measurement"</A>
+                                    <A href="/calc" active_class="active">"Calculator"</A>
+                                    <A href="/vials" active_class="active">"Vials"</A>
+                                    <A href="/backup" active_class="active">"Settings & Backup"</A>
+                                </div>
+                            </details>
                         </nav>
                     </header>
                     <main class="main-content">

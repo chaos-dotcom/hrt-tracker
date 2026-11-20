@@ -1,5 +1,5 @@
 use gloo_timers::callback::Timeout;
-use js_sys::Date;
+use js_sys::{Date, Math};
 use leptos::window;
 use leptos::*;
 use leptos_router::{use_navigate, A};
@@ -10,10 +10,10 @@ use wasm_bindgen::JsValue;
 use crate::layout::page_layout;
 use crate::store::use_store;
 use crate::utils::{
-    hormone_unit_label, injectable_dose_from_iu, injectable_iu_from_dose, parse_date_or_now,
-    parse_decimal, parse_decimal_or_nan, parse_hormone_unit,
+    injectable_dose_from_iu, injectable_iu_from_dose, parse_date_or_now, parse_decimal,
+    parse_decimal_or_nan,
 };
-use hrt_shared::logic::{backfill_scheduled_doses, scheduled_dose_dates};
+use hrt_shared::logic::{backfill_scheduled_doses, day_start_ms, scheduled_dose_dates};
 use hrt_shared::types::{
     AntiandrogenSchedule, Antiandrogens, DosageHistoryEntry, HormoneUnits, InjectableEstradiols,
     InjectableSchedule, InjectionSites, OralEstradiols, OralSchedule, ProgesteroneRoutes,
@@ -43,21 +43,6 @@ const ANTIANDROGEN_OPTIONS: [Antiandrogens; 4] = [
 ];
 
 const PROGESTERONE_OPTIONS: [Progesterones; 1] = [Progesterones::Micronized];
-
-const PROGESTERONE_ROUTE_OPTIONS: [ProgesteroneRoutes; 2] =
-    [ProgesteroneRoutes::Oral, ProgesteroneRoutes::Boofed];
-
-const HORMONE_UNITS: [HormoneUnits; 9] = [
-    HormoneUnits::E2PgMl,
-    HormoneUnits::E2PmolL,
-    HormoneUnits::TNgDl,
-    HormoneUnits::TNmolL,
-    HormoneUnits::Mg,
-    HormoneUnits::NgMl,
-    HormoneUnits::MIuMl,
-    HormoneUnits::MIuL,
-    HormoneUnits::UL,
-];
 
 const INJECTION_SITES: [InjectionSites; 12] = [
     InjectionSites::StomachRight,
@@ -113,13 +98,6 @@ fn antiandrogen_label(kind: &Antiandrogens) -> &'static str {
 fn progesterone_label(kind: &Progesterones) -> &'static str {
     match kind {
         Progesterones::Micronized => "Micronized Progesterone",
-    }
-}
-
-fn progesterone_route_label(kind: &ProgesteroneRoutes) -> &'static str {
-    match kind {
-        ProgesteroneRoutes::Oral => "Oral",
-        ProgesteroneRoutes::Boofed => "Boofed",
     }
 }
 
@@ -180,14 +158,6 @@ fn progesterone_from_label(value: &str) -> Progesterones {
         .find(|kind| progesterone_label(kind) == value)
         .cloned()
         .unwrap_or(Progesterones::Micronized)
-}
-
-fn progesterone_route_from_label(value: &str) -> ProgesteroneRoutes {
-    PROGESTERONE_ROUTE_OPTIONS
-        .iter()
-        .find(|kind| progesterone_route_label(kind) == value)
-        .cloned()
-        .unwrap_or(ProgesteroneRoutes::Oral)
 }
 
 fn injection_site_from_label(value: &str) -> Option<InjectionSites> {
@@ -291,11 +261,170 @@ fn fmt_iu_from_ml(ml: f64) -> String {
     format!("{}", (ml * 100.0).round() as i64)
 }
 
-fn hormone_unit_labels() -> Vec<String> {
-    HORMONE_UNITS
+/// The static suffix shown inside a dose input. Dosing on this page is in
+/// milligrams; the injectable IU view is a display setting, not a unit choice.
+fn dose_unit_suffix(display_in_iu: bool) -> &'static str {
+    if display_in_iu {
+        "IU"
+    } else {
+        "mg"
+    }
+}
+
+/// Split a progesterone dose given as a *total* in mg into the per-pill amount
+/// stored on the history entry and the number of pills taken: a 200 mg dose is
+/// two 100 mg pills, anything else is that many mg in a single pill.
+fn progesterone_dose_amounts(total_mg: f64) -> (f64, f64) {
+    if total_mg == 200.0 {
+        (100.0, 2.0)
+    } else {
+        (total_mg, 1.0)
+    }
+}
+
+/// Label of a progesterone route chip; `Rectal` is the UI word for the route
+/// stored as `ProgesteroneRoutes::Boofed`.
+fn progesterone_route_chip_label(route: &ProgesteroneRoutes) -> &'static str {
+    match route {
+        ProgesteroneRoutes::Oral => "Oral",
+        ProgesteroneRoutes::Boofed => "Rectal",
+    }
+}
+
+fn progesterone_route_from_chip(label: &str) -> ProgesteroneRoutes {
+    match label {
+        "Rectal" => ProgesteroneRoutes::Boofed,
+        _ => ProgesteroneRoutes::Oral,
+    }
+}
+
+/// The word a medication is logged under in a commit button, e.g. "cyproterone".
+fn antiandrogen_action_word(kind: &Antiandrogens) -> &'static str {
+    match kind {
+        Antiandrogens::CPA => "cyproterone",
+        Antiandrogens::Spiro => "spironolactone",
+        Antiandrogens::Bica => "bicalutamide",
+        Antiandrogens::Finasteride => "finasteride",
+    }
+}
+
+/// Text of the progesterone card's commit button, e.g. "Log progesterone · 100 mg · oral".
+fn progesterone_commit_label(total_mg: f64, route: &ProgesteroneRoutes) -> String {
+    format!(
+        "Log progesterone · {} mg · {}",
+        fmt(total_mg, 2),
+        progesterone_route_chip_label(route).to_lowercase()
+    )
+}
+
+/// Which medication a history entry belongs to, for the per-card draft, the
+/// "already logged today" guard and the undo toast.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Medication {
+    Estrogen,
+    Antiandrogen,
+    Progesterone,
+}
+
+fn entry_medication(entry: &DosageHistoryEntry) -> Medication {
+    match entry {
+        DosageHistoryEntry::InjectableEstradiol { .. }
+        | DosageHistoryEntry::OralEstradiol { .. } => Medication::Estrogen,
+        DosageHistoryEntry::Antiandrogen { .. } => Medication::Antiandrogen,
+        DosageHistoryEntry::Progesterone { .. } => Medication::Progesterone,
+    }
+}
+
+fn dosage_entry_date(entry: &DosageHistoryEntry) -> i64 {
+    match entry {
+        DosageHistoryEntry::InjectableEstradiol { date, .. }
+        | DosageHistoryEntry::OralEstradiol { date, .. }
+        | DosageHistoryEntry::Antiandrogen { date, .. }
+        | DosageHistoryEntry::Progesterone { date, .. } => *date,
+    }
+}
+
+fn dosage_entry_id(entry: &DosageHistoryEntry) -> Option<&str> {
+    match entry {
+        DosageHistoryEntry::InjectableEstradiol { id, .. }
+        | DosageHistoryEntry::OralEstradiol { id, .. }
+        | DosageHistoryEntry::Antiandrogen { id, .. }
+        | DosageHistoryEntry::Progesterone { id, .. } => id.as_deref(),
+    }
+}
+
+/// Most recent history entry of one medication, the first source a card's
+/// draft is pre-filled from.
+fn latest_entry(
+    entries: &[DosageHistoryEntry],
+    medication: Medication,
+) -> Option<&DosageHistoryEntry> {
+    entries
         .iter()
-        .map(|unit| hormone_unit_label(unit).to_string())
-        .collect()
+        .filter(|entry| entry_medication(entry) == medication)
+        .max_by_key(|entry| dosage_entry_date(entry))
+}
+
+/// How an entry's amount should read back, e.g. "100 mg" or "2 × 100 mg".
+fn entry_dose_text(entry: &DosageHistoryEntry) -> String {
+    match entry {
+        DosageHistoryEntry::InjectableEstradiol { dose, .. }
+        | DosageHistoryEntry::Antiandrogen { dose, .. } => format!("{} mg", fmt(*dose, 2)),
+        DosageHistoryEntry::OralEstradiol {
+            dose, pillQuantity, ..
+        }
+        | DosageHistoryEntry::Progesterone {
+            dose, pillQuantity, ..
+        } => {
+            let quantity = pillQuantity.unwrap_or(1.0);
+            if quantity > 1.0 {
+                format!("{} × {} mg", fmt(quantity, 2), fmt(*dose, 2))
+            } else {
+                format!("{} mg", fmt(*dose, 2))
+            }
+        }
+    }
+}
+
+/// "Already logged today at 22:14 · 100 mg" for the newest entry of one
+/// medication on the local day starting at `day_start`.
+fn logged_today_note(
+    entries: &[DosageHistoryEntry],
+    day_start: i64,
+    medication: Medication,
+) -> Option<String> {
+    entries
+        .iter()
+        .filter(|entry| entry_medication(entry) == medication)
+        .filter(|entry| day_start_ms(dosage_entry_date(entry)) == day_start)
+        .max_by_key(|entry| dosage_entry_date(entry))
+        .map(|entry| {
+            format!(
+                "Already logged today at {} · {}",
+                clock_label(dosage_entry_date(entry)),
+                entry_dose_text(entry)
+            )
+        })
+}
+
+/// `HH:MM` in local time, for "Logged 22:14" and the already-logged note.
+fn clock_label(ms: i64) -> String {
+    let date = Date::new(&JsValue::from_f64(ms as f64));
+    format!("{:02}:{:02}", date.get_hours(), date.get_minutes())
+}
+
+/// Unique id for a history entry pushed from this page, so the toast's Undo can
+/// remove exactly that entry.
+fn new_dose_id(date_ms: i64) -> String {
+    format!("dose-{date_ms}-{}", (Math::random() * 1_000_000.0) as i64)
+}
+
+/// State behind the shared `.toast`: what was written, and what Undo removes.
+#[derive(Clone)]
+struct ToastState {
+    message: String,
+    entry_id: String,
+    medication: Medication,
 }
 
 fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
@@ -325,8 +454,7 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
     let injectable_type =
         create_rw_signal(injectable_label(&InjectableEstradiols::Benzoate).to_string());
     let oral_type = create_rw_signal(oral_label(&OralEstradiols::Valerate).to_string());
-    let estrogen_dose = create_rw_signal("0".to_string());
-    let estrogen_unit = create_rw_signal(hormone_unit_label(&HormoneUnits::Mg).to_string());
+    let estrogen_dose = create_rw_signal(String::new());
     let injection_frequency = create_rw_signal("7".to_string());
     let oral_frequency = create_rw_signal("1".to_string());
     let estrogen_next_date = create_rw_signal(String::new());
@@ -371,23 +499,21 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
         }
     });
 
-    let aa_type = create_rw_signal(String::new());
-    let aa_dose = create_rw_signal("0".to_string());
-    let aa_unit = create_rw_signal(hormone_unit_label(&HormoneUnits::Mg).to_string());
+    let aa_type = create_rw_signal(antiandrogen_label(&ANTIANDROGEN_OPTIONS[0]).to_string());
+    let aa_dose = create_rw_signal(String::new());
     let aa_frequency = create_rw_signal("1".to_string());
     let aa_next_date = create_rw_signal(String::new());
 
-    let prog_type = create_rw_signal(String::new());
-    let prog_dose = create_rw_signal("0".to_string());
-    let prog_unit = create_rw_signal(hormone_unit_label(&HormoneUnits::Mg).to_string());
+    // Progesterone is edited as a *total* dose in mg. `prog_total` is the single
+    // draft value behind the chips and the free-text input; the per-pill amount
+    // and pill count written to history are derived from it.
+    let prog_type = create_rw_signal(progesterone_label(&Progesterones::Micronized).to_string());
+    let prog_total = create_rw_signal(String::new());
     let prog_route =
-        create_rw_signal(progesterone_route_label(&ProgesteroneRoutes::Oral).to_string());
+        create_rw_signal(progesterone_route_chip_label(&ProgesteroneRoutes::Oral).to_string());
     let prog_frequency = create_rw_signal("1".to_string());
     let prog_next_date = create_rw_signal(String::new());
 
-    let record_estrogen = create_rw_signal(true);
-    let record_aa = create_rw_signal(false);
-    let record_prog = create_rw_signal(false);
     let bonus_dose = create_rw_signal(false);
 
     // Whether each medication has an active recurring schedule (schedule mode only).
@@ -407,7 +533,24 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
     let aa_note = create_rw_signal(String::new());
     let prog_note = create_rw_signal(String::new());
     let estrogen_pill_qty = create_rw_signal("1".to_string());
-    let prog_pill_qty = create_rw_signal("1".to_string());
+    // Each card's note is collapsed behind a "+ note" reveal.
+    let estrogen_note_open = create_rw_signal(false);
+    let aa_note_open = create_rw_signal(false);
+    let prog_note_open = create_rw_signal(false);
+
+    // Per-card feedback and per-field validation. Field errors clear as soon as
+    // the user edits the field they belong to.
+    let estrogen_logged = create_rw_signal(None::<String>);
+    let aa_logged = create_rw_signal(None::<String>);
+    let prog_logged = create_rw_signal(None::<String>);
+    let estrogen_dose_error = create_rw_signal(None::<String>);
+    let aa_dose_error = create_rw_signal(None::<String>);
+    let prog_dose_error = create_rw_signal(None::<String>);
+    let estrogen_frequency_error = create_rw_signal(None::<String>);
+    let aa_frequency_error = create_rw_signal(None::<String>);
+    let prog_frequency_error = create_rw_signal(None::<String>);
+    let toast = create_rw_signal(None::<ToastState>);
+    let toast_timeout: Rc<RefCell<Option<Timeout>>> = Rc::new(RefCell::new(None));
 
     let injection_site = create_rw_signal(String::new());
     let syringe_kind = create_rw_signal(String::new());
@@ -523,17 +666,82 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
     let schedule_feedback = create_rw_signal(false);
     let feedback_timeout: Rc<RefCell<Option<Timeout>>> = Rc::new(RefCell::new(None));
 
-    let initialized = create_rw_signal(false);
-    create_effect({
+    // Each medication's draft is pre-filled from its most recent history entry,
+    // else from its schedule. A card with nothing to pre-fill stays collapsed
+    // behind its "+ Add" button; clicking that seeds the same draft, falling
+    // back to the defaults below.
+    let seed_estrogen: StoredValue<Rc<dyn Fn(bool)>> = StoredValue::new({
         let store = store.clone();
-        move |_| {
-            if initialized.get() {
-                return;
-            }
-            if store.is_loading.get() {
-                return;
-            }
+        Rc::new(move |with_defaults: bool| {
             let data = store.data.get();
+            if let Some(entry) = latest_entry(&data.dosageHistory, Medication::Estrogen) {
+                match entry {
+                    DosageHistoryEntry::InjectableEstradiol {
+                        kind,
+                        dose,
+                        unit,
+                        vialId,
+                        subVialId,
+                        syringeKind,
+                        needleLength,
+                        needleGauge,
+                        ..
+                    } => {
+                        estrogen_method.set("injection".to_string());
+                        injectable_type.set(injectable_label(kind).to_string());
+                        let dose_in_iu = mode.get() == "record"
+                            && settings.get().displayInjectableInIU.unwrap_or(false)
+                            && *unit == HormoneUnits::Mg
+                            && injectable_iu_from_dose(
+                                &data,
+                                *dose,
+                                unit,
+                                vialId.as_ref(),
+                                vialId.as_ref(),
+                            )
+                            .is_some();
+                        let dose_label = if dose_in_iu {
+                            injectable_iu_from_dose(
+                                &data,
+                                *dose,
+                                unit,
+                                vialId.as_ref(),
+                                vialId.as_ref(),
+                            )
+                            .map(|iu| fmt(iu, 3))
+                            .unwrap_or_else(|| fmt(*dose, 3))
+                        } else {
+                            fmt(*dose, 3)
+                        };
+                        estrogen_dose.set(dose_label);
+                        estrogen_dose_in_iu.set(dose_in_iu);
+                        selected_vial_id.set(vialId.clone().unwrap_or_default());
+                        selected_sub_vial_id.set(subVialId.clone().unwrap_or_default());
+                        syringe_kind.set(syringeKind.clone().unwrap_or_default());
+                        needle_length.set(needleLength.clone().unwrap_or_default());
+                        needle_gauge.set(needleGauge.clone().unwrap_or_default());
+                    }
+                    DosageHistoryEntry::OralEstradiol {
+                        kind,
+                        dose,
+                        pillQuantity,
+                        ..
+                    } => {
+                        estrogen_method.set("oral".to_string());
+                        oral_type.set(oral_label(kind).to_string());
+                        estrogen_dose.set(fmt(*dose, 3));
+                        estrogen_dose_in_iu.set(false);
+                        estrogen_pill_qty.set(fmt(pillQuantity.unwrap_or(1.0), 2));
+                        selected_vial_id.set(String::new());
+                        selected_sub_vial_id.set(String::new());
+                        syringe_kind.set(String::new());
+                        needle_length.set(String::new());
+                        needle_gauge.set(String::new());
+                    }
+                    _ => {}
+                }
+                return;
+            }
             if let Some(inj) = data.injectableEstradiol.as_ref() {
                 estrogen_method.set("injection".to_string());
                 injectable_type.set(injectable_label(&inj.kind).to_string());
@@ -563,41 +771,127 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                 };
                 estrogen_dose.set(dose_label);
                 estrogen_dose_in_iu.set(dose_in_iu);
-                estrogen_unit.set(hormone_unit_label(&HormoneUnits::Mg).to_string());
+                selected_vial_id.set(inj.vialId.clone().unwrap_or_default());
+                selected_sub_vial_id.set(inj.subVialId.clone().unwrap_or_default());
+                syringe_kind.set(inj.syringeKind.clone().unwrap_or_default());
+                needle_length.set(inj.needleLength.clone().unwrap_or_default());
+                needle_gauge.set(inj.needleGauge.clone().unwrap_or_default());
+                return;
+            }
+            if let Some(oral) = data.oralEstradiol.as_ref() {
+                estrogen_method.set("oral".to_string());
+                oral_type.set(oral_label(&oral.kind).to_string());
+                estrogen_dose.set(fmt(oral.dose, 3));
+                estrogen_dose_in_iu.set(false);
+                estrogen_pill_qty.set("1".to_string());
+                selected_vial_id.set(String::new());
+                selected_sub_vial_id.set(String::new());
+                syringe_kind.set(String::new());
+                needle_length.set(String::new());
+                needle_gauge.set(String::new());
+                return;
+            }
+            if with_defaults {
+                estrogen_method.set("oral".to_string());
+                oral_type.set(oral_label(&OralEstradiols::Valerate).to_string());
+                estrogen_dose.set("2".to_string());
+                estrogen_dose_in_iu.set(false);
+                estrogen_pill_qty.set("1".to_string());
+            }
+        })
+    });
+
+    let seed_aa: StoredValue<Rc<dyn Fn(bool)>> = StoredValue::new({
+        let store = store.clone();
+        Rc::new(move |with_defaults: bool| {
+            let data = store.data.get();
+            if let Some(entry) = latest_entry(&data.dosageHistory, Medication::Antiandrogen) {
+                if let DosageHistoryEntry::Antiandrogen { kind, dose, .. } = entry {
+                    aa_type.set(antiandrogen_label(kind).to_string());
+                    aa_dose.set(fmt(*dose, 3));
+                }
+                return;
+            }
+            if let Some(aa) = data.antiandrogen.as_ref() {
+                aa_type.set(antiandrogen_label(&aa.kind).to_string());
+                aa_dose.set(fmt(aa.dose, 3));
+            }
+            // With no history and no schedule the card stays collapsed; its
+            // "+ Add" button then opens it with the default antiandrogen and a
+            // 12.5 mg dose, the usual cyproterone dose.
+            else if with_defaults {
+                aa_type.set(antiandrogen_label(&Antiandrogens::CPA).to_string());
+                aa_dose.set("12.5".to_string());
+            }
+        })
+    });
+
+    let seed_prog: StoredValue<Rc<dyn Fn(bool)>> = StoredValue::new({
+        let store = store.clone();
+        Rc::new(move |with_defaults: bool| {
+            let data = store.data.get();
+            if let Some(entry) = latest_entry(&data.dosageHistory, Medication::Progesterone) {
+                if let DosageHistoryEntry::Progesterone {
+                    kind,
+                    route,
+                    dose,
+                    pillQuantity,
+                    ..
+                } = entry
+                {
+                    let quantity = pillQuantity.unwrap_or(1.0);
+                    prog_type.set(progesterone_label(kind).to_string());
+                    prog_route.set(progesterone_route_chip_label(route).to_string());
+                    prog_total.set(fmt(*dose * quantity, 2));
+                }
+                return;
+            }
+            if let Some(prog) = data.progesterone.as_ref() {
+                prog_type.set(progesterone_label(&prog.kind).to_string());
+                prog_route.set(progesterone_route_chip_label(&prog.route).to_string());
+                prog_total.set(fmt(prog.dose, 2));
+                return;
+            }
+            if with_defaults {
+                prog_type.set(progesterone_label(&Progesterones::Micronized).to_string());
+                prog_route
+                    .set(progesterone_route_chip_label(&ProgesteroneRoutes::Oral).to_string());
+                prog_total.set("100".to_string());
+            }
+        })
+    });
+
+    let initialized = create_rw_signal(false);
+    create_effect({
+        let store = store.clone();
+        let seed_estrogen = seed_estrogen.clone();
+        let seed_aa = seed_aa.clone();
+        let seed_prog = seed_prog.clone();
+        move |_| {
+            if initialized.get() {
+                return;
+            }
+            if store.is_loading.get() {
+                return;
+            }
+            let data = store.data.get();
+            // Schedule-only fields always come from the saved schedule.
+            if let Some(inj) = data.injectableEstradiol.as_ref() {
                 injection_frequency.set(fmt(inj.frequency, 2));
                 estrogen_next_date.set(
                     inj.nextDoseDate
                         .map(to_local_input_value)
                         .unwrap_or_default(),
                 );
-                selected_vial_id.set(inj.vialId.clone().unwrap_or_default());
-                selected_sub_vial_id.set(inj.subVialId.clone().unwrap_or_default());
-                syringe_kind.set(inj.syringeKind.clone().unwrap_or_default());
-                needle_length.set(inj.needleLength.clone().unwrap_or_default());
-                needle_gauge.set(inj.needleGauge.clone().unwrap_or_default());
             } else if let Some(oral) = data.oralEstradiol.as_ref() {
-                estrogen_method.set("oral".to_string());
-                oral_type.set(oral_label(&oral.kind).to_string());
-                estrogen_dose.set(fmt(oral.dose, 3));
-                estrogen_dose_in_iu.set(false);
-                estrogen_unit.set(hormone_unit_label(&oral.unit).to_string());
                 oral_frequency.set(fmt(oral.frequency, 2));
                 estrogen_next_date.set(
                     oral.nextDoseDate
                         .map(to_local_input_value)
                         .unwrap_or_default(),
                 );
-                selected_vial_id.set(String::new());
-                selected_sub_vial_id.set(String::new());
-                syringe_kind.set(String::new());
-                needle_length.set(String::new());
-                needle_gauge.set(String::new());
             }
-
             if let Some(aa) = data.antiandrogen.as_ref() {
-                aa_type.set(antiandrogen_label(&aa.kind).to_string());
-                aa_dose.set(fmt(aa.dose, 3));
-                aa_unit.set(hormone_unit_label(&aa.unit).to_string());
                 aa_frequency.set(fmt(aa.frequency, 2));
                 aa_next_date.set(
                     aa.nextDoseDate
@@ -605,12 +899,7 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                         .unwrap_or_default(),
                 );
             }
-
             if let Some(prog) = data.progesterone.as_ref() {
-                prog_type.set(progesterone_label(&prog.kind).to_string());
-                prog_dose.set(fmt(prog.dose, 3));
-                prog_unit.set(hormone_unit_label(&prog.unit).to_string());
-                prog_route.set(progesterone_route_label(&prog.route).to_string());
                 prog_frequency.set(fmt(prog.frequency, 2));
                 prog_next_date.set(
                     prog.nextDoseDate
@@ -618,6 +907,9 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                         .unwrap_or_default(),
                 );
             }
+            seed_estrogen.with_value(|seed| seed(false));
+            seed_aa.with_value(|seed| seed(false));
+            seed_prog.with_value(|seed| seed(false));
             schedule_estrogen
                 .set(data.injectableEstradiol.is_some() || data.oralEstradiol.is_some());
             schedule_aa.set(data.antiandrogen.is_some());
@@ -684,16 +976,6 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
     let estrogen_pill_total = create_memo(move |_| {
         let dose = parse_num(&estrogen_dose.get());
         let qty = parse_num(&estrogen_pill_qty.get());
-        if dose.is_finite() && qty.is_finite() {
-            dose * qty
-        } else {
-            0.0
-        }
-    });
-
-    let prog_pill_total = create_memo(move |_| {
-        let dose = parse_num(&prog_dose.get());
-        let qty = parse_num(&prog_pill_qty.get());
         if dose.is_finite() && qty.is_finite() {
             dose * qty
         } else {
@@ -778,21 +1060,311 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
         }
     });
 
+    // ---- record mode: one commit per card ----------------------------------
+    // A card is open when its draft holds something; a card with no draft and no
+    // schedule collapses to its "+ Add" button. Card contents are the intent.
+    let estrogen_card_open = create_memo(move |_| !estrogen_dose.get().trim().is_empty());
+    let aa_card_open = create_memo(move |_| !aa_dose.get().trim().is_empty());
+    let prog_card_open = create_memo(move |_| !prog_total.get().trim().is_empty());
+
+    // The dose in mg this card would write, or `None` when it has nothing valid.
+    let estrogen_record_dose = create_memo(move |_| {
+        if estrogen_method.get() == "injection" {
+            estrogen_dose_as_mg
+                .get()
+                .filter(|dose| dose.is_finite() && *dose > 0.0)
+        } else {
+            parse_optional_num(&estrogen_dose.get()).filter(|dose| dose.is_finite() && *dose > 0.0)
+        }
+    });
+    let aa_record_dose =
+        create_memo(move |_| parse_optional_num(&aa_dose.get()).filter(|dose| *dose > 0.0));
+    let prog_record_total =
+        create_memo(move |_| parse_optional_num(&prog_total.get()).filter(|dose| *dose > 0.0));
+
+    // How the estrogen dose is shown on the button and summary.
+    let estrogen_dose_label = move || -> String {
+        let Some(dose) = estrogen_record_dose.get() else {
+            return String::new();
+        };
+        if estrogen_method.get() == "injection" {
+            if estrogen_dose_in_iu.get() {
+                format!("{} IU", fmt(dose, 3))
+            } else {
+                format!("{} mg", fmt(dose, 3))
+            }
+        } else {
+            let quantity = parse_optional_num(&estrogen_pill_qty.get()).unwrap_or(1.0);
+            if quantity > 1.0 {
+                format!("{} × {} mg", fmt(quantity, 2), fmt(dose, 2))
+            } else {
+                format!("{} mg", fmt(dose, 2))
+            }
+        }
+    };
+
+    // The local day "already logged today" is measured against.
+    let today_start = day_start_ms(Date::now() as i64);
+    let estrogen_logged_today = create_memo({
+        let store = store.clone();
+        move |_| {
+            logged_today_note(
+                &store.data.get().dosageHistory,
+                today_start,
+                Medication::Estrogen,
+            )
+        }
+    });
+    let aa_logged_today = create_memo({
+        let store = store.clone();
+        move |_| {
+            logged_today_note(
+                &store.data.get().dosageHistory,
+                today_start,
+                Medication::Antiandrogen,
+            )
+        }
+    });
+    let prog_logged_today = create_memo({
+        let store = store.clone();
+        move |_| {
+            logged_today_note(
+                &store.data.get().dosageHistory,
+                today_start,
+                Medication::Progesterone,
+            )
+        }
+    });
+
+    let show_toast: StoredValue<Rc<dyn Fn(String, String, Medication)>> = StoredValue::new({
+        let toast_timeout = toast_timeout.clone();
+        Rc::new(
+            move |message: String, entry_id: String, medication: Medication| {
+                toast.set(Some(ToastState {
+                    message,
+                    entry_id,
+                    medication,
+                }));
+                if let Some(existing) = toast_timeout.borrow_mut().take() {
+                    drop(existing);
+                }
+                *toast_timeout.borrow_mut() = Some(Timeout::new(6000, move || {
+                    toast.set(None);
+                }));
+            },
+        )
+    });
+
+    let undo_toast: StoredValue<Rc<dyn Fn()>> = StoredValue::new({
+        let store = store.clone();
+        Rc::new(move || {
+            let Some(state) = toast.get() else {
+                return;
+            };
+            store.data.update(|data| {
+                data.dosageHistory
+                    .retain(|entry| dosage_entry_id(entry) != Some(state.entry_id.as_str()));
+            });
+            match state.medication {
+                Medication::Estrogen => estrogen_logged.set(None),
+                Medication::Antiandrogen => aa_logged.set(None),
+                Medication::Progesterone => prog_logged.set(None),
+            }
+            store.mark_dirty();
+            store.save();
+            toast.set(None);
+        })
+    });
+
+    // Each commit writes exactly its own card's values: no navigation, a toast
+    // with Undo, and the card keeps a "Logged 22:14 · …" line.
+    let commit_estrogen: StoredValue<Rc<dyn Fn()>> = StoredValue::new({
+        let store = store.clone();
+        Rc::new(move || {
+            let Some(dose) = estrogen_record_dose.get() else {
+                estrogen_dose_error.set(Some("Choose a dose first".to_string()));
+                return;
+            };
+            estrogen_dose_error.set(None);
+            let dose_label = estrogen_dose_label();
+            let record_ms = parse_datetime_local(&record_date_time.get());
+            let entry_id = new_dose_id(record_ms);
+            let note = if estrogen_note.get().trim().is_empty() {
+                None
+            } else {
+                Some(estrogen_note.get())
+            };
+            let injection = estrogen_method.get() == "injection";
+            store.data.update(|data| {
+                if injection {
+                    data.dosageHistory
+                        .push(DosageHistoryEntry::InjectableEstradiol {
+                            date: record_ms,
+                            id: Some(entry_id.clone()),
+                            kind: injectable_from_label(&injectable_type.get()),
+                            dose,
+                            unit: HormoneUnits::Mg,
+                            note: note.clone(),
+                            bonusDose: if bonus_dose.get() { Some(true) } else { None },
+                            injectionSite: injection_site_from_label(&injection_site.get()),
+                            vialId: if selected_vial_id.get().is_empty() {
+                                None
+                            } else {
+                                Some(selected_vial_id.get())
+                            },
+                            subVialId: if selected_sub_vial_id.get().is_empty() {
+                                None
+                            } else {
+                                Some(selected_sub_vial_id.get())
+                            },
+                            syringeKind: if syringe_kind.get().is_empty() {
+                                None
+                            } else {
+                                Some(syringe_kind.get())
+                            },
+                            needleLength: if needle_length.get().trim().is_empty() {
+                                None
+                            } else {
+                                Some(needle_length.get())
+                            },
+                            needleGauge: if needle_gauge.get().trim().is_empty() {
+                                None
+                            } else {
+                                Some(needle_gauge.get())
+                            },
+                            photos: None,
+                        });
+                } else {
+                    let pill_qty =
+                        parse_optional_num(&estrogen_pill_qty.get()).filter(|value| *value > 0.0);
+                    data.dosageHistory.push(DosageHistoryEntry::OralEstradiol {
+                        date: record_ms,
+                        id: Some(entry_id.clone()),
+                        kind: oral_from_label(&oral_type.get()),
+                        dose,
+                        unit: HormoneUnits::Mg,
+                        pillQuantity: pill_qty,
+                        note: note.clone(),
+                    });
+                }
+            });
+            store.mark_dirty();
+            store.save();
+            let logged = format!("Logged {} · {}", clock_label(record_ms), dose_label);
+            estrogen_logged.set(Some(logged));
+            show_toast.with_value(|toast| {
+                toast(
+                    format!("Estrogen {dose_label} logged"),
+                    entry_id,
+                    Medication::Estrogen,
+                )
+            });
+        })
+    });
+
+    let commit_aa: StoredValue<Rc<dyn Fn()>> = StoredValue::new({
+        let store = store.clone();
+        Rc::new(move || {
+            let Some(dose) = aa_record_dose.get() else {
+                aa_dose_error.set(Some("Choose a dose first".to_string()));
+                return;
+            };
+            aa_dose_error.set(None);
+            let kind = antiandrogen_from_label(&aa_type.get());
+            let record_ms = parse_datetime_local(&record_date_time.get());
+            let entry_id = new_dose_id(record_ms);
+            let note = if aa_note.get().trim().is_empty() {
+                None
+            } else {
+                Some(aa_note.get())
+            };
+            store.data.update(|data| {
+                data.dosageHistory.push(DosageHistoryEntry::Antiandrogen {
+                    date: record_ms,
+                    id: Some(entry_id.clone()),
+                    kind: kind.clone(),
+                    dose,
+                    unit: HormoneUnits::Mg,
+                    note: note.clone(),
+                });
+            });
+            store.mark_dirty();
+            store.save();
+            let logged = format!("Logged {} · {} mg", clock_label(record_ms), fmt(dose, 2));
+            aa_logged.set(Some(logged));
+            show_toast.with_value(|toast| {
+                toast(
+                    format!(
+                        "Logged {} · {} mg",
+                        antiandrogen_action_word(&kind),
+                        fmt(dose, 2)
+                    ),
+                    entry_id,
+                    Medication::Antiandrogen,
+                )
+            });
+        })
+    });
+
+    let commit_prog: StoredValue<Rc<dyn Fn()>> = StoredValue::new({
+        let store = store.clone();
+        Rc::new(move || {
+            let Some(total) = prog_record_total.get() else {
+                prog_dose_error.set(Some("Choose a dose first".to_string()));
+                return;
+            };
+            prog_dose_error.set(None);
+            let (dose, pill_quantity) = progesterone_dose_amounts(total);
+            let route = progesterone_route_from_chip(&prog_route.get());
+            let record_ms = parse_datetime_local(&record_date_time.get());
+            let entry_id = new_dose_id(record_ms);
+            let note = if prog_note.get().trim().is_empty() {
+                None
+            } else {
+                Some(prog_note.get())
+            };
+            store.data.update(|data| {
+                data.dosageHistory.push(DosageHistoryEntry::Progesterone {
+                    date: record_ms,
+                    id: Some(entry_id.clone()),
+                    kind: progesterone_from_label(&prog_type.get()),
+                    route: route.clone(),
+                    dose,
+                    unit: HormoneUnits::Mg,
+                    pillQuantity: Some(pill_quantity),
+                    note: note.clone(),
+                });
+            });
+            store.mark_dirty();
+            store.save();
+            let logged = format!("Logged {} · {} mg", clock_label(record_ms), fmt(total, 2));
+            prog_logged.set(Some(logged));
+            show_toast.with_value(|toast| {
+                toast(
+                    format!(
+                        "Logged progesterone · {} mg · {}",
+                        fmt(total, 2),
+                        progesterone_route_chip_label(&route).to_lowercase()
+                    ),
+                    entry_id,
+                    Medication::Progesterone,
+                )
+            });
+        })
+    });
+
     let on_submit = {
         let store = store.clone();
-        let navigate = navigate.clone();
         let feedback_timeout = feedback_timeout.clone();
         move |ev: leptos::ev::SubmitEvent| {
             ev.prevent_default();
             form_error.set(None);
-            let mode_value = mode.get();
+            if mode.get() != "schedule" {
+                // Record mode has no page-level submit: each card commits itself.
+                return;
+            }
             let estrogen_method_value = estrogen_method.get();
             let estrogen_input_dose = parse_num(&estrogen_dose.get());
-            let estrogen_unit_value = if estrogen_method_value == "injection" {
-                HormoneUnits::Mg
-            } else {
-                parse_hormone_unit(&estrogen_unit.get()).unwrap_or(HormoneUnits::Mg)
-            };
             let estrogen_dose_value =
                 if estrogen_method_value == "injection" && estrogen_dose_in_iu.get() {
                     let data_value = store.data.get();
@@ -818,187 +1390,55 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                 };
 
             let mut errors: Vec<String> = Vec::new();
-            if mode_value == "record" {
-                if !record_estrogen.get() && !record_aa.get() && !record_prog.get() {
-                    errors.push("Select at least one medication to record.".to_string());
-                }
-                if record_estrogen.get()
-                    && (!estrogen_dose_value.is_finite() || estrogen_dose_value <= 0.0)
-                {
+            estrogen_dose_error.set(None);
+            estrogen_frequency_error.set(None);
+            aa_dose_error.set(None);
+            aa_frequency_error.set(None);
+            prog_dose_error.set(None);
+            prog_frequency_error.set(None);
+            if schedule_estrogen.get() {
+                if !estrogen_dose_value.is_finite() || estrogen_dose_value <= 0.0 {
+                    estrogen_dose_error.set(Some("Enter a dose above 0 mg.".to_string()));
                     errors.push("Enter a valid estrogen dose.".to_string());
                 }
-                if record_aa.get() {
-                    if aa_type.get().trim().is_empty() {
-                        errors.push("Select an antiandrogen type.".to_string());
-                    }
-                    let dose = parse_num(&aa_dose.get());
-                    if !dose.is_finite() || dose <= 0.0 {
-                        errors.push("Enter a valid antiandrogen dose.".to_string());
-                    }
-                }
-                if record_prog.get() {
-                    if prog_type.get().trim().is_empty() {
-                        errors.push("Select a progesterone type.".to_string());
-                    }
-                    let dose = parse_num(&prog_dose.get());
-                    if !dose.is_finite() || dose <= 0.0 {
-                        errors.push("Enter a valid progesterone dose.".to_string());
-                    }
-                }
-            } else {
-                if schedule_estrogen.get() {
-                    if !estrogen_dose_value.is_finite() || estrogen_dose_value <= 0.0 {
-                        errors.push("Enter a valid estrogen dose.".to_string());
-                    }
-                    let frequency = if estrogen_method_value == "injection" {
-                        parse_num(&injection_frequency.get())
-                    } else {
-                        parse_num(&oral_frequency.get())
-                    };
-                    if !frequency.is_finite() || frequency <= 0.0 {
-                        errors.push("Enter a valid estrogen frequency.".to_string());
-                    }
-                }
-                if schedule_aa.get() {
-                    if aa_type.get().trim().is_empty() {
-                        errors.push("Select an antiandrogen type.".to_string());
-                    }
-                    let dose = parse_num(&aa_dose.get());
-                    if !dose.is_finite() || dose <= 0.0 {
-                        errors.push("Enter a valid antiandrogen dose.".to_string());
-                    }
-                    let frequency = parse_num(&aa_frequency.get());
-                    if !frequency.is_finite() || frequency <= 0.0 {
-                        errors.push("Enter a valid antiandrogen frequency.".to_string());
-                    }
-                }
-                if schedule_prog.get() {
-                    if prog_type.get().trim().is_empty() {
-                        errors.push("Select a progesterone type.".to_string());
-                    }
-                    let dose = parse_num(&prog_dose.get());
-                    if !dose.is_finite() || dose <= 0.0 {
-                        errors.push("Enter a valid progesterone dose.".to_string());
-                    }
-                    let frequency = parse_num(&prog_frequency.get());
-                    if !frequency.is_finite() || frequency <= 0.0 {
-                        errors.push("Enter a valid progesterone frequency.".to_string());
-                    }
+                let frequency = if estrogen_method_value == "injection" {
+                    parse_num(&injection_frequency.get())
+                } else {
+                    parse_num(&oral_frequency.get())
+                };
+                if !frequency.is_finite() || frequency <= 0.0 {
+                    estrogen_frequency_error
+                        .set(Some("Enter a number of days above 0.".to_string()));
+                    errors.push("Enter a valid estrogen frequency.".to_string());
                 }
             }
+            if schedule_aa.get() {
+                let dose = parse_num(&aa_dose.get());
+                if !dose.is_finite() || dose <= 0.0 {
+                    aa_dose_error.set(Some("Enter a dose above 0 mg.".to_string()));
+                    errors.push("Enter a valid antiandrogen dose.".to_string());
+                }
+                let frequency = parse_num(&aa_frequency.get());
+                if !frequency.is_finite() || frequency <= 0.0 {
+                    aa_frequency_error.set(Some("Enter a number of days above 0.".to_string()));
+                    errors.push("Enter a valid antiandrogen frequency.".to_string());
+                }
+            }
+            if schedule_prog.get() {
+                let dose = parse_num(&prog_total.get());
+                if !dose.is_finite() || dose <= 0.0 {
+                    prog_dose_error.set(Some("Enter a dose above 0 mg.".to_string()));
+                    errors.push("Enter a valid progesterone dose.".to_string());
+                }
+                let frequency = parse_num(&prog_frequency.get());
+                if !frequency.is_finite() || frequency <= 0.0 {
+                    prog_frequency_error.set(Some("Enter a number of days above 0.".to_string()));
+                    errors.push("Enter a valid progesterone frequency.".to_string());
+                }
+            }
+
             if !errors.is_empty() {
                 form_error.set(Some(errors.join(" ")));
-                return;
-            }
-
-            if mode_value == "record" {
-                let record_ms = parse_datetime_local(&record_date_time.get());
-                store.data.update(|data| {
-                    if record_estrogen.get() {
-                        if estrogen_method_value == "injection" {
-                            let kind = injectable_from_label(&injectable_type.get());
-                            let record = DosageHistoryEntry::InjectableEstradiol {
-                                date: record_ms,
-                                id: None,
-                                kind,
-                                dose: estrogen_dose_value,
-                                unit: estrogen_unit_value.clone(),
-                                note: if estrogen_note.get().trim().is_empty() {
-                                    None
-                                } else {
-                                    Some(estrogen_note.get())
-                                },
-                                bonusDose: if bonus_dose.get() { Some(true) } else { None },
-                                injectionSite: injection_site_from_label(&injection_site.get()),
-                                vialId: if selected_vial_id.get().is_empty() {
-                                    None
-                                } else {
-                                    Some(selected_vial_id.get())
-                                },
-                                subVialId: if selected_sub_vial_id.get().is_empty() {
-                                    None
-                                } else {
-                                    Some(selected_sub_vial_id.get())
-                                },
-                                syringeKind: if syringe_kind.get().is_empty() {
-                                    None
-                                } else {
-                                    Some(syringe_kind.get())
-                                },
-                                needleLength: if needle_length.get().trim().is_empty() {
-                                    None
-                                } else {
-                                    Some(needle_length.get())
-                                },
-                                needleGauge: if needle_gauge.get().trim().is_empty() {
-                                    None
-                                } else {
-                                    Some(needle_gauge.get())
-                                },
-                                photos: None,
-                            };
-                            data.dosageHistory.push(record);
-                        } else {
-                            let kind = oral_from_label(&oral_type.get());
-                            let pill_qty = parse_optional_num(&estrogen_pill_qty.get())
-                                .filter(|value| *value > 0.0);
-                            let record = DosageHistoryEntry::OralEstradiol {
-                                date: record_ms,
-                                id: None,
-                                kind,
-                                dose: estrogen_dose_value,
-                                unit: estrogen_unit_value.clone(),
-                                pillQuantity: pill_qty,
-                                note: if estrogen_note.get().trim().is_empty() {
-                                    None
-                                } else {
-                                    Some(estrogen_note.get())
-                                },
-                            };
-                            data.dosageHistory.push(record);
-                        }
-                    }
-
-                    if record_aa.get() && !aa_type.get().trim().is_empty() {
-                        let kind = antiandrogen_from_label(&aa_type.get());
-                        let record = DosageHistoryEntry::Antiandrogen {
-                            date: record_ms,
-                            id: None,
-                            kind,
-                            dose: parse_num(&aa_dose.get()),
-                            unit: parse_hormone_unit(&aa_unit.get()).unwrap_or(HormoneUnits::Mg),
-                            note: if aa_note.get().trim().is_empty() {
-                                None
-                            } else {
-                                Some(aa_note.get())
-                            },
-                        };
-                        data.dosageHistory.push(record);
-                    }
-
-                    if record_prog.get() && !prog_type.get().trim().is_empty() {
-                        let kind = progesterone_from_label(&prog_type.get());
-                        let pill_qty =
-                            parse_optional_num(&prog_pill_qty.get()).filter(|value| *value > 0.0);
-                        let record = DosageHistoryEntry::Progesterone {
-                            date: record_ms,
-                            id: None,
-                            kind,
-                            route: progesterone_route_from_label(&prog_route.get()),
-                            dose: parse_num(&prog_dose.get()),
-                            unit: parse_hormone_unit(&prog_unit.get()).unwrap_or(HormoneUnits::Mg),
-                            pillQuantity: pill_qty,
-                            note: if prog_note.get().trim().is_empty() {
-                                None
-                            } else {
-                                Some(prog_note.get())
-                            },
-                        };
-                        data.dosageHistory.push(record);
-                    }
-                });
-                store.mark_dirty();
-                navigate("/view", Default::default());
                 return;
             }
 
@@ -1010,7 +1450,7 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                     let schedule = InjectableSchedule {
                         kind: injectable_from_label(&injectable_type.get()),
                         dose: estrogen_dose_value,
-                        unit: estrogen_unit_value.clone(),
+                        unit: HormoneUnits::Mg,
                         frequency: parse_num(&injection_frequency.get()).max(1.0),
                         vialId: if selected_vial_id.get().is_empty() {
                             None
@@ -1046,7 +1486,7 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                     let schedule = OralSchedule {
                         kind: oral_from_label(&oral_type.get()),
                         dose: estrogen_dose_value,
-                        unit: estrogen_unit_value.clone(),
+                        unit: HormoneUnits::Mg,
                         frequency: parse_num(&oral_frequency.get()).max(1.0),
                         nextDoseDate: parse_optional_datetime(&estrogen_next_date.get()),
                         startDate: parse_regimen_start(&estrogen_start.get()),
@@ -1061,7 +1501,7 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                     let schedule = AntiandrogenSchedule {
                         kind: antiandrogen_from_label(&aa_type.get()),
                         dose: parse_num(&aa_dose.get()),
-                        unit: parse_hormone_unit(&aa_unit.get()).unwrap_or(HormoneUnits::Mg),
+                        unit: HormoneUnits::Mg,
                         frequency: parse_num(&aa_frequency.get()).max(1.0),
                         nextDoseDate: parse_optional_datetime(&aa_next_date.get()),
                         startDate: parse_regimen_start(&aa_start.get()),
@@ -1074,9 +1514,9 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                 } else {
                     let schedule = ProgesteroneSchedule {
                         kind: progesterone_from_label(&prog_type.get()),
-                        route: progesterone_route_from_label(&prog_route.get()),
-                        dose: parse_num(&prog_dose.get()),
-                        unit: parse_hormone_unit(&prog_unit.get()).unwrap_or(HormoneUnits::Mg),
+                        route: progesterone_route_from_chip(&prog_route.get()),
+                        dose: parse_num(&prog_total.get()),
+                        unit: HormoneUnits::Mg,
                         frequency: parse_num(&prog_frequency.get()).max(1.0),
                         nextDoseDate: parse_optional_datetime(&prog_next_date.get()),
                         startDate: parse_regimen_start(&prog_start.get()),
@@ -1260,7 +1700,7 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                             && if schedule_only {
                                 schedule_estrogen.get()
                             } else {
-                                record_estrogen.get()
+                                estrogen_card_open.get()
                             }
                     }>
                         <section class="card">
@@ -1270,30 +1710,34 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                                     <h4>"Dose and Concentration to Volume"</h4>
                                     <div class="inline-equal">
                                         <label>
-                                            {move || {
-                                                if settings.get().displayInjectableInIU.unwrap_or(false) {
-                                                    "Dose (IU)"
-                                                } else {
-                                                    "Dose (mg)"
-                                                }
-                                            }}
-                                            <input
-                                                type="text"
-                                                step="any"
-                                                inputmode="decimal"
-                                                on:input=move |ev| inj_conv_dose_mg.set(event_target_value(&ev))
-                                                prop:value=move || inj_conv_dose_mg.get()
-                                            />
+                                            "Dose"
+                                            <span class="unit-field">
+                                                <input
+                                                    type="text"
+                                                    step="any"
+                                                    inputmode="decimal"
+                                                    on:input=move |ev| inj_conv_dose_mg.set(event_target_value(&ev))
+                                                    prop:value=move || inj_conv_dose_mg.get()
+                                                />
+                                                <span class="unit">
+                                                    {move || dose_unit_suffix(
+                                                        settings.get().displayInjectableInIU.unwrap_or(false),
+                                                    )}
+                                                </span>
+                                            </span>
                                         </label>
                                         <label>
-                                            "Concentration (mg/mL)"
-                                            <input
-                                                type="text"
-                                                step="any"
-                                                inputmode="decimal"
-                                                on:input=move |ev| inj_conv_conc_mg_ml.set(event_target_value(&ev))
-                                                prop:value=move || inj_conv_conc_mg_ml.get()
-                                            />
+                                            "Concentration"
+                                            <span class="unit-field">
+                                                <input
+                                                    type="text"
+                                                    step="any"
+                                                    inputmode="decimal"
+                                                    on:input=move |ev| inj_conv_conc_mg_ml.set(event_target_value(&ev))
+                                                    prop:value=move || inj_conv_conc_mg_ml.get()
+                                                />
+                                                <span class="unit">"mg/mL"</span>
+                                            </span>
                                         </label>
                                     </div>
                                     <p class="muted">
@@ -1336,24 +1780,30 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                                     <h4>"Volume and Concentration to Dose"</h4>
                                     <div class="inline-equal">
                                         <label>
-                                            "Volume (mL)"
-                                            <input
-                                                type="text"
-                                                step="any"
-                                                inputmode="decimal"
-                                                on:input=move |ev| inj_conv_vol2_ml.set(event_target_value(&ev))
-                                                prop:value=move || inj_conv_vol2_ml.get()
-                                            />
+                                            "Volume"
+                                            <span class="unit-field">
+                                                <input
+                                                    type="text"
+                                                    step="any"
+                                                    inputmode="decimal"
+                                                    on:input=move |ev| inj_conv_vol2_ml.set(event_target_value(&ev))
+                                                    prop:value=move || inj_conv_vol2_ml.get()
+                                                />
+                                                <span class="unit">"mL"</span>
+                                            </span>
                                         </label>
                                         <label>
-                                            "Concentration (mg/mL)"
-                                            <input
-                                                type="text"
-                                                step="any"
-                                                inputmode="decimal"
-                                                on:input=move |ev| inj_conv_conc2_mg_ml.set(event_target_value(&ev))
-                                                prop:value=move || inj_conv_conc2_mg_ml.get()
-                                            />
+                                            "Concentration"
+                                            <span class="unit-field">
+                                                <input
+                                                    type="text"
+                                                    step="any"
+                                                    inputmode="decimal"
+                                                    on:input=move |ev| inj_conv_conc2_mg_ml.set(event_target_value(&ev))
+                                                    prop:value=move || inj_conv_conc2_mg_ml.get()
+                                                />
+                                                <span class="unit">"mg/mL"</span>
+                                            </span>
                                         </label>
                                     </div>
                                     <p class="muted">
@@ -1430,6 +1880,7 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                             </Show>
                         </div>
                         <Show when=move || !schedule_only || schedule_estrogen.get()>
+                        <Show when=move || schedule_only || estrogen_card_open.get()>
                         <div class="option-group">
                             <label class="toggle toggle-wide">
                                 <input
@@ -1455,30 +1906,28 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                             </label>
                         </div>
 
-                        <Show when=move || mode.get() == "record">
-                            <label class="toggle toggle-wide">
-                                <input
-                                    type="checkbox"
-                                    on:change=move |ev| record_estrogen.set(event_target_checked(&ev))
-                                    prop:checked=move || record_estrogen.get()
-                                />
-                                <span class="toggle-track" aria-hidden="true"></span>
-                                <span class="toggle-label">"Record Estrogen Dose"</span>
-                            </label>
+                        <Show when=move || !schedule_only>
+                            <button
+                                type="button"
+                                class="chip"
+                                aria-expanded=move || if estrogen_note_open.get() { "true" } else { "false" }
+                                on:click=move |_| estrogen_note_open.set(!estrogen_note_open.get())
+                            >
+                                "+ note"
+                            </button>
+                            <Show when=move || estrogen_note_open.get()>
+                                <label>
+                                    "Note (optional)"
+                                    <textarea
+                                        rows="2"
+                                        on:input=move |ev| estrogen_note.set(event_target_value(&ev))
+                                        prop:value=move || estrogen_note.get()
+                                    ></textarea>
+                                </label>
+                            </Show>
                         </Show>
 
-                        <Show when=move || mode.get() == "record" && record_estrogen.get()>
-                            <label>
-                                "Note (optional)"
-                                <textarea
-                                    rows="2"
-                                    on:input=move |ev| estrogen_note.set(event_target_value(&ev))
-                                    prop:value=move || estrogen_note.get()
-                                ></textarea>
-                            </label>
-                        </Show>
-
-                        <Show when=move || mode.get() == "record" && record_estrogen.get() && estrogen_method.get() == "injection">
+                        <Show when=move || !schedule_only && estrogen_method.get() == "injection">
                             <label class="toggle toggle-wide">
                                 <input
                                     type="checkbox"
@@ -1490,20 +1939,24 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                             </label>
                         </Show>
 
-                        <Show when=move || mode.get() == "record" && record_estrogen.get() && estrogen_method.get() == "injection">
+                        <Show when=move || !schedule_only && estrogen_method.get() == "injection">
                             <label>
                                 "Injection site (optional)"
-                                <select
-                                    on:change=move |ev| injection_site.set(event_target_value(&ev))
-                                    prop:value=move || injection_site.get()
-                                >
-                                    <option value="">"Select injection site"</option>
+                                <select on:change=move |ev| injection_site.set(event_target_value(&ev))>
+                                    <option value="" selected=move || injection_site.get().is_empty()>
+                                        "Select injection site"
+                                    </option>
                                     <For
                                         each=move || INJECTION_SITES.to_vec()
                                         key=|site| injection_site_label(site).to_string()
                                         children=move |site| {
                                             let label = injection_site_label(&site).to_string();
-                                            view! { <option value=label.clone()>{label}</option> }
+                                            let value = label.clone();
+                                            view! {
+                                                <option value=value.clone() selected=move || injection_site.get() == value>
+                                                    {label}
+                                                </option>
+                                            }
                                         }
                                     />
                                 </select>
@@ -1513,11 +1966,10 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                         <Show when=move || estrogen_method.get() == "injection">
                             <label>"Vial (optional)"</label>
                             <div class="inline-equal">
-                                    <select
-                                        on:change=move |ev| selected_vial_id.set(event_target_value(&ev))
-                                        prop:value=move || selected_vial_id.get()
-                                    >
-                                        <option value="">"None"</option>
+                                    <select on:change=move |ev| selected_vial_id.set(event_target_value(&ev))>
+                                        <option value="" selected=move || selected_vial_id.get().is_empty()>
+                                            "None"
+                                        </option>
                                         <For
                                             each=move || {
                                                 store
@@ -1539,7 +1991,12 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                                                         .map(|source| format!(" · {}", source))
                                                         .unwrap_or_default()
                                                 );
-                                                view! { <option value=vial.id.clone()>{label}</option> }
+                                                let value = vial.id.clone();
+                                                view! {
+                                                    <option value=value.clone() selected=move || selected_vial_id.get() == value>
+                                                        {label}
+                                                    </option>
+                                                }
                                             }
                                         />
                                     </select>
@@ -1549,11 +2006,10 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                             <Show when=move || !selected_vial_id.get().is_empty()>
                                 <label>
                                     "Sub-vial / cartridge (optional)"
-                                    <select
-                                        on:change=move |ev| selected_sub_vial_id.set(event_target_value(&ev))
-                                        prop:value=move || selected_sub_vial_id.get()
-                                    >
-                                        <option value="">"None"</option>
+                                    <select on:change=move |ev| selected_sub_vial_id.set(event_target_value(&ev))>
+                                        <option value="" selected=move || selected_sub_vial_id.get().is_empty()>
+                                            "None"
+                                        </option>
                                         <For
                                             each=move || {
                                                 store
@@ -1568,7 +2024,12 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                                             key=|sub| sub.id.clone()
                                             children=move |sub| {
                                                 let label = format!("#{}", sub.personalNumber);
-                                                view! { <option value=sub.id.clone()>{label}</option> }
+                                                let value = sub.id.clone();
+                                                view! {
+                                                    <option value=value.clone() selected=move || selected_sub_vial_id.get() == value>
+                                                        {label}
+                                                    </option>
+                                                }
                                             }
                                         />
                                     </select>
@@ -1577,17 +2038,21 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
 
                             <label>
                                 "Syringe kind (optional)"
-                                <select
-                                    on:change=move |ev| syringe_kind.set(event_target_value(&ev))
-                                    prop:value=move || syringe_kind.get()
-                                >
-                                    <option value="">"Select..."</option>
+                                <select on:change=move |ev| syringe_kind.set(event_target_value(&ev))>
+                                    <option value="" selected=move || syringe_kind.get().is_empty()>
+                                        "Select..."
+                                    </option>
                                     <For
                                         each=move || SYRINGE_KINDS.to_vec()
                                         key=|kind| syringe_kind_label(kind).to_string()
                                         children=move |kind| {
                                             let label = syringe_kind_label(&kind).to_string();
-                                            view! { <option value=label.clone()>{label}</option> }
+                                            let value = label.clone();
+                                            view! {
+                                                <option value=value.clone() selected=move || syringe_kind.get() == value>
+                                                    {label}
+                                                </option>
+                                            }
                                         }
                                     />
                                 </select>
@@ -1613,7 +2078,7 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                             </label>
                         </Show>
 
-                        <Show when=move || mode.get() == "record" && record_estrogen.get() && estrogen_method.get() == "oral">
+                        <Show when=move || !schedule_only && estrogen_method.get() == "oral">
                             <label>
                                 "Pill quantity"
                                 <input
@@ -1627,8 +2092,7 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                                 <p class="muted">
                                     "Total = "
                                     <strong>{move || fmt(estrogen_pill_total.get(), 2)}</strong>
-                                    " "
-                                    {move || estrogen_unit.get()}
+                                    " mg"
                                 </p>
                             </label>
                         </Show>
@@ -1685,13 +2149,6 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                                             oral_type.set(event_target_value(&ev));
                                         }
                                     }
-                                    prop:value=move || {
-                                        if estrogen_method.get() == "injection" {
-                                            injectable_type.get()
-                                        } else {
-                                            oral_type.get()
-                                        }
-                                    }
                                 >
                                     <For
                                         each=move || {
@@ -1709,7 +2166,21 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                                         }
                                         key=|label| label.clone()
                                         children=move |label| {
-                                            view! { <option value=label.clone()>{label}</option> }
+                                            let value = label.clone();
+                                            view! {
+                                                <option
+                                                    value=value.clone()
+                                                    selected=move || {
+                                                        if estrogen_method.get() == "injection" {
+                                                            injectable_type.get() == value
+                                                        } else {
+                                                            oral_type.get() == value
+                                                        }
+                                                    }
+                                                >
+                                                    {label}
+                                                </option>
+                                            }
                                         }
                                     />
                                 </select>
@@ -1722,7 +2193,10 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                                         type="text"
                                         step="any"
                                         inputmode="decimal"
+                                        aria-invalid=move || if estrogen_frequency_error.get().is_some() { "true" } else { "false" }
+                                        aria-describedby="estrogen-frequency-error"
                                         on:input=move |ev| {
+                                            estrogen_frequency_error.set(None);
                                             if estrogen_method.get() == "injection" {
                                                 injection_frequency.set(event_target_value(&ev));
                                             } else {
@@ -1750,14 +2224,36 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                                         "Dose (mg)"
                                     }
                                 }}
-                                <input
-                                    type="text"
-                                    step="any"
-                                    inputmode="decimal"
-                                    on:input=move |ev| estrogen_dose.set(event_target_value(&ev))
-                                    prop:value=move || estrogen_dose.get()
-                                />
+                                <span class="unit-field">
+                                    <input
+                                        type="text"
+                                        step="any"
+                                        inputmode="decimal"
+                                        aria-invalid=move || if estrogen_dose_error.get().is_some() { "true" } else { "false" }
+                                        aria-describedby="estrogen-dose-error"
+                                        on:input=move |ev| {
+                                            estrogen_dose_error.set(None);
+                                            estrogen_dose.set(event_target_value(&ev));
+                                        }
+                                        prop:value=move || estrogen_dose.get()
+                                    />
+                                    <span class="unit">
+                                        {move || dose_unit_suffix(
+                                            estrogen_method.get() == "injection" && estrogen_dose_in_iu.get(),
+                                        )}
+                                    </span>
+                                </span>
                             </label>
+                            <Show when=move || estrogen_dose_error.get().is_some()>
+                                <p class="field-error" id="estrogen-dose-error" role="alert">
+                                    {move || estrogen_dose_error.get().unwrap_or_default()}
+                                </p>
+                            </Show>
+                            <Show when=move || estrogen_frequency_error.get().is_some()>
+                                <p class="field-error" id="estrogen-frequency-error" role="alert">
+                                    {move || estrogen_frequency_error.get().unwrap_or_default()}
+                                </p>
+                            </Show>
 
                             <Show
                                 when=move || {
@@ -1789,24 +2285,53 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                                 </p>
                             </Show>
 
-                            <Show when=move || estrogen_method.get() != "injection">
-                                <label>
-                                    "Unit"
-                                    <select
-                                        on:change=move |ev| estrogen_unit.set(event_target_value(&ev))
-                                        prop:value=move || estrogen_unit.get()
-                                    >
-                                        <For
-                                            each=move || hormone_unit_labels()
-                                            key=|label| label.clone()
-                                            children=move |label| {
-                                                view! { <option value=label.clone()>{label}</option> }
-                                            }
-                                        />
-                                    </select>
-                                </label>
-                            </Show>
                         </div>
+                        </Show>
+
+                        <Show when=move || !schedule_only && !estrogen_card_open.get()>
+                            <button type="button" class="chip" on:click=move |_| seed_estrogen.with_value(|seed| seed(true))>
+                                "+ Add estrogen"
+                            </button>
+                        </Show>
+
+                        <Show when=move || !schedule_only>
+                            <Show when=move || estrogen_logged_today.get().is_some()>
+                                <p class="inline-note warn">
+                                    {move || estrogen_logged_today.get().unwrap_or_default()}
+                                </p>
+                            </Show>
+                            <div class="card-footer">
+                                <span class="card-summary">
+                                    {move || {
+                                        if let Some(logged) = estrogen_logged.get() {
+                                            return logged;
+                                        }
+                                        if estrogen_record_dose.get().is_none() {
+                                            return "Choose a dose first".to_string();
+                                        }
+                                        format!(
+                                            "{} · {}",
+                                            estrogen_dose_label(),
+                                            if estrogen_method.get() == "injection" { "injection" } else { "oral" }
+                                        )
+                                    }}
+                                </span>
+                                <button
+                                    type="button"
+                                    class="card-commit"
+                                    on:click=move |_| commit_estrogen.with_value(|commit| commit())
+                                    prop:disabled=move || estrogen_record_dose.get().is_none()
+                                >
+                                    {move || {
+                                        if estrogen_record_dose.get().is_some() {
+                                            format!("Log estrogen · {}", estrogen_dose_label())
+                                        } else {
+                                            "Log estrogen".to_string()
+                                        }
+                                    }}
+                                </button>
+                            </div>
+                        </Show>
                         </Show>
                     </section>
 
@@ -1835,17 +2360,17 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                             </Show>
                         </div>
                         <Show when=move || !schedule_only || schedule_aa.get()>
-                        <Show when=move || mode.get() == "record">
-                            <label class="toggle toggle-wide">
-                                <input
-                                    type="checkbox"
-                                    on:change=move |ev| record_aa.set(event_target_checked(&ev))
-                                    prop:checked=move || record_aa.get()
-                                />
-                                <span class="toggle-track" aria-hidden="true"></span>
-                                <span class="toggle-label">"Record Antiandrogen Dose"</span>
-                            </label>
-                            <Show when=move || record_aa.get()>
+                        <Show when=move || schedule_only || aa_card_open.get()>
+                        <Show when=move || !schedule_only>
+                            <button
+                                type="button"
+                                class="chip"
+                                aria-expanded=move || if aa_note_open.get() { "true" } else { "false" }
+                                on:click=move |_| aa_note_open.set(!aa_note_open.get())
+                            >
+                                "+ note"
+                            </button>
+                            <Show when=move || aa_note_open.get()>
                                 <label>
                                     "Note (optional)"
                                     <textarea
@@ -1901,13 +2426,7 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                         <div class="calc-grid">
                             <label>
                                 "Type"
-                                <select
-                                    on:change=move |ev| aa_type.set(event_target_value(&ev))
-                                    prop:value=move || aa_type.get()
-                                >
-                                    {move || {
-                                        (!schedule_only).then(|| view! { <option value="">"None"</option> })
-                                    }}
+                                <select on:change=move |ev| aa_type.set(event_target_value(&ev))>
                                     <For
                                         each=move || {
                                             ANTIANDROGEN_OPTIONS
@@ -1916,7 +2435,14 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                                                 .collect::<Vec<_>>()
                                         }
                                         key=|label| label.clone()
-                                        children=move |label| view! { <option value=label.clone()>{label}</option> }
+                                        children=move |label| {
+                                            let value = label.clone();
+                                            view! {
+                                                <option value=value.clone() selected=move || aa_type.get() == value>
+                                                    {label}
+                                                </option>
+                                            }
+                                        }
                                     />
                                 </select>
                             </label>
@@ -1928,38 +2454,93 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                                         type="text"
                                         step="any"
                                         inputmode="decimal"
-                                        on:input=move |ev| aa_frequency.set(event_target_value(&ev))
+                                        aria-invalid=move || if aa_frequency_error.get().is_some() { "true" } else { "false" }
+                                        aria-describedby="aa-frequency-error"
+                                        on:input=move |ev| {
+                                            aa_frequency_error.set(None);
+                                            aa_frequency.set(event_target_value(&ev));
+                                        }
                                         prop:value=move || aa_frequency.get()
                                     />
                                 </label>
                             </Show>
 
-                            <Show when=move || !aa_type.get().is_empty()>
-                                <label>
-                                    "Dose"
+                            <label>
+                                "Dose"
+                                <span class="unit-field">
                                     <input
                                         type="text"
                                         step="any"
                                         inputmode="decimal"
-                                        on:input=move |ev| aa_dose.set(event_target_value(&ev))
+                                        aria-invalid=move || if aa_dose_error.get().is_some() { "true" } else { "false" }
+                                        aria-describedby="aa-dose-error"
+                                        on:input=move |ev| {
+                                            aa_dose_error.set(None);
+                                            aa_dose.set(event_target_value(&ev));
+                                        }
                                         prop:value=move || aa_dose.get()
                                     />
-                                </label>
-                                <label>
-                                    "Unit"
-                                    <select
-                                        on:change=move |ev| aa_unit.set(event_target_value(&ev))
-                                        prop:value=move || aa_unit.get()
-                                    >
-                                        <For
-                                            each=move || hormone_unit_labels()
-                                            key=|label| label.clone()
-                                            children=move |label| view! { <option value=label.clone()>{label}</option> }
-                                        />
-                                    </select>
-                                </label>
+                                    <span class="unit">"mg"</span>
+                                </span>
+                            </label>
+                            <Show when=move || aa_dose_error.get().is_some()>
+                                <p class="field-error" id="aa-dose-error" role="alert">
+                                    {move || aa_dose_error.get().unwrap_or_default()}
+                                </p>
+                            </Show>
+                            <Show when=move || aa_frequency_error.get().is_some()>
+                                <p class="field-error" id="aa-frequency-error" role="alert">
+                                    {move || aa_frequency_error.get().unwrap_or_default()}
+                                </p>
                             </Show>
                         </div>
+                        </Show>
+
+                        <Show when=move || !schedule_only && !aa_card_open.get()>
+                            <button type="button" class="chip" on:click=move |_| seed_aa.with_value(|seed| seed(true))>
+                                {move || format!("+ Add {}", antiandrogen_action_word(&antiandrogen_from_label(&aa_type.get())))}
+                            </button>
+                        </Show>
+
+                        <Show when=move || !schedule_only>
+                            <Show when=move || aa_logged_today.get().is_some()>
+                                <p class="inline-note warn">
+                                    {move || aa_logged_today.get().unwrap_or_default()}
+                                </p>
+                            </Show>
+                            <div class="card-footer">
+                                <span class="card-summary">
+                                    {move || {
+                                        if let Some(logged) = aa_logged.get() {
+                                            return logged;
+                                        }
+                                        match aa_record_dose.get() {
+                                            None => "Choose a dose first".to_string(),
+                                            Some(dose) => format!(
+                                                "{} · {} mg",
+                                                antiandrogen_label(&antiandrogen_from_label(&aa_type.get())),
+                                                fmt(dose, 2)
+                                            ),
+                                        }
+                                    }}
+                                </span>
+                                <button
+                                    type="button"
+                                    class="card-commit"
+                                    on:click=move |_| commit_aa.with_value(|commit| commit())
+                                    prop:disabled=move || aa_record_dose.get().is_none()
+                                >
+                                    {move || match aa_record_dose.get() {
+                                        Some(dose) => format!(
+                                            "Log {} · {} mg",
+                                            antiandrogen_action_word(&antiandrogen_from_label(&aa_type.get())),
+                                            fmt(dose, 2)
+                                        ),
+                                        None => "Log antiandrogen".to_string(),
+                                    }}
+                                </button>
+                            </div>
+                        </Show>
                         </Show>
                     </section>
 
@@ -1988,17 +2569,90 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                             </Show>
                         </div>
                         <Show when=move || !schedule_only || schedule_prog.get()>
-                        <Show when=move || mode.get() == "record">
-                            <label class="toggle toggle-wide">
-                                <input
-                                    type="checkbox"
-                                    on:change=move |ev| record_prog.set(event_target_checked(&ev))
-                                    prop:checked=move || record_prog.get()
-                                />
-                                <span class="toggle-track" aria-hidden="true"></span>
-                                <span class="toggle-label">"Record Progesterone Dose"</span>
+                        <Show when=move || schedule_only || prog_card_open.get()>
+                        // Dosing is chosen with chips; one legal progesterone type
+                        // (micronised) means there is no type select on this card.
+                        <div class="chip-row" role="group" aria-label="Progesterone dose">
+                                {[("50", "50 mg"), ("100", "100 mg"), ("200", "200 mg")]
+                                    .into_iter()
+                                    .map(|(value, label)| {
+                                        let dose_value = value.to_string();
+                                        let active_value = dose_value.clone();
+                                        view! {
+                                            <button
+                                                type="button"
+                                                class="chip"
+                                                class:active=move || prog_total.get() == active_value
+                                                on:click=move |_| prog_total.set(dose_value.clone())
+                                            >
+                                                {label}
+                                            </button>
+                                        }
+                                    })
+                                    .collect_view()}
+                            </div>
+                            <label>
+                                "Other dose"
+                                <span class="unit-field">
+                                    <input
+                                        type="text"
+                                        inputmode="decimal"
+                                        placeholder="e.g. 275"
+                                        aria-invalid=move || if prog_dose_error.get().is_some() { "true" } else { "false" }
+                                        aria-describedby="prog-dose-error"
+                                        on:input=move |ev| {
+                                            prog_dose_error.set(None);
+                                            prog_total.set(event_target_value(&ev));
+                                        }
+                                        prop:value=move || prog_total.get()
+                                    />
+                                    <span class="unit">"mg"</span>
+                                </span>
                             </label>
-                            <Show when=move || record_prog.get()>
+                            <div class="chip-row" role="group" aria-label="Progesterone route">
+                                {[ProgesteroneRoutes::Oral, ProgesteroneRoutes::Boofed]
+                                    .into_iter()
+                                    .map(|route| {
+                                        let label = progesterone_route_chip_label(&route).to_string();
+                                        let value = label.clone();
+                                        let active_value = label.clone();
+                                        view! {
+                                            <button
+                                                type="button"
+                                                class="chip"
+                                                class:active=move || prog_route.get() == active_value
+                                                on:click=move |_| prog_route.set(value.clone())
+                                            >
+                                                {label}
+                                            </button>
+                                        }
+                                    })
+                                    .collect_view()}
+                            </div>
+                            <p class="muted">
+                                {move || match prog_record_total.get().map(progesterone_dose_amounts) {
+                                    Some((dose, quantity)) if quantity > 1.0 => {
+                                        format!("{} × {} mg = {} mg", fmt(quantity, 2), fmt(dose, 2), fmt(dose * quantity, 2))
+                                    }
+                                    Some((dose, _)) => format!("{} mg", fmt(dose, 2)),
+                                    None => "Choose a dose first".to_string(),
+                                }}
+                            </p>
+                            <Show when=move || prog_dose_error.get().is_some()>
+                                <p class="field-error" id="prog-dose-error" role="alert">
+                                    {move || prog_dose_error.get().unwrap_or_default()}
+                                </p>
+                            </Show>
+                        <Show when=move || !schedule_only>
+                            <button
+                                type="button"
+                                class="chip"
+                                aria-expanded=move || if prog_note_open.get() { "true" } else { "false" }
+                                on:click=move |_| prog_note_open.set(!prog_note_open.get())
+                            >
+                                "+ note"
+                            </button>
+                            <Show when=move || prog_note_open.get()>
                                 <label>
                                     "Note (optional)"
                                     <textarea
@@ -2006,23 +2660,6 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                                         on:input=move |ev| prog_note.set(event_target_value(&ev))
                                         prop:value=move || prog_note.get()
                                     ></textarea>
-                                </label>
-                                <label>
-                                    "Pill quantity"
-                                    <input
-                                        type="text"
-                                        min="1"
-                                        step="any"
-                                        inputmode="decimal"
-                                        on:input=move |ev| prog_pill_qty.set(event_target_value(&ev))
-                                        prop:value=move || prog_pill_qty.get()
-                                    />
-                                    <p class="muted">
-                                        "Total = "
-                                        <strong>{move || fmt(prog_pill_total.get(), 2)}</strong>
-                                        " "
-                                        {move || prog_unit.get()}
-                                    </p>
                                 </label>
                             </Show>
                         </Show>
@@ -2068,100 +2705,104 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                             </label>
                         </Show>
 
-                        <div class="calc-grid">
-                            <label>
-                                "Type"
-                                <select
-                                    on:change=move |ev| prog_type.set(event_target_value(&ev))
-                                    prop:value=move || prog_type.get()
-                                >
-                                    {move || {
-                                        (!schedule_only).then(|| view! { <option value="">"None"</option> })
-                                    }}
-                                    <For
-                                        each=move || {
-                                            PROGESTERONE_OPTIONS
-                                                .iter()
-                                                .map(|kind| progesterone_label(kind).to_string())
-                                                .collect::<Vec<_>>()
-                                        }
-                                        key=|label| label.clone()
-                                        children=move |label| view! { <option value=label.clone()>{label}</option> }
-                                    />
-                                </select>
-                            </label>
-
-                            <Show when=move || !prog_type.get().is_empty()>
-                                <Show when=move || mode.get() == "schedule">
-                                    <label>
-                                        "Frequency (days)"
-                                        <input
-                                            type="text"
-                                            step="any"
-                                            inputmode="decimal"
-                                            on:input=move |ev| prog_frequency.set(event_target_value(&ev))
-                                            prop:value=move || prog_frequency.get()
-                                        />
-                                    </label>
-                                </Show>
+                        <Show when=move || schedule_only>
+                            <div class="calc-grid">
                                 <label>
-                                    "Dose"
+                                    "Frequency (days)"
                                     <input
                                         type="text"
                                         step="any"
                                         inputmode="decimal"
-                                        on:input=move |ev| prog_dose.set(event_target_value(&ev))
-                                        prop:value=move || prog_dose.get()
+                                        aria-invalid=move || if prog_frequency_error.get().is_some() { "true" } else { "false" }
+                                        aria-describedby="prog-frequency-error"
+                                        on:input=move |ev| {
+                                            prog_frequency_error.set(None);
+                                            prog_frequency.set(event_target_value(&ev));
+                                        }
+                                        prop:value=move || prog_frequency.get()
                                     />
                                 </label>
-                                <label>
-                                    "Unit"
-                                    <select
-                                        on:change=move |ev| prog_unit.set(event_target_value(&ev))
-                                        prop:value=move || prog_unit.get()
-                                    >
-                                        <For
-                                            each=move || hormone_unit_labels()
-                                            key=|label| label.clone()
-                                            children=move |label| view! { <option value=label.clone()>{label}</option> }
-                                        />
-                                    </select>
-                                </label>
-                                <label>
-                                    "Route"
-                                    <select
-                                        on:change=move |ev| prog_route.set(event_target_value(&ev))
-                                        prop:value=move || prog_route.get()
-                                    >
-                                        <For
-                                            each=move || {
-                                                PROGESTERONE_ROUTE_OPTIONS
-                                                    .iter()
-                                                    .map(|route| progesterone_route_label(route).to_string())
-                                                    .collect::<Vec<_>>()
-                                            }
-                                            key=|label| label.clone()
-                                            children=move |label| view! { <option value=label.clone()>{label}</option> }
-                                        />
-                                    </select>
-                                </label>
+                            </div>
+                            <Show when=move || prog_frequency_error.get().is_some()>
+                                <p class="field-error" id="prog-frequency-error" role="alert">
+                                    {move || prog_frequency_error.get().unwrap_or_default()}
+                                </p>
                             </Show>
-                        </div>
+                        </Show>
+                        </Show>
+
+                        <Show when=move || !schedule_only && !prog_card_open.get()>
+                            <button type="button" class="chip" on:click=move |_| seed_prog.with_value(|seed| seed(true))>
+                                "+ Add progesterone"
+                            </button>
+                        </Show>
+
+                        <Show when=move || !schedule_only>
+                            <Show when=move || prog_logged_today.get().is_some()>
+                                <p class="inline-note warn">
+                                    {move || prog_logged_today.get().unwrap_or_default()}
+                                </p>
+                            </Show>
+                            <div class="card-footer">
+                                <span class="card-summary">
+                                    {move || {
+                                        if let Some(logged) = prog_logged.get() {
+                                            return logged;
+                                        }
+                                        match prog_record_total.get().map(progesterone_dose_amounts) {
+                                            None => "Choose a dose first".to_string(),
+                                            Some((dose, quantity)) if quantity > 1.0 => format!(
+                                                "{} × {} mg = {} mg",
+                                                fmt(quantity, 2),
+                                                fmt(dose, 2),
+                                                fmt(dose * quantity, 2)
+                                            ),
+                                            Some((dose, _)) => format!("{} mg", fmt(dose, 2)),
+                                        }
+                                    }}
+                                </span>
+                                <button
+                                    type="button"
+                                    class="card-commit"
+                                    on:click=move |_| commit_prog.with_value(|commit| commit())
+                                    prop:disabled=move || prog_record_total.get().is_none()
+                                >
+                                    {move || match prog_record_total.get() {
+                                        Some(total) => progesterone_commit_label(
+                                            total,
+                                            &progesterone_route_from_chip(&prog_route.get()),
+                                        ),
+                                        None => "Log progesterone".to_string(),
+                                    }}
+                                </button>
+                            </div>
+                        </Show>
                         </Show>
                     </section>
 
-                    <Show when=move || form_error.get().is_some()>
+                    <Show when=move || schedule_only && form_error.get().is_some()>
                         <p class="error">{move || form_error.get().unwrap_or_default()}</p>
                     </Show>
 
-                    <div class="form-actions">
-                        <button type="submit">
-                            {move || if mode.get() == "record" { "Record dosage" } else { "Save schedule" }}
-                        </button>
-                        <Show when=move || schedule_feedback.get()>
-                            <p class="muted">"Schedule saved!"</p>
-                        </Show>
-                    </div>
+                    <Show when=move || schedule_only>
+                        <div class="form-actions">
+                            <button type="submit">"Save schedule"</button>
+                            <Show when=move || schedule_feedback.get()>
+                                <p class="muted">"Schedule saved!"</p>
+                            </Show>
+                        </div>
+                    </Show>
+
+                    <Show when=move || !schedule_only>
+                        <div class="toast" role="status" hidden=move || toast.get().is_none()>
+                            <span>
+                                {move || toast.get().map(|state| state.message).unwrap_or_default()}
+                            </span>
+                            <button class="toast-undo" type="button" on:click=move |_| undo_toast.with_value(|undo| undo())>
+                                "Undo"
+                            </button>
+                        </div>
+                    </Show>
                 </form>
             </div>
         }
@@ -2177,4 +2818,100 @@ pub fn CreateDosage() -> impl IntoView {
 #[component]
 pub fn EditSchedulePage() -> impl IntoView {
     dosage_editor_page(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn progesterone_dose_chips_map_to_per_pill_amounts() {
+        // 200 mg is the two-pill chip; everything else is a single pill.
+        assert_eq!(progesterone_dose_amounts(200.0), (100.0, 2.0));
+        assert_eq!(progesterone_dose_amounts(50.0), (50.0, 1.0));
+        assert_eq!(progesterone_dose_amounts(275.0), (275.0, 1.0));
+        assert_eq!(progesterone_dose_amounts(100.0), (100.0, 1.0));
+    }
+
+    #[test]
+    fn dose_unit_is_a_static_suffix() {
+        assert_eq!(dose_unit_suffix(false), "mg");
+        assert_eq!(dose_unit_suffix(true), "IU");
+    }
+
+    #[test]
+    fn rectal_chip_keeps_the_stored_boofed_route() {
+        assert_eq!(
+            progesterone_route_from_chip("Rectal"),
+            ProgesteroneRoutes::Boofed
+        );
+        assert_eq!(
+            progesterone_route_from_chip("Oral"),
+            ProgesteroneRoutes::Oral
+        );
+        assert_eq!(
+            progesterone_route_chip_label(&ProgesteroneRoutes::Boofed),
+            "Rectal"
+        );
+    }
+
+    #[test]
+    fn progesterone_commit_label_states_the_outcome() {
+        assert_eq!(
+            progesterone_commit_label(100.0, &ProgesteroneRoutes::Oral),
+            "Log progesterone · 100 mg · oral"
+        );
+        assert_eq!(
+            progesterone_commit_label(200.0, &ProgesteroneRoutes::Boofed),
+            "Log progesterone · 200 mg · rectal"
+        );
+    }
+
+    #[test]
+    fn entry_dose_text_reads_as_pills_not_debug() {
+        let entry = DosageHistoryEntry::Progesterone {
+            date: 0,
+            id: None,
+            kind: Progesterones::Micronized,
+            route: ProgesteroneRoutes::Oral,
+            dose: 100.0,
+            unit: HormoneUnits::Mg,
+            pillQuantity: Some(2.0),
+            note: None,
+        };
+        assert_eq!(entry_dose_text(&entry), "2 × 100 mg");
+        assert!(!entry_dose_text(&entry).contains("Mg"));
+    }
+
+    /// The page's own source. Names are assembled from parts so that the scan
+    /// cannot match its own needles.
+    fn page_source() -> &'static str {
+        include_str!("create_dosage.rs")
+    }
+
+    #[test]
+    fn record_mode_has_no_record_switches() {
+        // The per-medication "Record X Dose" switches are gone: card contents are
+        // the only intent, so a progesterone-only card cannot write estrogen.
+        let source = page_source();
+        for medication in ["estrogen", "aa", "prog"] {
+            let switch = format!("record_{medication}");
+            assert!(
+                !source.contains(&switch),
+                "the `{switch}` switch must stay deleted from create_dosage.rs"
+            );
+        }
+    }
+
+    #[test]
+    fn progesterone_unit_is_a_suffix_not_a_select() {
+        let source = page_source();
+        let unit_select_helper = format!("hormone_unit_{}()", "labels");
+        assert!(
+            !source.contains(&unit_select_helper),
+            "dose fields must not build a unit <select>; render a static suffix instead"
+        );
+        assert!(source.contains("class=\"unit-field\""));
+        assert!(source.contains("dose_unit_suffix("));
+    }
 }

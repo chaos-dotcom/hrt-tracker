@@ -311,7 +311,10 @@ pub fn scheduled_dose_dates(
     dates
 }
 
-fn day_start_ms(ms: i64) -> i64 {
+/// Start of the local day `ms` falls in, in milliseconds since the epoch.
+/// The unit the app groups doses by: "is this the same day?" is
+/// `day_start_ms(a) == day_start_ms(b)`.
+pub fn day_start_ms(ms: i64) -> i64 {
     let dt = Local.timestamp_millis_opt(ms).single();
     let dt = match dt {
         Some(value) => value,

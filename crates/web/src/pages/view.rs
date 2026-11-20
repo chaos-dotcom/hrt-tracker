@@ -14,11 +14,15 @@ mod scheduling;
 mod types;
 
 use self::helpers::{
-    bloodtest_pdf_url, dosage_entry_date, dosage_entry_matches_key, dosage_photo_view,
-    hormone_unit_labels, injection_site_from_label, injection_site_label, length_unit_label,
-    measurement_key, measurement_matches_target, parse_date_only, parse_datetime_local,
-    parse_optional_num, parse_weight_unit, progesterone_route_label, syringe_kind_label,
-    to_local_input_value, update_photo_note, weight_unit_label,
+    antiandrogen_label, bloodtest_pdf_url, dosage_entry_date, dosage_entry_matches_key,
+    dosage_photo_view, dose_mg, hormone_unit_labels, injectable_estradiol_label,
+    injection_site_from_label, injection_site_label, length_unit_label, measurement_key,
+    measurement_matches_target, oral_estradiol_label, parse_date_only, parse_datetime_local,
+    parse_optional_num, parse_weight_unit, pill_detail, progesterone_label,
+    progesterone_route_label, progesterone_route_word, regimen_summary_antiandrogen,
+    remove_history_entry,
+    regimen_summary_injection, regimen_summary_oral_estradiol, regimen_summary_progesterone,
+    syringe_kind_label, to_local_input_value, update_photo_note, weight_unit_label,
 };
 use self::scheduling::{generate_estrannaise_url, get_next_scheduled_candidate};
 use self::types::{
@@ -362,20 +366,43 @@ pub fn ViewPage() -> impl IntoView {
         }
     }));
 
+    // The dashboard button used to write silently; the shared toast (with Undo)
+    // now reports exactly what it wrote.
+    let dose_toast = create_rw_signal(None::<(String, String)>);
+    let dose_toast_timeout: Rc<RefCell<Option<gloo_timers::callback::Timeout>>> =
+        Rc::new(RefCell::new(None));
+
+    let undo_dose_toast: StoredValue<Rc<dyn Fn()>> = StoredValue::new({
+        let store = store.clone();
+        Rc::new(move || {
+            let Some((_, entry_id)) = dose_toast.get() else {
+                return;
+            };
+            store.data.update(|data| {
+                remove_history_entry(&mut data.dosageHistory, &entry_id);
+            });
+            store.mark_dirty();
+            store.save();
+            dose_toast.set(None);
+        })
+    });
+
     let record_next_dose_now = {
         let store = store.clone();
+        let dose_toast_timeout = dose_toast_timeout.clone();
         move |_| {
             let candidate = next_scheduled_candidate.get();
             let Some(candidate) = candidate else {
                 return;
             };
             let now = Date::now() as i64;
+            let entry_id = format!("dose-{now}-{}", (Math::random() * 1_000_000.0) as i64);
             store.data.update(|data| match candidate.med_type {
                 RegimenKey::InjectableEstradiol => {
                     if let Some(cfg) = data.injectableEstradiol.as_mut() {
                         let record = DosageHistoryEntry::InjectableEstradiol {
                             date: now,
-                            id: None,
+                            id: Some(entry_id.clone()),
                             kind: cfg.kind.clone(),
                             dose: cfg.dose,
                             unit: cfg.unit.clone(),
@@ -399,7 +426,7 @@ pub fn ViewPage() -> impl IntoView {
                     if let Some(cfg) = data.oralEstradiol.as_ref() {
                         let record = DosageHistoryEntry::OralEstradiol {
                             date: now,
-                            id: None,
+                            id: Some(entry_id.clone()),
                             kind: cfg.kind.clone(),
                             dose: cfg.dose,
                             unit: cfg.unit.clone(),
@@ -413,7 +440,7 @@ pub fn ViewPage() -> impl IntoView {
                     if let Some(cfg) = data.antiandrogen.as_ref() {
                         let record = DosageHistoryEntry::Antiandrogen {
                             date: now,
-                            id: None,
+                            id: Some(entry_id.clone()),
                             kind: cfg.kind.clone(),
                             dose: cfg.dose,
                             unit: cfg.unit.clone(),
@@ -426,7 +453,7 @@ pub fn ViewPage() -> impl IntoView {
                     if let Some(cfg) = data.progesterone.as_ref() {
                         let record = DosageHistoryEntry::Progesterone {
                             date: now,
-                            id: None,
+                            id: Some(entry_id.clone()),
                             kind: cfg.kind.clone(),
                             route: cfg.route.clone(),
                             dose: cfg.dose,
@@ -440,6 +467,15 @@ pub fn ViewPage() -> impl IntoView {
             });
             store.mark_dirty();
             store.save();
+
+            dose_toast.set(Some((format!("Logged {}", candidate.label), entry_id)));
+            if let Some(existing) = dose_toast_timeout.borrow_mut().take() {
+                drop(existing);
+            }
+            *dose_toast_timeout.borrow_mut() =
+                Some(gloo_timers::callback::Timeout::new(6000, move || {
+                    dose_toast.set(None);
+                }));
         }
     };
 
@@ -1050,6 +1086,16 @@ pub fn ViewPage() -> impl IntoView {
         "View",
         view! {
             <div class="view-layout">
+                <div class="toast" role="status" hidden=move || dose_toast.get().is_none()>
+                    <span>{move || dose_toast.get().map(|(message, _)| message).unwrap_or_default()}</span>
+                    <button
+                        class="toast-undo"
+                        type="button"
+                        on:click=move |_| undo_dose_toast.with_value(|undo| undo())
+                    >
+                        "Undo"
+                    </button>
+                </div>
                 <div class="view-header">
                     <div>
                         <h2>"HRT Tracking Data"</h2>
@@ -1108,7 +1154,6 @@ pub fn ViewPage() -> impl IntoView {
                         </Show>
                         <Show when=move || store.data.get().injectableEstradiol.is_some()>
                             <p>
-                                <strong>"Injectable Estradiol: "</strong>
                                 {move || {
                                     let data_value = store.data.get();
                                     let use_iu = store.settings.get().displayInjectableInIU.unwrap_or(false);
@@ -1124,10 +1169,7 @@ pub fn ViewPage() -> impl IntoView {
                                                 cfg.vialId.as_ref(),
                                                 use_iu,
                                             );
-                                            format!(
-                                                "{:?}, {dose_label} every {:.1} days",
-                                                cfg.kind, cfg.frequency
-                                            )
+                                            regimen_summary_injection(&cfg.kind, &dose_label, cfg.frequency)
                                         })
                                         .unwrap_or_default()
                                 }}
@@ -1135,37 +1177,34 @@ pub fn ViewPage() -> impl IntoView {
                         </Show>
                         <Show when=move || store.data.get().oralEstradiol.is_some()>
                             <p>
-                                <strong>"Oral Estradiol: "</strong>
                                 {move || store
                                     .data
                                     .get()
                                     .oralEstradiol
                                     .as_ref()
-                                    .map(|cfg| format!("{:?}, {:.2} {:?} every {:.1} days", cfg.kind, cfg.dose, cfg.unit, cfg.frequency))
+                                    .map(|cfg| regimen_summary_oral_estradiol(cfg.dose, cfg.frequency))
                                     .unwrap_or_default()}
                             </p>
                         </Show>
                         <Show when=move || store.data.get().antiandrogen.is_some()>
                             <p>
-                                <strong>"Antiandrogen: "</strong>
                                 {move || store
                                     .data
                                     .get()
                                     .antiandrogen
                                     .as_ref()
-                                    .map(|cfg| format!("{:?}, {:.2} {:?} every {:.1} days", cfg.kind, cfg.dose, cfg.unit, cfg.frequency))
+                                    .map(|cfg| regimen_summary_antiandrogen(&cfg.kind, cfg.dose, cfg.frequency))
                                     .unwrap_or_default()}
                             </p>
                         </Show>
                         <Show when=move || store.data.get().progesterone.is_some()>
                             <p>
-                                <strong>"Progesterone: "</strong>
                                 {move || store
                                     .data
                                     .get()
                                     .progesterone
                                     .as_ref()
-                                    .map(|cfg| format!("{:?} ({:?}), {:.2} {:?} every {:.1} days", cfg.kind, cfg.route, cfg.dose, cfg.unit, cfg.frequency))
+                                    .map(|cfg| regimen_summary_progesterone(&cfg.route, cfg.dose, cfg.frequency))
                                     .unwrap_or_default()}
                             </p>
                         </Show>
@@ -1980,7 +2019,10 @@ pub fn ViewPage() -> impl IntoView {
                                                     schedule_vial_id,
                                                     use_iu,
                                                 );
-                                                let summary = format!("Injection · {:?} · {dose_label}", kind);
+                                                let summary = format!(
+                                                    "Injection · {} · {dose_label}",
+                                                    injectable_estradiol_label(kind)
+                                                );
                                                 let mut details = Vec::new();
                                                 if bonusDose.unwrap_or(false) {
                                                     details.push("Bonus dose".to_string());
@@ -2033,31 +2075,33 @@ pub fn ViewPage() -> impl IntoView {
                                                 }
                                                 (summary, details, meta)
                                             }
-                                            DosageHistoryEntry::OralEstradiol { kind, dose, unit, pillQuantity, note, .. } => {
+                                            DosageHistoryEntry::OralEstradiol { kind, dose, unit: _, pillQuantity, note, .. } => {
                                                 let qty = pillQuantity.unwrap_or(1.0);
-                                                let total = if *unit == HormoneUnits::Mg { dose * qty } else { *dose };
-                                                let summary = format!("Oral E · {:?}", kind);
-                                                let details = vec![format!("{dose:.2} {:?}/pill × {qty:.1} = {total:.2} mg", unit)];
+                                                let summary = format!("Oral estradiol · {}", oral_estradiol_label(kind));
+                                                let details = vec![pill_detail(*dose, qty)];
                                                 let mut meta = Vec::new();
                                                 if let Some(note) = note {
                                                     meta.push(format!("Note: {note}"));
                                                 }
                                                 (summary, details, meta)
                                             }
-                                            DosageHistoryEntry::Progesterone { kind, route, dose, unit, pillQuantity, note, .. } => {
+                                            DosageHistoryEntry::Progesterone { kind, route, dose, unit: _, pillQuantity, note, .. } => {
                                                 let qty = pillQuantity.unwrap_or(1.0);
-                                                let total = if *unit == HormoneUnits::Mg { dose * qty } else { *dose };
-                                                let summary = format!("Progesterone ({:?}) · {:?}", route, kind);
-                                                let details = vec![format!("{dose:.2} {:?}/pill × {qty:.1} = {total:.2} mg", unit)];
+                                                let summary = format!(
+                                                    "Progesterone · {} · {}",
+                                                    progesterone_route_word(route),
+                                                    progesterone_label(kind)
+                                                );
+                                                let details = vec![pill_detail(*dose, qty)];
                                                 let mut meta = Vec::new();
                                                 if let Some(note) = note {
                                                     meta.push(format!("Note: {note}"));
                                                 }
                                                 (summary, details, meta)
                                             }
-                                            DosageHistoryEntry::Antiandrogen { kind, dose, unit, note, .. } => {
-                                                let summary = format!("AA · {:?}", kind);
-                                                let details = vec![format!("{dose:.2} {:?}", unit)];
+                                            DosageHistoryEntry::Antiandrogen { kind, dose, unit: _, note, .. } => {
+                                                let summary = antiandrogen_label(kind).to_string();
+                                                let details = vec![dose_mg(*dose)];
                                                 let mut meta = Vec::new();
                                                 if let Some(note) = note {
                                                     meta.push(format!("Note: {note}"));
@@ -3163,4 +3207,5 @@ pub fn ViewPage() -> impl IntoView {
         }
         .into_view(),
     )
+
 }

@@ -1,5 +1,9 @@
 use js_sys::Date;
 
+use super::helpers::{
+    antiandrogen_label, dose_mg, injectable_estradiol_label, progesterone_label,
+    progesterone_route_word,
+};
 use super::types::{NextDoseCandidate, RegimenKey, DAY_MS};
 use crate::utils::format_injectable_dose;
 use hrt_shared::types::{DosageHistoryEntry, HrtData, InjectableEstradiols};
@@ -101,7 +105,7 @@ pub(super) fn get_next_scheduled_candidate(
             options.push((
                 RegimenKey::InjectableEstradiol,
                 date,
-                format!("Injection: {:?}, {dose_label}", cfg.kind),
+                format!("{} · {dose_label}", injectable_estradiol_label(&cfg.kind)),
             ));
         }
     }
@@ -110,10 +114,7 @@ pub(super) fn get_next_scheduled_candidate(
             options.push((
                 RegimenKey::OralEstradiol,
                 date,
-                format!(
-                    "Oral Estradiol: {:?}, {:.2} {:?}",
-                    cfg.kind, cfg.dose, cfg.unit
-                ),
+                format!("Oral estradiol · {}", dose_mg(cfg.dose)),
             ));
         }
     }
@@ -122,10 +123,7 @@ pub(super) fn get_next_scheduled_candidate(
             options.push((
                 RegimenKey::Antiandrogen,
                 date,
-                format!(
-                    "Antiandrogen: {:?}, {:.2} {:?}",
-                    cfg.kind, cfg.dose, cfg.unit
-                ),
+                format!("{} · {}", antiandrogen_label(&cfg.kind), dose_mg(cfg.dose)),
             ));
         }
     }
@@ -135,8 +133,10 @@ pub(super) fn get_next_scheduled_candidate(
                 RegimenKey::Progesterone,
                 date,
                 format!(
-                    "Progesterone ({:?}): {:?}, {:.2} {:?}",
-                    cfg.route, cfg.kind, cfg.dose, cfg.unit
+                    "{} · {} · {}",
+                    progesterone_label(&cfg.kind),
+                    dose_mg(cfg.dose),
+                    progesterone_route_word(&cfg.route)
                 ),
             ));
         }
