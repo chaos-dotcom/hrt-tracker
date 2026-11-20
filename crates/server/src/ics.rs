@@ -354,11 +354,15 @@ fn add_months_utc(ms: i64, months: i64) -> i64 {
     let target_month = dt.month0() as i64 + months;
     let year = dt.year() + (target_month / 12) as i32;
     let month0 = (target_month % 12) as u32;
-    let last_day = chrono::Utc
-        .with_ymd_and_hms(year, month0 + 1, 1, dt.hour(), dt.minute(), dt.second())
-        .single()
-        .and_then(|d| d.checked_sub_signed(chrono::Duration::days(1)))
-        .map(|d| d.day())
+    // Last day of the *target* month: the day before the first of the month
+    // after it. Taking the day before the first of the target month clamped
+    // against the previous month, so a shorter target month kept the day,
+    // `with_ymd_and_hms` below rejected it, and the walk returned the input
+    // unchanged — the caller's `t += step` loop then never advanced.
+    let last_day = chrono::NaiveDate::from_ymd_opt(year, month0 + 1, 1)
+        .and_then(|first| first.checked_add_months(chrono::Months::new(1)))
+        .and_then(|next| next.checked_sub_days(chrono::Days::new(1)))
+        .map(|last| last.day())
         .unwrap_or(dt.day());
     let day = dt.day().min(last_day);
     chrono::Utc
@@ -598,5 +602,82 @@ mod tests {
         let cal = generate_ics(&data, &conf, options);
         assert!(cal.contains("Injection"), "should have injection events");
         assert!(cal.contains("Antiandrogen"), "should have antiandrogen events");
+    }
+
+    /// Parse every DTSTART in the feed and report it as a local calendar date.
+    fn dtstart_local_days(calendar: &str) -> Vec<chrono::NaiveDate> {
+        use chrono::TimeZone;
+        calendar
+            .split("\r\n")
+            .filter_map(|line| line.strip_prefix("DTSTART:"))
+            .map(|raw| {
+                let naive = chrono::NaiveDateTime::parse_from_str(raw, "%Y%m%dT%H%M%SZ")
+                    .unwrap_or_else(|err| panic!("bad DTSTART {raw:?}: {err}"));
+                chrono::Local
+                    .timestamp_millis_opt(chrono::Utc.from_utc_datetime(&naive).timestamp_millis())
+                    .single()
+                    .expect("valid instant")
+                    .date_naive()
+            })
+            .collect()
+    }
+
+    /// A routine blood test recurs every N months *from the last test*, so every
+    /// occurrence keeps that test's day of month (clamped only when the target
+    /// month is shorter).
+    #[test]
+    fn blood_test_schedule_keeps_the_last_test_day_of_month() {
+        let now: i64 = 1_709_596_800_000; // 2024-03-05T00:00:00Z
+        let last_test: i64 = 1_706_691_600_000; // 2024-01-31T09:00:00Z
+        let data = json!({ "bloodTests": [{ "date": last_test }] });
+        let conf = json!({
+            "enableBloodTestSchedule": true,
+            "bloodTestIntervalMonths": 2
+        });
+        let options = IcsOptions {
+            horizon_days: 200,
+            include_past: false,
+            now_ms: now,
+        };
+
+        let calendar = generate_ics(&data, &conf, options);
+
+        let expected: Vec<chrono::NaiveDate> = ["2024-03-31", "2024-05-31", "2024-07-31"]
+            .iter()
+            .map(|raw| chrono::NaiveDate::parse_from_str(raw, "%Y-%m-%d").expect("valid date"))
+            .collect();
+        assert_eq!(
+            dtstart_local_days(&calendar),
+            expected,
+            "every 2 months from a test on the 31st must stay on the 31st:\n{calendar}"
+        );
+    }
+
+    /// The same walk must advance even when the target month is shorter than the
+    /// last test's day of month; it used to loop forever on its own input.
+    #[test]
+    fn blood_test_schedule_after_a_test_on_the_31st_terminates() {
+        let now: i64 = 1_709_596_800_000; // 2024-03-05T00:00:00Z
+        let last_test: i64 = 1_706_691_600_000; // 2024-01-31T09:00:00Z
+        let data = json!({ "bloodTests": [{ "date": last_test }] });
+        let conf = json!({
+            "enableBloodTestSchedule": true,
+            "bloodTestIntervalMonths": 1
+        });
+        let options = IcsOptions {
+            horizon_days: 400,
+            include_past: false,
+            now_ms: now,
+        };
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(generate_ics(&data, &conf, options));
+        });
+
+        assert!(
+            rx.recv_timeout(std::time::Duration::from_secs(5)).is_ok(),
+            "a monthly blood-test reminder after a test on the 31st must return"
+        );
     }
 }
