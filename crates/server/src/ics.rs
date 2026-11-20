@@ -179,6 +179,11 @@ pub fn generate_ics(data: &Value, conf: &Value, options: IcsOptions) -> String {
             continue;
         }
         let step = (freq_days * DAY_MS as f64) as i64;
+        if step <= 0 {
+            // Positive in days but below one millisecond per dose: there is no
+            // representable step, and `t += step` would never advance.
+            continue;
+        }
 
         let last_taken_dates: Vec<i64> = data
             .get("dosageHistory")
@@ -186,7 +191,12 @@ pub fn generate_ics(data: &Value, conf: &Value, options: IcsOptions) -> String {
             .map(|arr| {
                 arr.iter()
                     .filter_map(|d| {
-                        if d.get("medicationType").and_then(|v| v.as_str()) == Some(key) {
+                        let is_key = d.get("medicationType").and_then(|v| v.as_str()) == Some(key);
+                        // A bonus dose is taken off-schedule; it does not move the
+                        // regimen's grid. hrt_shared::logic skips it the same way.
+                        let is_bonus =
+                            d.get("bonusDose").and_then(|v| v.as_bool()).unwrap_or(false);
+                        if is_key && !is_bonus {
                             d.get("date").and_then(|v| v.as_i64())
                         } else {
                             None
@@ -678,6 +688,115 @@ mod tests {
         assert!(
             rx.recv_timeout(std::time::Duration::from_secs(5)).is_ok(),
             "a monthly blood-test reminder after a test on the 31st must return"
+        );
+    }
+
+    /// A positive frequency in days can still round to a zero-millisecond step;
+    /// `t += step` then never advances, so the walk must skip the regimen.
+    #[test]
+    fn sub_millisecond_frequency_is_skipped_instead_of_spinning() {
+        let now: i64 = 1_709_596_800_000; // 2024-03-05T00:00:00Z
+        let data = json!({
+            "dosageHistory": [{
+                "date": now - 30 * 86_400_000_i64,
+                "medicationType": "injectableEstradiol",
+                "type": "Estradiol Valerate",
+                "dose": 4,
+                "unit": "mg"
+            }],
+            "injectableEstradiol": {
+                "type": "Estradiol Valerate",
+                "dose": 4,
+                "unit": "mg",
+                "frequency": 1e-9
+            }
+        });
+        let options = IcsOptions {
+            horizon_days: 30,
+            include_past: false,
+            now_ms: now,
+        };
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(generate_ics(&data, &json!({}), options));
+        });
+
+        let calendar = rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("a regimen with a zero-millisecond step must not spin");
+        assert!(
+            !calendar.contains("BEGIN:VEVENT"),
+            "a zero step cannot schedule a dose:\n{calendar}"
+        );
+    }
+
+    /// Every DTSTART in the feed, as milliseconds since the epoch.
+    fn dtstart_millis(calendar: &str) -> Vec<i64> {
+        use chrono::TimeZone;
+        calendar
+            .split("\r\n")
+            .filter_map(|line| line.strip_prefix("DTSTART:"))
+            .map(|raw| {
+                let naive = chrono::NaiveDateTime::parse_from_str(raw, "%Y%m%dT%H%M%SZ")
+                    .unwrap_or_else(|err| panic!("bad DTSTART {raw:?}: {err}"));
+                chrono::Utc.from_utc_datetime(&naive).timestamp_millis()
+            })
+            .collect()
+    }
+
+    /// A bonus dose is an extra dose taken off-schedule, so it is not a new
+    /// anchor: the shared scheduler ignores it when it derives the next dose
+    /// (`hrt_shared::logic::backfill_scheduled_doses`), and the feed must agree.
+    #[test]
+    fn scheduled_doses_ignore_bonus_doses() {
+        const DAY_MS: i64 = 86_400_000;
+        const HOUR_MS: i64 = 3_600_000;
+        let now: i64 = 1_709_596_800_000; // 2024-03-05T00:00:00Z, a UTC midnight
+        let today_start = now;
+        let real_dose = today_start - 10 * DAY_MS + 10 * HOUR_MS; // 2024-02-24T10:00Z
+        let bonus_dose = today_start - DAY_MS + 10 * HOUR_MS; // 2024-03-04T10:00Z, off-schedule
+        let data = json!({
+            "dosageHistory": [
+                {
+                    "date": real_dose,
+                    "medicationType": "injectableEstradiol",
+                    "type": "Estradiol Valerate",
+                    "dose": 4,
+                    "unit": "mg"
+                },
+                {
+                    "date": bonus_dose,
+                    "medicationType": "injectableEstradiol",
+                    "bonusDose": true,
+                    "type": "Estradiol Valerate",
+                    "dose": 4,
+                    "unit": "mg"
+                }
+            ],
+            "injectableEstradiol": {
+                "type": "Estradiol Valerate",
+                "dose": 4,
+                "unit": "mg",
+                "frequency": 7
+            }
+        });
+        let options = IcsOptions {
+            horizon_days: 30,
+            include_past: false,
+            now_ms: now,
+        };
+
+        let calendar = generate_ics(&data, &json!({}), options);
+
+        // Weekly from the last real dose: 2024-03-02T10:00Z (already past, so
+        // skipped) then 2024-03-09T10:00Z.
+        let expected_first = today_start + 4 * DAY_MS + 10 * HOUR_MS;
+        let starts = dtstart_millis(&calendar);
+        assert_eq!(
+            starts.first().copied(),
+            Some(expected_first),
+            "the bonus dose must not push the schedule a week later:\n{calendar}"
         );
     }
 }
