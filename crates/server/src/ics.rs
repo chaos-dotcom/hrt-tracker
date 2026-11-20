@@ -262,11 +262,16 @@ pub fn generate_ics(data: &Value, conf: &Value, options: IcsOptions) -> String {
                         .filter_map(|b| b.get("date").and_then(|v| v.as_i64()))
                         .collect();
                     if let Some(last) = last_dates.into_iter().max() {
-                        let mut t = add_months_utc(last, interval_months);
-                        t = set_local_morning_10(t);
+                        // Occurrence `n` is anchored on the last test's day of the
+                        // month and clamped to each target month's length. Feeding
+                        // the previous occurrence back in instead eroded the anchor
+                        // (the 31st became the 29th after February, then the 28th
+                        // for good), so every later test moved a few days earlier.
+                        let mut n: i64 = 1;
+                        let mut t = set_local_morning_10(add_months_utc(last, interval_months * n));
                         while t <= options.now_ms {
-                            t = add_months_utc(t, interval_months);
-                            t = set_local_morning_10(t);
+                            n += 1;
+                            t = set_local_morning_10(add_months_utc(last, interval_months * n));
                         }
                         while t <= horizon_end {
                             let uid = format!("bloodtest-{}-scheduled@hrt-tracker", t);
@@ -274,8 +279,8 @@ pub fn generate_ics(data: &Value, conf: &Value, options: IcsOptions) -> String {
                             let desc =
                                 format!("Routine blood test every {} month(s).", interval_months);
                             events.push(make_event(&uid, t, summary, Some(&desc), options.now_ms));
-                            t = add_months_utc(t, interval_months);
-                            t = set_local_morning_10(t);
+                            n += 1;
+                            t = set_local_morning_10(add_months_utc(last, interval_months * n));
                         }
                     }
                 }
@@ -797,6 +802,48 @@ mod tests {
             starts.first().copied(),
             Some(expected_first),
             "the bonus dose must not push the schedule a week later:\n{calendar}"
+        );
+    }
+
+    /// Every occurrence keeps the last test's day of month, clamped to the
+    /// month it lands in. Walking from the previous occurrence instead let
+    /// February shorten the anchor once and for all (31 -> 29 -> 28).
+    #[test]
+    fn monthly_blood_test_keeps_the_31st_across_a_february() {
+        let now: i64 = 1_795_212_000_000; // 2026-11-20T00:00:00Z, well past several Februaries
+        let last_test: i64 = 1_706_691_600_000; // 2024-01-31T09:00:00Z
+        let data = json!({ "bloodTests": [{ "date": last_test }] });
+        let conf = json!({
+            "enableBloodTestSchedule": true,
+            "bloodTestIntervalMonths": 1
+        });
+        let options = IcsOptions {
+            horizon_days: 400,
+            include_past: false,
+            now_ms: now,
+        };
+        let cal = generate_ics(&data, &conf, options);
+        let days = dtstart_local_days(&cal);
+        assert!(!days.is_empty(), "the feed must schedule blood tests");
+
+        use chrono::Datelike;
+        for day in &days {
+            let expected = day.with_day(1).and_then(|first| {
+                first
+                    .checked_add_months(chrono::Months::new(1))
+                    .and_then(|next| next.checked_sub_days(chrono::Days::new(1)))
+            });
+            assert_eq!(
+                Some(day.day()),
+                expected.map(|last| last.day()),
+                "{day} must keep the last test's day of month (the 31st, clamped)"
+            );
+        }
+        // November has 30 days and December has 31: the anchor must still be
+        // the last test's 31st, not a drifted 28th.
+        assert!(
+            days.iter().any(|d| d.day() == 30) && days.iter().any(|d| d.day() == 31),
+            "a 31st-anchored monthly walk must clamp to 30 in short months and return to 31: {days:?}"
         );
     }
 }
