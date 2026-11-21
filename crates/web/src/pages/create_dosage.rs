@@ -225,6 +225,30 @@ fn clock_offset_ms(time: &str, fallback_time: &str) -> i64 {
     (hours * 60 + minutes) * 60_000
 }
 
+/// Which medication row is expanded. One at a time, so the page stays short.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum MedRow {
+    Estrogen,
+    Antiandrogen,
+    Progesterone,
+}
+
+/// "logged 22:14 · 100 mg" / "last 19 Nov · 2 × 100 mg" / "not logged yet".
+fn med_row_meta(entries: &[DosageHistoryEntry], medication: Medication, today_start: i64) -> String {
+    let Some(entry) = latest_entry(entries, medication) else {
+        return "not logged yet".to_string();
+    };
+    let date = dosage_entry_date(entry);
+    let dose = entry_dose_text(entry);
+    if date >= today_start {
+        format!("logged {} · {}", clock_label(date), dose)
+    } else {
+        let stamp = to_local_input_value(date);
+        let (day, _) = stamp.split_once('T').unwrap_or((stamp.as_str(), ""));
+        format!("last {} · {}", day, dose)
+    }
+}
+
 /// `HH:MM` (24h) to hours and minutes.
 fn parse_clock(value: &str) -> Option<(i64, i64)> {
     let (hours, minutes) = value.trim().split_once(':')?;
@@ -1535,6 +1559,87 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
         })
     });
 
+    // Exactly one medication row is expanded at a time; the page reads as a list
+    // of three rows instead of three cards stacked to the floor.
+    let open_row = create_rw_signal(Some(MedRow::Progesterone));
+    let toggle_row = move |row: MedRow| {
+        open_row.update(|current| {
+            *current = if *current == Some(row) { None } else { Some(row) };
+        });
+    };
+
+    let row_today_start = day_start_ms(Date::now() as i64);
+    let estrogen_row_meta = create_memo({
+        let store = store.clone();
+        move |_| {
+            med_row_meta(
+                &store.data.get().dosageHistory,
+                Medication::Estrogen,
+                row_today_start,
+            )
+        }
+    });
+    let aa_row_meta = create_memo({
+        let store = store.clone();
+        move |_| {
+            med_row_meta(
+                &store.data.get().dosageHistory,
+                Medication::Antiandrogen,
+                row_today_start,
+            )
+        }
+    });
+    let prog_row_meta = create_memo({
+        let store = store.clone();
+        move |_| {
+            med_row_meta(
+                &store.data.get().dosageHistory,
+                Medication::Progesterone,
+                row_today_start,
+            )
+        }
+    });
+
+    // What the footer button would write, and the button itself.
+    let open_row_label = create_memo(move |_| match open_row.get() {
+        Some(MedRow::Estrogen) => {
+            if estrogen_record_dose.get().is_some() {
+                format!("Log estrogen · {}", estrogen_dose_label())
+            } else {
+                "Choose an estrogen dose".to_string()
+            }
+        }
+        Some(MedRow::Antiandrogen) => match aa_record_dose.get() {
+            Some(dose) => format!("Log cyproterone · {} mg", fmt(dose, 2)),
+            None => "Choose an antiandrogen dose".to_string(),
+        },
+        Some(MedRow::Progesterone) => match prog_record_total.get() {
+            Some(total) => progesterone_commit_label(
+                total,
+                &progesterone_route_from_chip(&prog_route.get()),
+            ),
+            None => "Choose a progesterone dose".to_string(),
+        },
+        None => "Pick a medication above".to_string(),
+    });
+
+    let open_row_ready = create_memo(move |_| match open_row.get() {
+        Some(MedRow::Estrogen) => estrogen_record_dose.get().is_some(),
+        Some(MedRow::Antiandrogen) => aa_record_dose.get().is_some(),
+        Some(MedRow::Progesterone) => prog_record_total.get().is_some(),
+        None => false,
+    });
+
+    let commit_open_row: StoredValue<Rc<dyn Fn()>> = StoredValue::new(Rc::new(move || {
+        match open_row.get() {
+            Some(MedRow::Estrogen) => commit_estrogen.with_value(|commit| commit()),
+            Some(MedRow::Antiandrogen) => commit_aa.with_value(|commit| commit()),
+            Some(MedRow::Progesterone) => commit_prog.with_value(|commit| commit()),
+            None => {}
+        }
+    }));
+
+
     let on_submit = {
         let store = store.clone();
         let feedback_timeout = feedback_timeout.clone();
@@ -1896,7 +2001,7 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                             && if schedule_only {
                                 schedule_estrogen.get()
                             } else {
-                                estrogen_card_open.get()
+                                open_row.get() == Some(MedRow::Estrogen)
                             }
                     }>
                         <section class="card">
@@ -2059,9 +2164,19 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                         </section>
                     </Show>
 
-                    <section class="card dose-card">
-                        <div class="card-header">
-                            <h3>"Estrogen"</h3>
+                    <section class="med-row" class:open=move || open_row.get() == Some(MedRow::Estrogen)>
+                        <div class="med-row-head">
+                            <button
+                                type="button"
+                                class="med-row-toggle"
+                                aria-expanded=move || if open_row.get() == Some(MedRow::Estrogen) { "true" } else { "false" }
+                                aria-controls="row-estrogen"
+                                on:click=move |_| toggle_row(MedRow::Estrogen)
+                            >
+                                <span class="med-row-name">"Estrogen"</span>
+                                <span class="med-row-meta">{move || estrogen_row_meta.get()}</span>
+                                <span class="med-row-chev" aria-hidden="true">"⌄"</span>
+                            </button>
                             <Show when=move || schedule_only && schedule_estrogen.get()>
                                 <button
                                     type="button"
@@ -2082,8 +2197,9 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                                 "+ Add estrogen regimen"
                             </button>
                         </Show>
+                        <div class="med-row-body" id="row-estrogen" hidden=move || open_row.get() != Some(MedRow::Estrogen)>
                         <Show when=move || !schedule_only || schedule_estrogen.get()>
-                        <Show when=move || schedule_only || estrogen_card_open.get()>
+                        <Show when=move || !schedule_only || schedule_aa.get()>
                         <div class="option-group">
                             <label class="toggle toggle-wide">
                                 <input
@@ -2491,11 +2607,7 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                         </div>
                         </Show>
 
-                        <Show when=move || !schedule_only && !estrogen_card_open.get()>
-                            <button type="button" class="chip" on:click=move |_| seed_estrogen.with_value(|seed| seed(true))>
-                                "+ Add estrogen"
-                            </button>
-                        </Show>
+                        
 
                         <Show when=move || !schedule_only>
                             <Show when=move || estrogen_logged_today.get().is_some()>
@@ -2503,44 +2615,39 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                                     {move || estrogen_logged_today.get().unwrap_or_default()}
                                 </p>
                             </Show>
-                            <div class="card-footer">
-                                <span class="card-summary">
-                                    {move || {
-                                        if let Some(logged) = estrogen_logged.get() {
-                                            return logged;
-                                        }
-                                        if estrogen_record_dose.get().is_none() {
-                                            return "Choose a dose first".to_string();
-                                        }
-                                        format!(
-                                            "{} · {}",
-                                            estrogen_dose_label(),
-                                            if estrogen_method.get() == "injection" { "injection" } else { "oral" }
-                                        )
-                                    }}
-                                </span>
-                                <button
-                                    type="button"
-                                    class="card-commit"
-                                    on:click=move |_| commit_estrogen.with_value(|commit| commit())
-                                    prop:disabled=move || estrogen_record_dose.get().is_none()
-                                >
-                                    {move || {
-                                        if estrogen_record_dose.get().is_some() {
-                                            format!("Log estrogen · {}", estrogen_dose_label())
-                                        } else {
-                                            "Log estrogen".to_string()
-                                        }
-                                    }}
-                                </button>
-                            </div>
+                            <p class="card-summary-line">
+                                {move || {
+                                    if let Some(logged) = estrogen_logged.get() {
+                                        return logged;
+                                    }
+                                    if estrogen_record_dose.get().is_none() {
+                                        return "Choose a dose first".to_string();
+                                    }
+                                    format!(
+                                        "{} · {}",
+                                        estrogen_dose_label(),
+                                        if estrogen_method.get() == "injection" { "injection" } else { "oral" }
+                                    )
+                                }}
+                            </p>
                         </Show>
                         </Show>
-                    </section>
+                    </div>
+                        </section>
 
-                    <section class="card dose-card">
-                        <div class="card-header">
-                            <h3>"Antiandrogen"</h3>
+                    <section class="med-row" class:open=move || open_row.get() == Some(MedRow::Antiandrogen)>
+                        <div class="med-row-head">
+                            <button
+                                type="button"
+                                class="med-row-toggle"
+                                aria-expanded=move || if open_row.get() == Some(MedRow::Antiandrogen) { "true" } else { "false" }
+                                aria-controls="row-antiandrogen"
+                                on:click=move |_| toggle_row(MedRow::Antiandrogen)
+                            >
+                                <span class="med-row-name">"Antiandrogen"</span>
+                                <span class="med-row-meta">{move || aa_row_meta.get()}</span>
+                                <span class="med-row-chev" aria-hidden="true">"⌄"</span>
+                            </button>
                             <Show when=move || schedule_only && schedule_aa.get()>
                                 <button
                                     type="button"
@@ -2561,8 +2668,9 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                                 "+ Add antiandrogen regimen"
                             </button>
                         </Show>
+                        <div class="med-row-body" id="row-antiandrogen" hidden=move || open_row.get() != Some(MedRow::Antiandrogen)>
                         <Show when=move || !schedule_only || schedule_aa.get()>
-                        <Show when=move || schedule_only || aa_card_open.get()>
+                        <Show when=move || !schedule_only || schedule_estrogen.get()>
                         <Show when=move || !schedule_only>
                             <button
                                 type="button"
@@ -2698,20 +2806,13 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                         </div>
                         </Show>
 
-                        <Show when=move || !schedule_only && !aa_card_open.get()>
-                            <button type="button" class="chip" on:click=move |_| seed_aa.with_value(|seed| seed(true))>
-                                {move || format!("+ Add {}", antiandrogen_action_word(&antiandrogen_from_label(&aa_type.get())))}
-                            </button>
-                        </Show>
-
                         <Show when=move || !schedule_only>
                             <Show when=move || aa_logged_today.get().is_some()>
                                 <p class="inline-note warn">
                                     {move || aa_logged_today.get().unwrap_or_default()}
                                 </p>
                             </Show>
-                            <div class="card-footer">
-                                <span class="card-summary">
+                            <p class="card-summary-line">
                                     {move || {
                                         if let Some(logged) = aa_logged.get() {
                                             return logged;
@@ -2725,30 +2826,25 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                                             ),
                                         }
                                     }}
-                                </span>
-                                <button
-                                    type="button"
-                                    class="card-commit"
-                                    on:click=move |_| commit_aa.with_value(|commit| commit())
-                                    prop:disabled=move || aa_record_dose.get().is_none()
-                                >
-                                    {move || match aa_record_dose.get() {
-                                        Some(dose) => format!(
-                                            "Log {} · {} mg",
-                                            antiandrogen_action_word(&antiandrogen_from_label(&aa_type.get())),
-                                            fmt(dose, 2)
-                                        ),
-                                        None => "Log antiandrogen".to_string(),
-                                    }}
-                                </button>
-                            </div>
+                            </p>
                         </Show>
                         </Show>
-                    </section>
+                    </div>
+                        </section>
 
-                    <section class="card dose-card">
-                        <div class="card-header">
-                            <h3>"Progesterone"</h3>
+                    <section class="med-row" class:open=move || open_row.get() == Some(MedRow::Progesterone)>
+                        <div class="med-row-head">
+                            <button
+                                type="button"
+                                class="med-row-toggle"
+                                aria-expanded=move || if open_row.get() == Some(MedRow::Progesterone) { "true" } else { "false" }
+                                aria-controls="row-progesterone"
+                                on:click=move |_| toggle_row(MedRow::Progesterone)
+                            >
+                                <span class="med-row-name">"Progesterone"</span>
+                                <span class="med-row-meta">{move || prog_row_meta.get()}</span>
+                                <span class="med-row-chev" aria-hidden="true">"⌄"</span>
+                            </button>
                             <Show when=move || schedule_only && prog_card_open.get()>
                                 <span class="status-chip">{move || prog_regimen_short.get()}</span>
                                 <button
@@ -2764,9 +2860,6 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                                 </button>
                             </Show>
                         </div>
-                        // In schedule mode the card starts as one button; pressing it
-                        // opens a regimen already set to the sensible defaults
-                        // (100 mg, oral, every day, 22:00, fill in what was taken).
                         <Show when=move || schedule_only && !prog_card_open.get()>
                             <p class="muted">"No progesterone regimen yet."</p>
                             <button
@@ -2777,6 +2870,7 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                                 "+ Add progesterone regimen"
                             </button>
                         </Show>
+                        <div class="med-row-body" id="row-progesterone" hidden=move || open_row.get() != Some(MedRow::Progesterone)>
                         <Show when=move || !schedule_only || prog_card_open.get()>
                         <Show when=move || schedule_only || prog_card_open.get()>
                         // Dosing is chosen with chips; one legal progesterone type
@@ -2964,11 +3058,7 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                         </Show>
 
                         
-<Show when=move || !schedule_only && !prog_card_open.get()>
-                            <button type="button" class="chip" on:click=move |_| seed_prog.with_value(|seed| seed(true))>
-                                "+ Add progesterone"
-                            </button>
-                        </Show>
+
 
                         <Show when=move || !schedule_only>
                             <Show when=move || prog_logged_today.get().is_some()>
@@ -2976,8 +3066,7 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                                     {move || prog_logged_today.get().unwrap_or_default()}
                                 </p>
                             </Show>
-                            <div class="card-footer">
-                                <span class="card-summary">
+                            <p class="card-summary-line">
                                     {move || {
                                         if let Some(logged) = prog_logged.get() {
                                             return logged;
@@ -2993,25 +3082,11 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                                             Some((dose, _)) => format!("{} mg", fmt(dose, 2)),
                                         }
                                     }}
-                                </span>
-                                <button
-                                    type="button"
-                                    class="card-commit"
-                                    on:click=move |_| commit_prog.with_value(|commit| commit())
-                                    prop:disabled=move || prog_record_total.get().is_none()
-                                >
-                                    {move || match prog_record_total.get() {
-                                        Some(total) => progesterone_commit_label(
-                                            total,
-                                            &progesterone_route_from_chip(&prog_route.get()),
-                                        ),
-                                        None => "Log progesterone".to_string(),
-                                    }}
-                                </button>
-                            </div>
+                                </p>
                         </Show>
                         </Show>
-                    </section>
+                    </div>
+                        </section>
 
                     <Show when=move || schedule_only && form_error.get().is_some()>
                         <p class="error">{move || form_error.get().unwrap_or_default()}</p>
@@ -3027,6 +3102,30 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                     </Show>
 
                     <Show when=move || !schedule_only>
+                        <div class="form-actions">
+                            <span class="card-summary">
+                                {move || {
+                                    if open_row.get().is_none() {
+                                        return "Pick a medication above to log it".to_string();
+                                    }
+                                    if !open_row_ready.get() {
+                                        return "Nothing to write yet — set a dose first".to_string();
+                                    }
+                                    format!(
+                                        "Writing {}",
+                                        open_row_label.get().trim_start_matches("Log ")
+                                    )
+                                }}
+                            </span>
+                            <button
+                                type="button"
+                                on:click=move |_| commit_open_row.with_value(|commit| commit())
+                                prop:disabled=move || !open_row_ready.get()
+                            >
+                                {move || open_row_label.get()}
+                            </button>
+                        </div>
+
                         <div class="toast" role="status" hidden=move || toast.get().is_none()>
                             <span>
                                 {move || toast.get().map(|state| state.message).unwrap_or_default()}
