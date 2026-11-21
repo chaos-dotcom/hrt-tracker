@@ -202,12 +202,76 @@ fn day_at_ten(offset_days: f64) -> String {
 /// Parse a `<input type="date">` value into a local timestamp at 10:00, the
 /// time the app uses for scheduled doses. Returns `None` for an empty value.
 fn parse_regimen_start(value: &str) -> Option<i64> {
+    parse_regimen_start_at(value, "10:00", "10:00")
+}
+
+/// Parse a `<input type="date">` value plus an `HH:MM` time into a local
+/// timestamp. Returns `None` for an empty date; a missing or malformed time
+/// falls back to `fallback_time` (the app's 10:00 default).
+fn parse_regimen_start_at(value: &str, time: &str, fallback_time: &str) -> Option<i64> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
         return None;
     }
-    Some(parse_date_or_now(trimmed) + 10 * 60 * 60 * 1000)
+    Some(parse_date_or_now(trimmed) + clock_offset_ms(time, fallback_time))
 }
+
+/// Milliseconds to add to a local midnight for `time`, falling back to
+/// `fallback_time` when `time` is empty or malformed.
+fn clock_offset_ms(time: &str, fallback_time: &str) -> i64 {
+    let (hours, minutes) = parse_clock(time)
+        .or_else(|| parse_clock(fallback_time))
+        .unwrap_or((10, 0));
+    (hours * 60 + minutes) * 60_000
+}
+
+/// `HH:MM` (24h) to hours and minutes.
+fn parse_clock(value: &str) -> Option<(i64, i64)> {
+    let (hours, minutes) = value.trim().split_once(':')?;
+    let hours: i64 = hours.trim().parse().ok()?;
+    let minutes: i64 = minutes.trim().parse().ok()?;
+    if !(0..24).contains(&hours) || !(0..60).contains(&minutes) {
+        return None;
+    }
+    Some((hours, minutes))
+}
+
+/// The first scheduled dose at or after `now`, given a regimen start and a
+/// frequency in days. `None` when the frequency cannot produce a step.
+fn next_dose_at_or_after(start: i64, frequency_days: f64, now: i64) -> Option<i64> {
+    if !frequency_days.is_finite() || frequency_days <= 0.0 {
+        return None;
+    }
+    let step = (frequency_days * 86_400_000.0) as i64;
+    if step <= 0 {
+        return None;
+    }
+    if start >= now {
+        return Some(start);
+    }
+    let elapsed = now - start;
+    let steps = (elapsed + step - 1) / step;
+    Some(start + steps * step)
+}
+
+/// Interval chips for a regular regimen: label plus the number of days it means.
+/// "every day" / "every other day" / "every N days".
+fn interval_phrase(days: f64) -> String {
+    if !days.is_finite() || days <= 0.0 {
+        return "no interval set".to_string();
+    }
+    if (days - 1.0).abs() < f64::EPSILON {
+        "every day".to_string()
+    } else if (days - 2.0).abs() < f64::EPSILON {
+        "every other day".to_string()
+    } else {
+        format!("every {} days", fmt(days, 2))
+    }
+}
+
+const REGIMEN_INTERVALS: [(&str, &str); 3] = [("1", "Every day"), ("2", "Every other day"), ("3", "Every 3 days")];
+
+
 
 fn parse_datetime_local(value: &str) -> i64 {
     let trimmed = value.trim();
@@ -513,6 +577,8 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
         create_rw_signal(progesterone_route_chip_label(&ProgesteroneRoutes::Oral).to_string());
     let prog_frequency = create_rw_signal("1".to_string());
     let prog_next_date = create_rw_signal(String::new());
+    // Time of day a progesterone dose is scheduled for; evening by default.
+    let prog_time = create_rw_signal("22:00".to_string());
 
     let bonus_dose = create_rw_signal(false);
 
@@ -900,16 +966,35 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                 );
             }
             if let Some(prog) = data.progesterone.as_ref() {
+                if prog.dose > 0.0 {
+                    prog_total.set(fmt(prog.dose, 2));
+                }
                 prog_frequency.set(fmt(prog.frequency, 2));
                 prog_next_date.set(
                     prog.nextDoseDate
                         .map(to_local_input_value)
                         .unwrap_or_default(),
                 );
+                // Round-trip the time of day the regimen is scheduled at.
+                if let Some(start) = prog.startDate {
+                    prog_start.set(to_local_date_value(start));
+                    let stamp = to_local_input_value(start);
+                    if let Some((_, time)) = stamp.split_once('T') {
+                        prog_time.set(time.chars().take(5).collect());
+                    }
+                } else if let Some(next) = prog.nextDoseDate {
+                    let stamp = to_local_input_value(next);
+                    if let Some((_, time)) = stamp.split_once('T') {
+                        prog_time.set(time.chars().take(5).collect());
+                    }
+                }
             }
             seed_estrogen.with_value(|seed| seed(false));
             seed_aa.with_value(|seed| seed(false));
             seed_prog.with_value(|seed| seed(false));
+            // Setting a regimen up for the first time should offer to fill in the
+            // doses you have already taken; editing an existing one should not.
+            backfill_prog.set(data.progesterone.is_none());
             schedule_estrogen
                 .set(data.injectableEstradiol.is_some() || data.oralEstradiol.is_some());
             schedule_aa.set(data.antiandrogen.is_some());
@@ -1037,10 +1122,44 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
         }
     });
 
+    // What the regimen the user is describing actually amounts to.
+    let prog_regimen_summary = create_memo(move |_| {
+        let dose = parse_num(&prog_total.get());
+        let route = prog_route.get().to_lowercase();
+        let time = prog_time.get();
+        let frequency = parse_num(&prog_frequency.get());
+        let dose_text = if dose.is_finite() && dose > 0.0 {
+            format!("{} mg", fmt(dose, 2))
+        } else {
+            "no dose yet".to_string()
+        };
+        let start = parse_regimen_start_at(&prog_start.get(), &time, "22:00");
+        let next = start
+            .and_then(|start| next_dose_at_or_after(start, frequency, Date::now() as i64))
+            .map(|ms| to_local_input_value(ms).replace('T', " "));
+        match next {
+            Some(next) => format!(
+                "{} · {} · {} · {} — next dose {}",
+                interval_phrase(frequency),
+                dose_text,
+                route,
+                time,
+                next
+            ),
+            None => format!(
+                "{} · {} · {} · {} — set a start date to see the next dose",
+                interval_phrase(frequency),
+                dose_text,
+                route,
+                time
+            ),
+        }
+    });
+
     let prog_backfill_dates = create_memo({
         let store = store.clone();
         move |_| {
-            let Some(start) = parse_regimen_start(&prog_start.get()) else {
+            let Some(start) = parse_regimen_start_at(&prog_start.get(), &prog_time.get(), "22:00") else {
                 return Vec::new();
             };
             let frequency = parse_num(&prog_frequency.get());
@@ -1056,7 +1175,11 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                     _ => None,
                 })
                 .collect();
+            let now = Date::now() as i64;
             scheduled_dose_dates(start, frequency, &existing)
+                .into_iter()
+                .filter(|date| *date <= now)
+                .collect()
         }
     });
 
@@ -1066,6 +1189,65 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
     let estrogen_card_open = create_memo(move |_| !estrogen_dose.get().trim().is_empty());
     let aa_card_open = create_memo(move |_| !aa_dose.get().trim().is_empty());
     let prog_card_open = create_memo(move |_| !prog_total.get().trim().is_empty());
+
+    // Schedule mode could not start a progesterone regimen without first finding a
+    // switch in the card header, so the card begins as one button that opens a
+    // regimen already set up the way most people take it.
+    let start_prog_regimen: StoredValue<Rc<dyn Fn()>> = StoredValue::new({
+        Rc::new(move || {
+            schedule_prog.set(true);
+            if prog_total.get().trim().is_empty() {
+                let data = store.data.get();
+                if let Some(entry) = latest_entry(&data.dosageHistory, Medication::Progesterone) {
+                    if let DosageHistoryEntry::Progesterone {
+                        dose,
+                        pillQuantity,
+                        route,
+                        ..
+                    } = entry
+                    {
+                        prog_total.set(fmt(*dose * pillQuantity.unwrap_or(1.0), 2));
+                        prog_route.set(progesterone_route_chip_label(route).to_string());
+                    }
+                } else if let Some(prog) = data.progesterone.as_ref() {
+                    prog_total.set(fmt(prog.dose, 2));
+                    prog_route.set(progesterone_route_chip_label(&prog.route).to_string());
+                } else {
+                    prog_total.set("100".to_string());
+                    prog_route.set(
+                        progesterone_route_chip_label(&ProgesteroneRoutes::Oral).to_string(),
+                    );
+                }
+            }
+            if prog_frequency.get().trim().is_empty() {
+                prog_frequency.set("1".to_string());
+            }
+            if prog_start.get().trim().is_empty() {
+                prog_start.set(to_local_date_value(Date::now() as i64));
+            }
+            if prog_time.get().trim().is_empty() {
+                prog_time.set("22:00".to_string());
+            }
+            backfill_prog.set(true);
+        })
+    });
+
+    // "100 mg · oral · every day · 22:00" for the card header.
+    let prog_regimen_short = create_memo(move |_| {
+        let dose = parse_num(&prog_total.get());
+        let dose_text = if dose.is_finite() && dose > 0.0 {
+            format!("{} mg", fmt(dose, 2))
+        } else {
+            "no dose".to_string()
+        };
+        format!(
+            "{} · {} · {} · {}",
+            dose_text,
+            prog_route.get().to_lowercase(),
+            interval_phrase(parse_num(&prog_frequency.get())),
+            prog_time.get()
+        )
+    });
 
     // The dose in mg this card would write, or `None` when it has nothing valid.
     let estrogen_record_dose = create_memo(move |_| {
@@ -1512,14 +1694,24 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                 if !schedule_prog.get() || prog_type.get().trim().is_empty() {
                     data.progesterone = None;
                 } else {
+                    // One start, one frequency: the next dose follows from them
+                    // unless the schedule already carries an explicit one.
+                    let frequency = parse_num(&prog_frequency.get());
+                    let start_ms = parse_regimen_start_at(&prog_start.get(), &prog_time.get(), "22:00");
+                    let manual_next = parse_optional_datetime(&prog_next_date.get());
                     let schedule = ProgesteroneSchedule {
                         kind: progesterone_from_label(&prog_type.get()),
                         route: progesterone_route_from_chip(&prog_route.get()),
                         dose: parse_num(&prog_total.get()),
                         unit: HormoneUnits::Mg,
-                        frequency: parse_num(&prog_frequency.get()).max(1.0),
-                        nextDoseDate: parse_optional_datetime(&prog_next_date.get()),
-                        startDate: parse_regimen_start(&prog_start.get()),
+                        frequency: frequency.max(1.0),
+                        nextDoseDate: manual_next
+                            .or_else(|| {
+                                start_ms.and_then(|start| {
+                                    next_dose_at_or_after(start, frequency.max(1.0), Date::now() as i64)
+                                })
+                            }),
+                        startDate: start_ms,
                     };
                     data.progesterone = Some(schedule);
                 }
@@ -1610,7 +1802,7 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
 
                 if schedule_prog.get() && backfill_prog.get() {
                     if let (Some(start), Some(cfg)) = (
-                        parse_regimen_start(&prog_start.get()),
+                        parse_regimen_start_at(&prog_start.get(), &prog_time.get(), "22:00"),
                         data.progesterone.clone(),
                     ) {
                         let existing: Vec<_> = data
@@ -1621,7 +1813,11 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                                 _ => None,
                             })
                             .collect();
-                        for date in scheduled_dose_dates(start, cfg.frequency, &existing) {
+                        let now = Date::now() as i64;
+                        for date in scheduled_dose_dates(start, cfg.frequency, &existing)
+                            .into_iter()
+                            .filter(|date| *date <= now)
+                        {
                             data.dosageHistory.push(DosageHistoryEntry::Progesterone {
                                 date,
                                 id: None,
@@ -1866,19 +2062,26 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                     <section class="card dose-card">
                         <div class="card-header">
                             <h3>"Estrogen"</h3>
-                            <Show when=move || schedule_only>
-                                <label class="toggle">
-                                    <input
-                                        type="checkbox"
-                                        aria-label="Enable estrogen schedule"
-                                        on:change=move |ev| schedule_estrogen.set(event_target_checked(&ev))
-                                        prop:checked=move || schedule_estrogen.get()
-                                    />
-                                    <span class="toggle-track" aria-hidden="true"></span>
-                                    <span class="toggle-label">"Enabled"</span>
-                                </label>
+                            <Show when=move || schedule_only && schedule_estrogen.get()>
+                                <button
+                                    type="button"
+                                    class="chip"
+                                    on:click=move |_| schedule_estrogen.set(false)
+                                >
+                                    "Remove regimen"
+                                </button>
                             </Show>
                         </div>
+                        <Show when=move || schedule_only && !schedule_estrogen.get()>
+                            <p class="muted">"No estrogen regimen yet."</p>
+                            <button
+                                type="button"
+                                class="chip"
+                                on:click=move |_| schedule_estrogen.set(true)
+                            >
+                                "+ Add estrogen regimen"
+                            </button>
+                        </Show>
                         <Show when=move || !schedule_only || schedule_estrogen.get()>
                         <Show when=move || schedule_only || estrogen_card_open.get()>
                         <div class="option-group">
@@ -2338,27 +2541,26 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                     <section class="card dose-card">
                         <div class="card-header">
                             <h3>"Antiandrogen"</h3>
-                            <Show when=move || schedule_only>
-                                <label class="toggle">
-                                    <input
-                                        type="checkbox"
-                                        aria-label="Enable antiandrogen schedule"
-                                        on:change=move |ev| {
-                                            let enabled = event_target_checked(&ev);
-                                            schedule_aa.set(enabled);
-                                            if enabled && aa_type.get().trim().is_empty() {
-                                                aa_type.set(
-                                                    antiandrogen_label(&ANTIANDROGEN_OPTIONS[0]).to_string(),
-                                                );
-                                            }
-                                        }
-                                        prop:checked=move || schedule_aa.get()
-                                    />
-                                    <span class="toggle-track" aria-hidden="true"></span>
-                                    <span class="toggle-label">"Enabled"</span>
-                                </label>
+                            <Show when=move || schedule_only && schedule_aa.get()>
+                                <button
+                                    type="button"
+                                    class="chip"
+                                    on:click=move |_| schedule_aa.set(false)
+                                >
+                                    "Remove regimen"
+                                </button>
                             </Show>
                         </div>
+                        <Show when=move || schedule_only && !schedule_aa.get()>
+                            <p class="muted">"No antiandrogen regimen yet."</p>
+                            <button
+                                type="button"
+                                class="chip"
+                                on:click=move |_| schedule_aa.set(true)
+                            >
+                                "+ Add antiandrogen regimen"
+                            </button>
+                        </Show>
                         <Show when=move || !schedule_only || schedule_aa.get()>
                         <Show when=move || schedule_only || aa_card_open.get()>
                         <Show when=move || !schedule_only>
@@ -2547,28 +2749,35 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                     <section class="card dose-card">
                         <div class="card-header">
                             <h3>"Progesterone"</h3>
-                            <Show when=move || schedule_only>
-                                <label class="toggle">
-                                    <input
-                                        type="checkbox"
-                                        aria-label="Enable progesterone schedule"
-                                        on:change=move |ev| {
-                                            let enabled = event_target_checked(&ev);
-                                            schedule_prog.set(enabled);
-                                            if enabled && prog_type.get().trim().is_empty() {
-                                                prog_type.set(
-                                                    progesterone_label(&PROGESTERONE_OPTIONS[0]).to_string(),
-                                                );
-                                            }
-                                        }
-                                        prop:checked=move || schedule_prog.get()
-                                    />
-                                    <span class="toggle-track" aria-hidden="true"></span>
-                                    <span class="toggle-label">"Enabled"</span>
-                                </label>
+                            <Show when=move || schedule_only && prog_card_open.get()>
+                                <span class="status-chip">{move || prog_regimen_short.get()}</span>
+                                <button
+                                    type="button"
+                                    class="chip"
+                                    on:click=move |_| {
+                                        schedule_prog.set(false);
+                                        prog_total.set(String::new());
+                                        prog_start.set(String::new());
+                                    }
+                                >
+                                    "Remove regimen"
+                                </button>
                             </Show>
                         </div>
-                        <Show when=move || !schedule_only || schedule_prog.get()>
+                        // In schedule mode the card starts as one button; pressing it
+                        // opens a regimen already set to the sensible defaults
+                        // (100 mg, oral, every day, 22:00, fill in what was taken).
+                        <Show when=move || schedule_only && !prog_card_open.get()>
+                            <p class="muted">"No progesterone regimen yet."</p>
+                            <button
+                                type="button"
+                                class="chip"
+                                on:click=move |_| start_prog_regimen.with_value(|start| start())
+                            >
+                                "+ Add progesterone regimen"
+                            </button>
+                        </Show>
+                        <Show when=move || !schedule_only || prog_card_open.get()>
                         <Show when=move || schedule_only || prog_card_open.get()>
                         // Dosing is chosen with chips; one legal progesterone type
                         // (micronised) means there is no type select on this card.
@@ -2664,74 +2873,98 @@ fn dosage_editor_page(schedule_only: bool) -> impl IntoView {
                             </Show>
                         </Show>
 
-                        <Show when=move || mode.get() == "schedule" && !prog_type.get().is_empty()>
-                            <label>
-                                "Started (regimen start)"
-                                <input
-                                    type="date"
-                                    on:input=move |ev| prog_start.set(event_target_value(&ev))
-                                    prop:value=move || prog_start.get()
-                                />
-                            </label>
-                            <label class="toggle toggle-wide">
-                                <input
-                                    type="checkbox"
-                                    aria-label="Fill in progesterone doses from the start date"
-                                    on:change=move |ev| backfill_prog.set(event_target_checked(&ev))
-                                    prop:checked=move || backfill_prog.get()
-                                />
-                                <span class="toggle-track" aria-hidden="true"></span>
-                                <span class="toggle-label">"Fill in doses from the start date"</span>
-                            </label>
-                            <Show when=move || backfill_prog.get() && !prog_start.get().is_empty()>
-                                <p class="muted">
-                                    {move || {
-                                        let count = prog_backfill_dates.get().len();
-                                        if count == 0 {
-                                            "No missing doses to add.".to_string()
-                                        } else {
-                                            format!("Will add {count} dose(s) up to today.")
-                                        }
-                                    }}
-                                </p>
-                            </Show>
-                            <label>
-                                "Next Dose Date"
-                                <input
-                                    type="datetime-local"
-                                    on:input=move |ev| prog_next_date.set(event_target_value(&ev))
-                                    prop:value=move || prog_next_date.get()
-                                />
-                            </label>
-                        </Show>
-
                         <Show when=move || schedule_only>
-                            <div class="calc-grid">
-                                <label>
-                                    "Frequency (days)"
+                            <div class="regimen-block">
+                                <div class="chip-row" role="group" aria-label="How often progesterone is taken">
+                                    {REGIMEN_INTERVALS
+                                        .into_iter()
+                                        .map(|(days, label)| {
+                                            let value = days.to_string();
+                                            let active_value = value.clone();
+                                            view! {
+                                                <button
+                                                    type="button"
+                                                    class="chip"
+                                                    class:active=move || prog_frequency.get() == active_value
+                                                    on:click=move |_| prog_frequency.set(value.clone())
+                                                >
+                                                    {label}
+                                                </button>
+                                            }
+                                        })
+                                        .collect_view()}
+                                    <label class="chip-field">
+                                        "or every"
+                                        <input
+                                            type="text"
+                                            inputmode="decimal"
+                                            aria-label="Custom interval in days"
+                                            aria-invalid=move || if prog_frequency_error.get().is_some() { "true" } else { "false" }
+                                            aria-describedby="prog-frequency-error"
+                                            on:input=move |ev| {
+                                                prog_frequency_error.set(None);
+                                                prog_frequency.set(event_target_value(&ev));
+                                            }
+                                            prop:value=move || prog_frequency.get()
+                                        />
+                                        "days"
+                                    </label>
+                                </div>
+                                <Show when=move || prog_frequency_error.get().is_some()>
+                                    <p class="field-error" id="prog-frequency-error" role="alert">
+                                        {move || prog_frequency_error.get().unwrap_or_default()}
+                                    </p>
+                                </Show>
+
+                                <div class="calc-grid">
+                                    <label>
+                                        "Started (first dose)"
+                                        <input
+                                            type="date"
+                                            on:input=move |ev| prog_start.set(event_target_value(&ev))
+                                            prop:value=move || prog_start.get()
+                                        />
+                                    </label>
+                                    <label>
+                                        "Time of day"
+                                        <input
+                                            type="time"
+                                            on:input=move |ev| prog_time.set(event_target_value(&ev))
+                                            prop:value=move || prog_time.get()
+                                        />
+                                    </label>
+                                </div>
+
+                                <label class="toggle toggle-wide">
                                     <input
-                                        type="text"
-                                        step="any"
-                                        inputmode="decimal"
-                                        aria-invalid=move || if prog_frequency_error.get().is_some() { "true" } else { "false" }
-                                        aria-describedby="prog-frequency-error"
-                                        on:input=move |ev| {
-                                            prog_frequency_error.set(None);
-                                            prog_frequency.set(event_target_value(&ev));
-                                        }
-                                        prop:value=move || prog_frequency.get()
+                                        type="checkbox"
+                                        aria-label="Fill in progesterone doses since the start date"
+                                        on:change=move |ev| backfill_prog.set(event_target_checked(&ev))
+                                        prop:checked=move || backfill_prog.get()
                                     />
+                                    <span class="toggle-track" aria-hidden="true"></span>
+                                    <span class="toggle-label">"Fill in the doses I have already taken"</span>
                                 </label>
+                                <Show when=move || backfill_prog.get() && !prog_start.get().is_empty()>
+                                    <p class="muted">
+                                        {move || {
+                                            let count = prog_backfill_dates.get().len();
+                                            if count == 0 {
+                                                "No missing doses to add.".to_string()
+                                            } else {
+                                                format!("Will add {count} dose(s) up to today.")
+                                            }
+                                        }}
+                                    </p>
+                                </Show>
+
+                                <p class="inline-note">{move || prog_regimen_summary.get()}</p>
                             </div>
-                            <Show when=move || prog_frequency_error.get().is_some()>
-                                <p class="field-error" id="prog-frequency-error" role="alert">
-                                    {move || prog_frequency_error.get().unwrap_or_default()}
-                                </p>
-                            </Show>
                         </Show>
                         </Show>
 
-                        <Show when=move || !schedule_only && !prog_card_open.get()>
+                        
+<Show when=move || !schedule_only && !prog_card_open.get()>
                             <button type="button" class="chip" on:click=move |_| seed_prog.with_value(|seed| seed(true))>
                                 "+ Add progesterone"
                             </button>
@@ -2913,5 +3146,44 @@ mod tests {
         );
         assert!(source.contains("class=\"unit-field\""));
         assert!(source.contains("dose_unit_suffix("));
+    }
+
+    #[test]
+    fn regimen_start_uses_the_chosen_time_of_day() {
+        let hour = 60 * 60 * 1000;
+        assert_eq!(clock_offset_ms("22:00", "10:00"), 22 * hour);
+        assert_eq!(clock_offset_ms("09:30", "22:00"), 9 * hour + 30 * 60 * 1000);
+        // A missing or malformed time falls back to the default, not to midnight.
+        assert_eq!(clock_offset_ms("", "22:00"), 22 * hour);
+        assert_eq!(clock_offset_ms("99:99", "22:00"), 22 * hour);
+        assert_eq!(clock_offset_ms("24:00", "22:00"), 22 * hour);
+        // An empty date has no start at all.
+        assert_eq!(parse_regimen_start_at("  ", "22:00", "22:00"), None);
+    }
+
+    #[test]
+    fn next_dose_steps_from_the_start_until_it_is_upcoming() {
+        const DAY: i64 = 86_400_000;
+        let start = 1_000_000_000_000i64;
+        // A start in the future is the next dose.
+        assert_eq!(next_dose_at_or_after(start, 1.0, start - DAY), Some(start));
+        // Otherwise the grid advances by whole steps, landing at or after now.
+        assert_eq!(next_dose_at_or_after(start, 1.0, start + DAY / 2), Some(start + DAY));
+        assert_eq!(next_dose_at_or_after(start, 1.0, start + DAY), Some(start + DAY));
+        assert_eq!(next_dose_at_or_after(start, 2.0, start + DAY * 5), Some(start + DAY * 6));
+        // A frequency that cannot produce a step has no next dose.
+        assert_eq!(next_dose_at_or_after(start, 0.0, start), None);
+        assert_eq!(next_dose_at_or_after(start, f64::NAN, start), None);
+    }
+
+    #[test]
+    fn interval_chips_read_as_a_schedule() {
+        assert_eq!(interval_phrase(1.0), "every day");
+        assert_eq!(interval_phrase(2.0), "every other day");
+        assert_eq!(interval_phrase(3.0), "every 3 days");
+        assert_eq!(interval_phrase(0.0), "no interval set");
+        // The chips offered in the UI are the ones that mean these day counts.
+        let days: Vec<&str> = REGIMEN_INTERVALS.iter().map(|(days, _)| *days).collect();
+        assert_eq!(days, vec!["1", "2", "3"]);
     }
 }

@@ -598,14 +598,12 @@ body {
 
 .dose-card .calc-grid {
   gap: var(--space-4);
-  max-width: var(--form-max);
-  grid-template-columns: 1fr;
 }
 
 /* a dose field never stretches past a comfortable typing width */
 @media (min-width: 560px) {
   .dose-card .calc-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   }
 }
 
@@ -1185,7 +1183,7 @@ form {
 }
 
 .form-wide {
-  max-width: var(--form-max);
+  max-width: 100%;
   width: 100%;
 }
 
@@ -1948,4 +1946,58 @@ input[type="radio"] {
   .nav-more > summary {
     padding: 0 6px;
   }
+}
+
+/* Regular-regimen setup: one block that reads as a sentence. */
+.regimen-block {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid rgba(243, 154, 181, 0.16);
+  border-radius: var(--radius-md);
+  background: rgba(18, 18, 30, 0.45);
+}
+
+.dose-card label.chip-field,
+.chip-field {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: var(--space-2);
+  padding: 4px 12px;
+  min-height: var(--touch);
+  border-radius: 999px;
+  border: 1px solid rgba(243, 154, 181, 0.22);
+  background: rgba(35, 36, 58, 0.8);
+  color: var(--muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.chip-field input {
+  width: 3.6rem;
+  min-height: 0;
+  height: 28px;
+  padding: 0 6px;
+  text-align: center;
+  border-radius: 8px;
+  font-size: var(--text-md);
+}
+
+.regimen-block .inline-note {
+  background: rgba(159, 227, 199, 0.08);
+  border: 1px solid rgba(159, 227, 199, 0.22);
+  color: #d7f0e4;
+}
+
+/* A chip row stretches its children to the tallest item unless told otherwise;
+   that turned the interval chips into circles and stacked the inline field. */
+.chip-row {
+  align-items: center;
+}
+
+.dose-card label.chip-field,
+.chip-field {
+  flex-wrap: nowrap;
+  white-space: nowrap;
 }
