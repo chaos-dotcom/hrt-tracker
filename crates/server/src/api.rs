@@ -348,7 +348,33 @@ fn pdf_password_from_settings(settings: &Value) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
+fn trim_trailing_nulls(bytes: &[u8]) -> &[u8] {
+    let end = bytes
+        .iter()
+        .rposition(|byte| *byte != 0)
+        .map(|index| index + 1)
+        .unwrap_or(0);
+    &bytes[..end]
+}
+
 fn extract_pdf_text(bytes: &[u8], password: Option<&str>) -> Result<String, String> {
+    match extract_pdf_text_inner(bytes, password) {
+        Ok(text) => Ok(text),
+        Err(err) => {
+            // Portal-generated PDFs (Randox among them) are padded with NUL
+            // bytes after %%EOF, which puts `startxref` further than a
+            // kilobyte from the end and makes lopdf reject the cross-reference
+            // table ("invalid start value"). Retry on the trimmed bytes.
+            let trimmed = trim_trailing_nulls(bytes);
+            if trimmed.len() == bytes.len() {
+                return Err(err);
+            }
+            extract_pdf_text_inner(trimmed, password).map_err(|_| err)
+        }
+    }
+}
+
+fn extract_pdf_text_inner(bytes: &[u8], password: Option<&str>) -> Result<String, String> {
     let mut document = match password.filter(|value| !value.trim().is_empty()) {
         Some(password) => Document::load_mem_with_password(bytes, password)
             .or_else(|_| Document::load_mem(bytes))
@@ -389,6 +415,20 @@ fn json_error(message: &str, status: StatusCode) -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn trim_trailing_nulls_drops_padding_only() {
+        assert_eq!(trim_trailing_nulls(b"%%EOF\r\n\0\0\0"), b"%%EOF\r\n");
+        assert_eq!(trim_trailing_nulls(b"%%EOF"), b"%%EOF");
+        assert_eq!(trim_trailing_nulls(b""), b"");
+        assert_eq!(trim_trailing_nulls(b"\0\0"), b"");
+    }
+
+    #[test]
+    fn extract_pdf_text_reports_error_for_non_pdf_bytes() {
+        assert!(extract_pdf_text(b"not a pdf", None).is_err());
+        assert!(extract_pdf_text(b"not a pdf\0\0\0", None).is_err());
+    }
 
     #[test]
     fn safe_storage_name_accepts_valid() {
