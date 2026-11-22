@@ -110,7 +110,16 @@ fn parse_include_past(raw: Option<&str>) -> bool {
     }
 }
 
+/// Progesterone is taken daily for most people, so its events are left out of the
+/// feed unless the setting asks for them (`icsIncludeProgesterone: true`).
+fn includes_progesterone(conf: &Value) -> bool {
+    conf.get("icsIncludeProgesterone")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false)
+}
+
 pub fn generate_ics(data: &Value, conf: &Value, options: IcsOptions) -> String {
+    let include_progesterone = includes_progesterone(conf);
     let horizon_end = options.now_ms + options.horizon_days * DAY_MS;
     let mut events: Vec<String> = Vec::new();
 
@@ -125,6 +134,9 @@ pub fn generate_ics(data: &Value, conf: &Value, options: IcsOptions) -> String {
                     .get("medicationType")
                     .and_then(|v| v.as_str())
                     .unwrap_or("medication");
+                if medication_type == "progesterone" && !include_progesterone {
+                    continue;
+                }
                 let name = d.get("type").and_then(|v| v.as_str()).unwrap_or("");
                 let qty = d.get("dose").map(|v| v.to_string()).unwrap_or_default();
                 let unit = d.get("unit").and_then(|v| v.as_str()).unwrap_or("mg");
@@ -167,6 +179,9 @@ pub fn generate_ics(data: &Value, conf: &Value, options: IcsOptions) -> String {
         "progesterone",
     ];
     for key in regimen_keys {
+        if key == "progesterone" && !include_progesterone {
+            continue;
+        }
         let sched = match data.get(key) {
             Some(value) => value,
             None => continue,
@@ -554,7 +569,8 @@ mod tests {
                 "nextDoseDate": now + 86400000
             }
         });
-        let conf = json!({});
+        // Progesterone is opt-in in the feed, so ask for it here.
+        let conf = json!({ "icsIncludeProgesterone": true });
         let options = IcsOptions {
             horizon_days: 7,
             include_past: false,
@@ -845,5 +861,50 @@ mod tests {
             days.iter().any(|d| d.day() == 30) && days.iter().any(|d| d.day() == 31),
             "a 31st-anchored monthly walk must clamp to 30 in short months and return to 31: {days:?}"
         );
+    }
+
+    /// Progesterone is typically daily; its events stay out of the feed unless
+    /// the setting opts in, while every other medication is unaffected.
+    #[test]
+    fn progesterone_events_are_off_by_default() {
+        const DAY_MS: i64 = 86_400_000;
+        let now: i64 = 1_709_596_800_000; // 2024-03-05T00:00:00Z
+        let data = json!({
+            "progesterone": {
+                "type": "Micronized Progesterone",
+                "route": "Oral",
+                "dose": 100,
+                "unit": "mg",
+                "frequency": 1
+            },
+            "antiandrogen": {
+                "type": "Cyproterone Acetate",
+                "dose": 12.5,
+                "unit": "mg",
+                "frequency": 2
+            },
+            "dosageHistory": [
+                { "date": now - DAY_MS, "medicationType": "progesterone", "type": "Micronized Progesterone", "route": "Oral", "dose": 100, "unit": "mg" },
+                { "date": now - 2 * DAY_MS, "medicationType": "antiandrogen", "type": "Cyproterone Acetate", "dose": 12.5, "unit": "mg" }
+            ]
+        });
+        let options = IcsOptions {
+            horizon_days: 7,
+            include_past: true,
+            now_ms: now,
+        };
+
+        let without = generate_ics(&data, &json!({}), options);
+        assert!(!without.contains("Progesterone"), "default feed must not carry progesterone:\n{without}");
+        assert!(!without.contains("progesterone"), "no progesterone UIDs or descriptions either");
+        assert!(without.contains("Antiandrogen"), "other medications stay in the feed");
+
+        let with = generate_ics(&data, &json!({ "icsIncludeProgesterone": true }), options);
+        assert!(with.contains("Progesterone"), "opting in must bring the scheduled doses back");
+        assert!(
+            with.matches("BEGIN:VEVENT").count() > without.matches("BEGIN:VEVENT").count(),
+            "opting in adds events, not just a label"
+        );
+        assert!(with.contains("Antiandrogen"), "antiandrogen is unaffected either way");
     }
 }

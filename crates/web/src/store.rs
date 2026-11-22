@@ -207,6 +207,8 @@ fn default_settings() -> Settings {
         displayInjectableInIU: Some(false),
         braSizeSystem: Some("uk".to_string()),
         pdfPassword: None,
+        // Daily progesterone would flood a calendar; opt in, not out.
+        icsIncludeProgesterone: Some(false),
     }
 }
 
@@ -235,6 +237,9 @@ fn merge_settings(base: &mut Settings, incoming: Settings) {
     }
     if incoming.pdfPassword.is_some() {
         base.pdfPassword = incoming.pdfPassword;
+    }
+    if incoming.icsIncludeProgesterone.is_some() {
+        base.icsIncludeProgesterone = incoming.icsIncludeProgesterone;
     }
 }
 
@@ -334,6 +339,7 @@ mod tests {
             displayInjectableInIU: None,
             braSizeSystem: None,
             pdfPassword: None,
+            icsIncludeProgesterone: None,
         };
         merge_settings(&mut base, incoming);
         assert!(!base.enableAutoBackfill);
@@ -356,9 +362,12 @@ mod tests {
             displayInjectableInIU: Some(true),
             braSizeSystem: Some("us".to_string()),
             pdfPassword: Some("pass".to_string()),
+            icsIncludeProgesterone: Some(true),
         };
         merge_settings(&mut base, incoming);
         assert_eq!(base.icsSecret, Some("my-secret".to_string()));
+        // The calendar opt-in is honoured when the saved settings carry it.
+        assert_eq!(base.icsIncludeProgesterone, Some(true));
         assert_eq!(base.enableBloodTestSchedule, Some(true));
         assert_eq!(base.bloodTestIntervalMonths, Some(6.0));
         assert_eq!(base.statsBreakdownBySyringeKind, Some(true));

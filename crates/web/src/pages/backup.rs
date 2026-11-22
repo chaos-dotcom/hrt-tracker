@@ -225,6 +225,22 @@ pub fn BackupPage() -> impl IntoView {
                                 <span class="toggle-track" aria-hidden="true"></span>
                                 <span class="toggle-label">"Show injectable doses in IU"</span>
                             </label>
+                            <label class="toggle toggle-wide">
+                                <input
+                                    type="checkbox"
+                                    on:change={
+                                        let store = store.clone();
+                                        move |ev| {
+                                            let enabled = event_target_checked(&ev);
+                                            store.settings.update(|s| s.icsIncludeProgesterone = Some(enabled));
+                                            store.mark_dirty();
+                                        }
+                                    }
+                                    prop:checked=move || store.settings.get().icsIncludeProgesterone.unwrap_or(false)
+                                />
+                                <span class="toggle-track" aria-hidden="true"></span>
+                                <span class="toggle-label">"Include progesterone in the calendar feed"</span>
+                            </label>
                         </div>
                         <label>"Blood test interval (months)"</label>
                         <input

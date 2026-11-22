@@ -376,6 +376,10 @@ pub struct Settings {
     pub braSizeSystem: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pdfPassword: Option<String>,
+    /// Progesterone is usually a daily tablet, so its doses fill a calendar feed
+    /// fast. Off unless the user asks for it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icsIncludeProgesterone: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
