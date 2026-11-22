@@ -692,6 +692,7 @@ mod tests {
             displayInjectableInIU: None,
             braSizeSystem: None,
             pdfPassword: None,
+            icsIncludeProgesterone: None,
         });
         data.injectableEstradiol = Some(InjectableSchedule {
             kind: InjectableEstradiols::Valerate,
