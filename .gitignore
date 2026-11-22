@@ -57,4 +57,5 @@ target/site
 #.idea/
 #
 Cargo.lock
-
+# Local instance wiring (networks, host-specific bits)
+docker-compose.override.yml
