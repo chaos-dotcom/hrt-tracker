@@ -2083,3 +2083,14 @@ input[type="radio"] {
   font-size: var(--text-sm);
   color: var(--muted);
 }
+
+/* The layout grid sized its column to the widest content (a chart, a wide row),
+   so on a phone the column grew past the viewport and everything inside was
+   silently clipped by the page's overflow-x: hidden. */
+.main-content {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.main-content > section {
+  min-width: 0;
+}

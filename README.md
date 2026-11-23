@@ -18,9 +18,9 @@ It runs on your own machine, and your data stays in a database file beside the a
 - Keep measurements and a diary of notes.
 - Subscribe to doses and blood test reminders from a calendar app, if you want them.
 
-The same data on a phone:
+The same data on a phone, top and chart:
 
-<img src="docs/screenshots/phone.png" alt="The dashboard on a phone" width="320">
+<img src="docs/screenshots/phone-top.png" alt="The dashboard on a phone" width="300"> <img src="docs/screenshots/phone-chart.png" alt="The chart and dose history on a phone" width="300">
 
 ## Requirements
 
