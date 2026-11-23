@@ -3,7 +3,7 @@
 A self-hosted web app for tracking hormone replacement therapy: doses and regimens, blood test results and body
 measurements, charted against each other.
 
-![The dashboard: current regimen, hormone levels and dose history](docs/screenshots/dashboard.jpg)
+![The dashboard: current regimen, hormone levels and dose history, with example data](docs/screenshots/dashboard.png)
 
 It runs on your own machine, and your data stays in a database file beside the app.
 
@@ -13,18 +13,22 @@ It runs on your own machine, and your data stays in a database file beside the a
   each with its own dose, interval, route and time of day.
 - Log blood test results by hand, or import a lab report as a PDF or a screenshot and check the values it fills
   in.
-- Chart estradiol, testosterone, progesterone, FSH, LH, prolactin, SHBG and free androgen index next to your
-  dose history.
+- Chart estradiol, testosterone, progesterone, FSH, LH, prolactin, SHBG and free androgen index against your dose
+  history.
 - Keep measurements and a diary of notes.
 - Subscribe to doses and blood test reminders from a calendar app, if you want them.
 
+The same data on a phone:
+
+<img src="docs/screenshots/phone.png" alt="The dashboard on a phone" width="320">
+
 ## Requirements
 
-- Rust, with the `wasm32-unknown-unknown` target added
-- cargo-leptos
-- wasm-bindgen-cli at the same version as the `wasm-bindgen` crate in `Cargo.lock`, because the two share an
-  unstable format
-- SQLite (the default) or a Postgres database
+- Rust, with the `wasm32-unknown-unknown` target added. The interface is compiled to WebAssembly.
+- cargo-leptos, which builds the interface and the server together.
+- wasm-bindgen-cli at the same version as the `wasm-bindgen` crate in `Cargo.lock`. The two share an unstable
+  format, so a version mismatch stops the build.
+- SQLite, the default, or a Postgres database.
 
 With Nix:
 
@@ -45,7 +49,7 @@ cargo leptos build
 
 ## Running it
 
-The app is two processes: `hrt-web` serves the interface and forwards API calls to `hrt-server`.
+The app is two processes. `hrt-web` serves the interface and forwards API calls to `hrt-server`.
 
 ```sh
 cargo run -p hrt-server   # API on 127.0.0.1:4200
@@ -73,7 +77,7 @@ Environment variables, as set in `.env.example`:
 | `HRT_WEB_ADDR` | `127.0.0.1:4100` | Address the interface listens on |
 | `HRT_SERVER_ADDR` | `127.0.0.1:4200` | Address the API listens on |
 | `HRT_DATABASE_URL` | `sqlite://./data/hrt-data.db?mode=rwc` | Database to use, SQLite or `postgres://` |
-| `HRT_ALLOWED_ORIGINS` | localhost origins | Origins allowed to call the API |
+| `HRT_ALLOWED_ORIGINS` | localhost origins | Addresses the interface is served from. The API refuses calls from others. |
 
 The rest is set in the app, under **Settings & Backup**. It covers auto backfill, blood test reminders and their
 interval, display units, and injectable doses in IU or mg. The same page holds the password for encrypted lab
@@ -81,47 +85,48 @@ PDFs, the calendar feed secret, and the switch for progesterone in the feed.
 
 ## Recording a dose
 
-The record page lists each medication as a row with the date and size of your last dose. Open the row for the
-medication you took, set the dose, route and time, and press the button at the bottom of the screen. It writes
-that one dose and leaves the other rows alone.
+The record page lists each medication as a row, with the date and size of your last dose. Open the row for what
+you took, set the dose, route and time, then press the button at the bottom of the screen. It writes that one
+dose and leaves the other rows alone.
 
-![Recording a progesterone dose](docs/screenshots/record-dosage.jpg)
+![Recording a progesterone dose](docs/screenshots/record-dosage.png)
 
-Every dose you record can be undone from the confirmation that appears at the bottom of the screen. The dashboard
-also has a **Record next dose now** button, which logs whichever medication is due.
+Every dose you record can be undone from the confirmation at the bottom of the screen. The dashboard has a
+**Record next dose now** button, which logs whichever medication is due.
 
 ## Setting up a regimen
 
-A regimen is a dose, an interval and a start date for one medication. In **Schedule**, press **+ Add progesterone
-regimen** and the card opens set to the usual defaults: 100 mg, oral, every day at 22:00. Change what needs
-changing, set the date of your first dose, and tick **Fill in the doses I have already taken** to add the doses
-between then and today. The line under the controls shows what the schedule comes to, including the next dose.
+A regimen is a dose, an interval and a start date for one medication. On the **Schedule** page, press
+**+ Add progesterone regimen** and the card opens set to the usual defaults: 100 mg, oral, every day at 22:00.
+Change what needs changing, set the date of your first dose, and tick **Fill in the doses I have already taken**
+to add the doses between then and today. The line under the controls shows what the schedule comes to, including
+the next dose.
 
-![Setting up a progesterone regimen](docs/screenshots/schedule.jpg)
+![Setting up a progesterone regimen](docs/screenshots/schedule.png)
 
-The same card shape is used for estrogen and antiandrogens. The injection helper converts between dose,
-concentration and the volume you draw, in mg and in IU.
+Estrogen and antiandrogens use the same card. The injection helper converts between dose, concentration and the
+volume you draw, in mg and in IU.
 
 ## Blood tests
 
-Enter results by hand or import a report. The import fills the form and nothing is saved until you press
+Enter results by hand or import a report. The import fills the form, and nothing is saved until you press
 **Create test**, so you can check every number first.
 
-![Importing a lab report](docs/screenshots/blood-test.jpg)
+![Importing a lab report](docs/screenshots/blood-test.png)
 
 Two report layouts are read. The first puts one result per line: a label, then its value and unit. The second is
-the banded layout from Randox Health, where each result sits above a row of Low, Optimal and High ranges. Screenshots of a report
-work as well as PDFs; crop to the results table for the cleanest read. Encrypted PDFs use the password set in
-Settings.
+the layout from Randox Health, where each result is printed above a row of Low, Optimal and High ranges. A
+screenshot of a results page works as well as a PDF. Crop to the results table for the cleanest read. Encrypted
+PDFs use the password set in Settings.
 
 ## Calendar feed
 
 `GET /api/ics` returns your doses and blood test reminders as an iCalendar file, for any calendar app that can
 subscribe to a URL.
 
-- `?horizonDays=365` sets how far ahead scheduled doses are generated (default 365).
-- `?includePast=0` drops the history and keeps only future doses.
-- Set a secret under Settings to move the feed to `/api/ics/<secret>` and leave the public route returning 404.
+- `?horizonDays=365` sets how far ahead scheduled doses are generated. The default is 365 days.
+- `?includePast=0` leaves out the history and keeps only future doses.
+- Set a secret under Settings to move the feed to `/api/ics/<secret>` and make the public route return 404.
 
 Progesterone is left out of the feed unless you turn it on, because a daily tablet fills a calendar within a
 year.
@@ -141,16 +146,12 @@ Everything is stored under `data/`:
 **Export to JSON** on the Settings & Backup page writes a full copy you can keep elsewhere, and **Restore** reads
 one back. Restoring overwrites the current data.
 
-## Measurements, stats and the rest
+## Other pages
 
 Measurements record weight, height, chest, waist, hips and similar over time. The stats page breaks down your
-history, the calculator converts doses and concentrations, and the vials page tracks what is left in a vial and
-when it was opened. The Estrannaise link on the dashboard models an injectable regimen on
-<https://estrannai.se>.
-
-On a phone the layout collapses to one column:
-
-<img src="docs/screenshots/phone.jpg" alt="The dashboard on a phone" width="400">
+history. The calculator converts doses and concentrations. The vials page tracks what is left in a vial and when
+it was opened. The Estrannaise link on the dashboard opens <https://estrannai.se> with your injectable regimen
+filled in, so you can model the levels it produces.
 
 ## Development
 
@@ -159,14 +160,14 @@ cargo check -p hrt-web -p hrt-server -p hrt-shared
 cargo test -p hrt-shared -p hrt-server -p hrt-web
 ```
 
-The interface is Leptos compiled to WebAssembly; `cargo leptos build` produces `target/site`, which `hrt-web`
-serves. OCR of uploaded screenshots runs in the browser, so no image leaves the machine.
+`cargo leptos build` writes the interface to `target/site`, which `hrt-web` serves. OCR of uploaded screenshots
+runs in the browser, so no image leaves the machine.
 
 ## Limits
 
 - One user, no authentication. Do not expose the port directly to the internet.
-- The import recognises the layouts above. A report in another format fills what it can and leaves the rest for
-  you to type.
+- The import recognises the two layouts above. A report in another format fills what it can and leaves the rest
+  for you to type.
 - The calendar feed is read only.
 
 ## Licence
