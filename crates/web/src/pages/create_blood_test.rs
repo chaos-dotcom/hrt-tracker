@@ -14,8 +14,8 @@ use web_sys::{FileReader, FormData, HtmlInputElement};
 use crate::layout::page_layout;
 use crate::store::use_store;
 use crate::utils::{compute_fudge_factor, hormone_unit_label, parse_decimal, parse_hormone_unit};
-use hrt_shared::logic::predict_e2_pg_ml;
-use hrt_shared::types::{BloodTest, HormoneUnits};
+use hrt_shared::logic::{latest_estrogen_route, predict_e2_pg_ml};
+use hrt_shared::types::{BloodTest, HormoneUnits, MetabolicMarker, MetabolicPanel};
 
 #[derive(Clone, PartialEq)]
 struct UnitOption {
@@ -51,6 +51,7 @@ struct OcrExtraction {
     shbg: Option<OcrValue>,
     fai: Option<OcrValue>,
     sample_date: Option<String>,
+    metabolic: MetabolicPanel,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -66,6 +67,93 @@ struct PdfUploadFile {
 #[derive(Clone, Debug, Deserialize)]
 struct PdfUploadResponse {
     files: Vec<PdfUploadFile>,
+}
+
+/// The liver and lipid inputs of the blood-test form, one signal per marker.
+#[derive(Clone, Copy)]
+struct MetabolicInputs {
+    total_protein: RwSignal<String>,
+    albumin: RwSignal<String>,
+    globulin: RwSignal<String>,
+    alkaline_phosphatase: RwSignal<String>,
+    alt: RwSignal<String>,
+    ast: RwSignal<String>,
+    ggt: RwSignal<String>,
+    bilirubin: RwSignal<String>,
+    triglyceride: RwSignal<String>,
+    total_cholesterol: RwSignal<String>,
+    hdl_cholesterol: RwSignal<String>,
+    ldl_cholesterol: RwSignal<String>,
+    non_hdl_cholesterol: RwSignal<String>,
+}
+
+impl MetabolicInputs {
+    fn new() -> Self {
+        Self {
+            total_protein: create_rw_signal(String::new()),
+            albumin: create_rw_signal(String::new()),
+            globulin: create_rw_signal(String::new()),
+            alkaline_phosphatase: create_rw_signal(String::new()),
+            alt: create_rw_signal(String::new()),
+            ast: create_rw_signal(String::new()),
+            ggt: create_rw_signal(String::new()),
+            bilirubin: create_rw_signal(String::new()),
+            triglyceride: create_rw_signal(String::new()),
+            total_cholesterol: create_rw_signal(String::new()),
+            hdl_cholesterol: create_rw_signal(String::new()),
+            ldl_cholesterol: create_rw_signal(String::new()),
+            non_hdl_cholesterol: create_rw_signal(String::new()),
+        }
+    }
+
+    fn signal(self, marker: MetabolicMarker) -> RwSignal<String> {
+        match marker {
+            MetabolicMarker::TotalProtein => self.total_protein,
+            MetabolicMarker::Albumin => self.albumin,
+            MetabolicMarker::Globulin => self.globulin,
+            MetabolicMarker::AlkalinePhosphatase => self.alkaline_phosphatase,
+            MetabolicMarker::Alt => self.alt,
+            MetabolicMarker::Ast => self.ast,
+            MetabolicMarker::Ggt => self.ggt,
+            MetabolicMarker::Bilirubin => self.bilirubin,
+            MetabolicMarker::Triglyceride => self.triglyceride,
+            MetabolicMarker::TotalCholesterol => self.total_cholesterol,
+            MetabolicMarker::HdlCholesterol => self.hdl_cholesterol,
+            MetabolicMarker::LdlCholesterol => self.ldl_cholesterol,
+            MetabolicMarker::NonHdlCholesterol => self.non_hdl_cholesterol,
+        }
+    }
+
+    /// What to store: `None` when the person filled nothing in.
+    fn panel(self) -> Option<MetabolicPanel> {
+        let mut panel = MetabolicPanel::default();
+        for marker in MetabolicMarker::ALL {
+            if let Some(value) = parse_decimal(&self.signal(marker).get()) {
+                marker.set(&mut panel, Some(value));
+            }
+        }
+        (!panel.is_empty()).then_some(panel)
+    }
+
+    /// Fill the inputs a report gave us and leave the rest alone.
+    fn apply(self, panel: &MetabolicPanel) -> usize {
+        let mut filled = 0;
+        for marker in MetabolicMarker::ALL {
+            if let Some(value) = marker.get(panel) {
+                self.signal(marker).set(fmt_marker_value(value));
+                filled += 1;
+            }
+        }
+        filled
+    }
+}
+
+fn fmt_marker_value(value: f64) -> String {
+    if value.fract().abs() < 1e-9 {
+        format!("{value:.0}")
+    } else {
+        format!("{value}")
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -87,6 +175,7 @@ fn apply_ocr_extraction(
     shbg_unit: RwSignal<String>,
     free_androgen_index: RwSignal<String>,
     test_date_time: RwSignal<String>,
+    metabolic: MetabolicInputs,
 ) -> usize {
     let mut filled = 0;
     if let Some(date) = extracted.sample_date {
@@ -146,6 +235,7 @@ fn apply_ocr_extraction(
         free_androgen_index.set(value.value);
         filled += 1;
     }
+    filled += metabolic.apply(&extracted.metabolic);
     filled
 }
 
@@ -232,6 +322,7 @@ fn normalize_unit_token(token: &str) -> Option<&'static str> {
     let mut cleaned: String = trimmed
         .trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '/' && c != '|' && c != '\\')
         .to_lowercase();
+    cleaned = cleaned.replace(['\u{00b5}', '\u{03bc}'], "u");
     cleaned = cleaned.replace(['|', '\\'], "/");
     cleaned = cleaned.replace("/l1", "/l").replace("/i1", "/l");
     cleaned = cleaned.replace("/i", "/l").replace("/1", "/l");
@@ -249,6 +340,10 @@ fn normalize_unit_token(token: &str) -> Option<&'static str> {
         "miu/l" | "miu" | "miul" => Some("mIU/L"),
         "miu/ml" => Some("mIU/mL"),
         "u/l" | "iu/l" | "ui/l" | "ul" | "ui" | "iu" => Some("U/L"),
+        // protein and the wider panel: g/L, umol/L and mmol/L
+        "g/l" | "gl" => Some("g/L"),
+        "umol/l" | "umol" => Some("umol/L"),
+        "mmol/l" | "mmol" => Some("mmol/L"),
         _ => None,
     }
 }
@@ -949,6 +1044,282 @@ fn extract_banded_values(text: &str) -> [Option<OcrValue>; BANDED_HORMONE_COUNT]
     values
 }
 
+// ---------------------------------------------------------------------------
+// Table reader (Sapphic Bison style result sheets)
+// ---------------------------------------------------------------------------
+//
+// Other providers print a plain table: the marker name starts a line, then its
+// result, then the unit, then the reference ranges and a flag:
+//
+//     Testosterone
+//     15.2
+//     nmol/L
+//     Male
+//     8.64 – 29.00
+//     Female
+//     0.29 – 1.67
+//     High
+//
+// The reader takes the first number that is not part of a range and has a
+// recognised unit within three tokens of it, and it stops at the next marker
+// name, so a row whose result is missing leaves the field empty instead of
+// borrowing the next row's number.
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum TableTarget {
+    Estradiol,
+    Testosterone,
+    Progesterone,
+    Prolactin,
+    Fsh,
+    Lh,
+    Shbg,
+    Fai,
+    Metabolic(MetabolicMarker),
+}
+
+const TABLE_MARKER_NAMES: [(&str, TableTarget); 32] = [
+    ("17-beta oestradiol", TableTarget::Estradiol),
+    ("17-beta estradiol", TableTarget::Estradiol),
+    ("17 beta oestradiol", TableTarget::Estradiol),
+    ("oestradiol", TableTarget::Estradiol),
+    ("estradiol", TableTarget::Estradiol),
+    ("testosterone", TableTarget::Testosterone),
+    ("progesterone", TableTarget::Progesterone),
+    ("prolactin", TableTarget::Prolactin),
+    ("follicle stimulating hormone", TableTarget::Fsh),
+    ("luteinising hormone", TableTarget::Lh),
+    ("luteinizing hormone", TableTarget::Lh),
+    ("sex hormone binding globulin", TableTarget::Shbg),
+    ("free androgen index", TableTarget::Fai),
+    (
+        "total protein",
+        TableTarget::Metabolic(MetabolicMarker::TotalProtein),
+    ),
+    ("albumin", TableTarget::Metabolic(MetabolicMarker::Albumin)),
+    ("globulin", TableTarget::Metabolic(MetabolicMarker::Globulin)),
+    (
+        "alkaline phosphatase",
+        TableTarget::Metabolic(MetabolicMarker::AlkalinePhosphatase),
+    ),
+    (
+        "alanine transferase",
+        TableTarget::Metabolic(MetabolicMarker::Alt),
+    ),
+    ("alt", TableTarget::Metabolic(MetabolicMarker::Alt)),
+    (
+        "aspartate transferase",
+        TableTarget::Metabolic(MetabolicMarker::Ast),
+    ),
+    ("ast", TableTarget::Metabolic(MetabolicMarker::Ast)),
+    ("gamma gt", TableTarget::Metabolic(MetabolicMarker::Ggt)),
+    (
+        "gamma-glutamyl transferase",
+        TableTarget::Metabolic(MetabolicMarker::Ggt),
+    ),
+    ("ggt", TableTarget::Metabolic(MetabolicMarker::Ggt)),
+    ("total bilirubin", TableTarget::Metabolic(MetabolicMarker::Bilirubin)),
+    ("bilirubin", TableTarget::Metabolic(MetabolicMarker::Bilirubin)),
+    (
+        "non-hdl cholesterol",
+        TableTarget::Metabolic(MetabolicMarker::NonHdlCholesterol),
+    ),
+    (
+        "hdl cholesterol",
+        TableTarget::Metabolic(MetabolicMarker::HdlCholesterol),
+    ),
+    (
+        "ldl cholesterol",
+        TableTarget::Metabolic(MetabolicMarker::LdlCholesterol),
+    ),
+    (
+        "total cholesterol",
+        TableTarget::Metabolic(MetabolicMarker::TotalCholesterol),
+    ),
+    (
+        "triglycerides",
+        TableTarget::Metabolic(MetabolicMarker::Triglyceride),
+    ),
+    (
+        "triglyceride",
+        TableTarget::Metabolic(MetabolicMarker::Triglyceride),
+    ),
+];
+
+/// The longest marker name that starts `line`, so "Non-HDL cholesterol" wins
+/// over "HDL cholesterol" and "Sex Hormone Binding Globulin" is not read as
+/// "Globulin".
+fn table_marker_at(line: &str) -> Option<TableTarget> {
+    let trimmed = line.trim_start();
+    let bytes = trimmed.as_bytes();
+    let mut best: Option<(usize, TableTarget)> = None;
+    for (name, target) in TABLE_MARKER_NAMES {
+        if bytes.len() < name.len() || !bytes[..name.len()].eq_ignore_ascii_case(name.as_bytes()) {
+            continue;
+        }
+        let rest = &trimmed[name.len()..];
+        let boundary = rest.chars().next().is_none_or(|ch| !ch.is_alphanumeric());
+        if !boundary {
+            continue;
+        }
+        if best.is_none_or(|(length, _)| name.len() > length) {
+            best = Some((name.len(), target));
+        }
+    }
+    best.map(|(_, target)| target)
+}
+
+fn unit_within(tokens: &[LayoutToken], from: usize, count: usize) -> Option<String> {
+    let end = (from + count).min(tokens.len());
+    (from..end).find_map(|index| normalize_unit_token(&tokens[index].text).map(str::to_string))
+}
+
+/// Result and unit of the row that starts at `line_index`.
+///
+/// The first number after the name is the result: if no unit follows it, the
+/// row has no result at all and the next row's number is never borrowed.
+fn table_value_after(
+    tokens: &[LayoutToken],
+    lines: &[&str],
+    line_index: usize,
+    allow_unitless: bool,
+) -> Option<OcrValue> {
+    let start = tokens.iter().position(|token| token.line >= line_index)?;
+    let mut index = start;
+    let mut steps = 0;
+    while index < tokens.len() && steps < 20 {
+        if tokens[index].line > line_index && table_marker_at(lines[tokens[index].line]).is_some() {
+            return None;
+        }
+        steps += 1;
+        let Some((run_start, run_end)) = number_run_after(tokens, index) else {
+            index += 1;
+            continue;
+        };
+        let unit = unit_within(tokens, run_end + 1, 3);
+        if unit.is_none() {
+            // Free Androgen Index is printed without a unit; everything else
+            // needs one to tell a result from a reference range.
+            if !allow_unitless || tokens[run_start].line > line_index + 1 {
+                return None;
+            }
+        }
+        let (digits, threshold) = run_digits(tokens, run_start, run_end)?;
+        if unit.is_none() && threshold {
+            // "<0.3" next to "0.31 - 5.62" is a band edge, not a result.
+            return None;
+        }
+        return Some(OcrValue {
+            value: digits,
+            unit,
+        });
+    }
+    None
+}
+
+fn fill_missing_from_table(out: &mut OcrExtraction, table: &OcrExtraction) {
+    if out.estradiol.is_none() {
+        out.estradiol = table.estradiol.clone();
+    }
+    if out.testosterone.is_none() {
+        out.testosterone = table.testosterone.clone();
+    }
+    if out.progesterone.is_none() {
+        out.progesterone = table.progesterone.clone();
+    }
+    if out.fsh.is_none() {
+        out.fsh = table.fsh.clone();
+    }
+    if out.lh.is_none() {
+        out.lh = table.lh.clone();
+    }
+    if out.prolactin.is_none() {
+        out.prolactin = table.prolactin.clone();
+    }
+    if out.shbg.is_none() {
+        out.shbg = table.shbg.clone();
+    }
+    if out.fai.is_none() {
+        out.fai = table.fai.clone();
+    }
+}
+
+fn extract_marker_table(text: &str) -> OcrExtraction {
+    let mut out = OcrExtraction::default();
+    let lines: Vec<&str> = text.lines().collect();
+    let tokens = layout_tokens(&lines);
+    for (line_index, line) in lines.iter().enumerate() {
+        let Some(target) = table_marker_at(line) else {
+            continue;
+        };
+        if let TableTarget::Metabolic(marker) = target {
+            if marker.get(&out.metabolic).is_some() {
+                continue;
+            }
+        }
+        let Some(value) = table_value_after(
+            &tokens,
+            &lines,
+            line_index,
+            matches!(target, TableTarget::Fai),
+        ) else {
+            continue;
+        };
+        if matches!(target, TableTarget::Fai) && value.unit.is_some() {
+            continue;
+        }
+        let TableTarget::Metabolic(marker) = target else {
+            let Some(slot) = table_hormone_slot(&mut out, target) else {
+                continue;
+            };
+            if slot.is_none() {
+                *slot = Some(value);
+            }
+            continue;
+        };
+        // A liver or lipid marker is only believed in the unit it is reported
+        // in; anything else would need a conversion this app does not carry.
+        if value.unit.as_deref() != Some(marker.unit()) {
+            continue;
+        }
+        if let Some(number) = parse_decimal(&value.value) {
+            marker.set(&mut out.metabolic, Some(number));
+        }
+    }
+    out
+}
+
+fn table_hormone_slot(out: &mut OcrExtraction, target: TableTarget) -> Option<&mut Option<OcrValue>> {
+    let slot = match target {
+        TableTarget::Estradiol => &mut out.estradiol,
+        TableTarget::Testosterone => &mut out.testosterone,
+        TableTarget::Progesterone => &mut out.progesterone,
+        TableTarget::Prolactin => &mut out.prolactin,
+        TableTarget::Fsh => &mut out.fsh,
+        TableTarget::Lh => &mut out.lh,
+        TableTarget::Shbg => &mut out.shbg,
+        TableTarget::Fai => &mut out.fai,
+        TableTarget::Metabolic(_) => return None,
+    };
+    Some(slot)
+}
+
+fn table_hormone_count(extraction: &OcrExtraction) -> usize {
+    [
+        &extraction.estradiol,
+        &extraction.testosterone,
+        &extraction.progesterone,
+        &extraction.prolactin,
+        &extraction.fsh,
+        &extraction.lh,
+        &extraction.shbg,
+        &extraction.fai,
+    ]
+    .iter()
+    .filter(|slot| slot.is_some())
+    .count()
+}
+
 fn month_from_name(name: &str) -> Option<u32> {
     match name {
         "jan" | "january" => Some(1),
@@ -1077,6 +1448,7 @@ fn extract_sample_date(text: &str) -> Option<String> {
         "collected on",
         "collected date",
         "date of sample",
+        "collected",
     ];
     for label in labels {
         let Some(index) = find_ci(&collapsed, label) else {
@@ -1096,11 +1468,24 @@ fn extract_ocr_values(text: &str) -> OcrExtraction {
     let cleaned = text.replace('\r', "\n");
     let sample_date = extract_sample_date(&cleaned);
     let banded = extract_banded_values(&cleaned);
-    if banded.iter().any(|value| value.is_some()) {
+    let banded_found = banded.iter().any(|value| value.is_some());
+    let table = extract_marker_table(&cleaned);
+    let table_hormones = table_hormone_count(&table);
+    if !table.metabolic.is_empty() && table_hormones >= 1 {
+        // A wider kit report is a result table: its rows are the source of
+        // truth, and the banded reader would give a row's value to whichever
+        // title happens to sit above it.
+        return OcrExtraction {
+            sample_date,
+            ..table
+        };
+    }
+    if banded_found {
         // A banded report is read section by section. The flat "first number
         // after the label" scan would happily take a phase range, a band edge
-        // or a page number out of the prose, so it is not used at all here.
-        return OcrExtraction {
+        // or a page number out of the prose, so it is not used at all here;
+        // the table reader only fills what the sections missed.
+        let mut out = OcrExtraction {
             estradiol: banded[BandedHormone::Estradiol.index()].clone(),
             testosterone: banded[BandedHormone::Testosterone.index()].clone(),
             progesterone: banded[BandedHormone::Progesterone.index()].clone(),
@@ -1110,9 +1495,20 @@ fn extract_ocr_values(text: &str) -> OcrExtraction {
             shbg: banded[BandedHormone::Shbg.index()].clone(),
             fai: banded[BandedHormone::Fai.index()].clone(),
             sample_date,
+            metabolic: table.metabolic.clone(),
+        };
+        fill_missing_from_table(&mut out, &table);
+        return out;
+    }
+    if table_hormones >= 3 || (!table.metabolic.is_empty() && table_hormones == 0) {
+        // A result table: its rows are trusted over the flat scan, which can
+        // wander into the reference ranges printed next to the result.
+        return OcrExtraction {
+            sample_date,
+            ..table
         };
     }
-    OcrExtraction {
+    let mut out = OcrExtraction {
         estradiol: extract_ocr_value(&cleaned, &["oestradiol", "estradiol"]),
         testosterone: extract_ocr_value(&cleaned, &["testosterone"]),
         progesterone: extract_ocr_value(&cleaned, &["progesterone"]),
@@ -1132,7 +1528,10 @@ fn extract_ocr_values(text: &str) -> OcrExtraction {
         shbg: extract_ocr_value(&cleaned, &["sex hormone binding globulin", "shbg"]),
         fai: extract_ocr_value(&cleaned, &["free androgen index", "fai"]),
         sample_date,
-    }
+        metabolic: table.metabolic.clone(),
+    };
+    fill_missing_from_table(&mut out, &table);
+    out
 }
 
 #[component]
@@ -1169,6 +1568,7 @@ pub fn CreateBloodTest() -> impl IntoView {
     let shbg_unit = create_rw_signal(hormone_unit_label(&HormoneUnits::TNmolL).to_string());
     let free_androgen_index = create_rw_signal("0".to_string());
     let notes = create_rw_signal(String::new());
+    let metabolic = MetabolicInputs::new();
     let ocr_busy = create_rw_signal(false);
     let ocr_status = create_rw_signal(String::new());
     let ocr_error = create_rw_signal(None::<String>);
@@ -1222,6 +1622,7 @@ pub fn CreateBloodTest() -> impl IntoView {
         let shbg_unit = shbg_unit;
         let free_androgen_index = free_androgen_index;
         let test_date_time = test_date_time;
+        let metabolic = metabolic;
         move |ev: leptos::ev::Event| {
             if ocr_busy.get() {
                 return;
@@ -1335,6 +1736,7 @@ pub fn CreateBloodTest() -> impl IntoView {
                         shbg_unit,
                         free_androgen_index,
                         test_date_time,
+                        metabolic,
                     );
                     if filled == 0 {
                         ocr_error.set(Some("OCR ran, but no lab values were found.".to_string()));
@@ -1378,6 +1780,7 @@ pub fn CreateBloodTest() -> impl IntoView {
         let shbg_unit = shbg_unit;
         let free_androgen_index = free_androgen_index;
         let test_date_time = test_date_time;
+        let metabolic = metabolic;
         move |ev: leptos::ev::Event| {
             if pdf_busy.get() {
                 return;
@@ -1499,6 +1902,7 @@ pub fn CreateBloodTest() -> impl IntoView {
                             shbg_unit,
                             free_androgen_index,
                             test_date_time,
+                            metabolic,
                         );
                     }
                     if item.extract_error.is_some() {
@@ -1542,6 +1946,7 @@ pub fn CreateBloodTest() -> impl IntoView {
     let on_submit = {
         let feedback_timeout = feedback_timeout.clone();
         let attached_pdf_files = attached_pdf_files;
+        let metabolic = metabolic;
         move |ev: leptos::ev::SubmitEvent| {
             ev.prevent_default();
             let date = parse_datetime_local(&test_date_time.get());
@@ -1591,6 +1996,8 @@ pub fn CreateBloodTest() -> impl IntoView {
                 compute_fudge_factor(measured_e2, predicted_model.or(predicted_input));
             let pdf_files = attached_pdf_files.get();
             let next_pdf_files = pdf_files.clone();
+            let metabolic_values = metabolic.panel();
+            let estrogen_type = latest_estrogen_route(&store.data.get());
 
             let entry = BloodTest {
                 date,
@@ -1616,12 +2023,13 @@ pub fn CreateBloodTest() -> impl IntoView {
                 } else {
                     Some(notes.get())
                 },
-                estrogenType: None,
+                estrogenType: estrogen_type,
                 pdfFiles: if pdf_files.is_empty() {
                     None
                 } else {
                     Some(pdf_files)
                 },
+                metabolic: metabolic_values,
             };
 
             let mut removed_pdf_files = Vec::new();
@@ -1633,7 +2041,13 @@ pub fn CreateBloodTest() -> impl IntoView {
                         .filter(|name| !next_pdf_files.iter().any(|candidate| candidate == *name))
                         .cloned()
                         .collect();
-                    *existing = entry.clone();
+                    let mut replacement = entry.clone();
+                    if replacement.metabolic.is_none() {
+                        // A blank panel in the form must not erase values an
+                        // earlier import recorded.
+                        replacement.metabolic = existing.metabolic.clone();
+                    }
+                    *existing = replacement;
                 } else {
                     d.bloodTests.push(entry.clone());
                 }
@@ -1660,6 +2074,30 @@ pub fn CreateBloodTest() -> impl IntoView {
             *feedback_timeout.borrow_mut() = Some(Timeout::new(3000, move || {
                 show_feedback.set(false);
             }));
+        }
+    };
+
+    let render_marker_input = move |marker: MetabolicMarker| {
+        let signal = metabolic.signal(marker);
+        let (low, high) = marker.typical_range();
+        let hint = match (low, high) {
+            (Some(low), Some(high)) => format!("typical {low} to {high}"),
+            (Some(low), None) => format!("typical above {low}"),
+            (None, Some(high)) => format!("typical below {high}"),
+            (None, None) => String::new(),
+        };
+        let label = format!("{} ({})", marker.label(), marker.unit());
+        view! {
+            <label>
+                {label}
+                <input
+                    type="text"
+                    step="any"
+                    on:input=move |ev| signal.set(event_target_value(&ev))
+                    prop:value=move || signal.get()
+                />
+                <span class="muted">{hint}</span>
+            </label>
         }
     };
 
@@ -1987,6 +2425,27 @@ pub fn CreateBloodTest() -> impl IntoView {
                         </div>
                     </div>
 
+                    <div class="form-section">
+                        <h3>"Liver & lipids"</h3>
+                        <p class="muted">
+                            "From a wider kit report. The liver markers matter while estradiol is taken as a tablet, because a tablet is swallowed and reaches the liver before the blood; injections skip that first pass. The ranges shown are typical adult ones; your report carries its own."
+                        </p>
+                        <div class="inline-equal">
+                            {MetabolicMarker::ALL
+                                .iter()
+                                .filter(|marker| marker.is_liver())
+                                .map(|marker| render_marker_input(*marker))
+                                .collect_view()}
+                        </div>
+                        <div class="inline-equal">
+                            {MetabolicMarker::ALL
+                                .iter()
+                                .filter(|marker| !marker.is_liver())
+                                .map(|marker| render_marker_input(*marker))
+                                .collect_view()}
+                        </div>
+                    </div>
+
                     <label>
                         "Notes"
                         <textarea
@@ -2012,8 +2471,10 @@ pub fn CreateBloodTest() -> impl IntoView {
 #[cfg(test)]
 mod tests {
     use super::{
-        extract_ocr_values, normalize_unit_token, parse_ocr_number, BandedHormone, OcrExtraction,
+        extract_ocr_values, normalize_unit_token, parse_ocr_number, table_marker_at,
+        BandedHormone, OcrExtraction, TableTarget,
     };
+    use hrt_shared::types::MetabolicMarker;
 
     /// A banded layout the way `lopdf` hands it over: the result and its unit
     /// come *before* the title for the first sections (they are drawn above the
@@ -2509,6 +2970,267 @@ Oestradiol
         );
     }
 
+    /// A wider-kit result sheet in the shape other providers print it: marker
+    /// name on its own line, then result, unit, reference ranges and a flag.
+    /// Every number is invented.
+    const TABLE_LAYOUT: &str = r#"Blood Test Results
+Personal Details
+Name:
+ Sample Person
+Date of Birth:
+ 1990-01-15
+Gender:
+ X
+Order ID:
+ TEST-0001
+Specimen Details
+Sample Type:
+ Capillary
+Collected:
+ 2026-10-26 09:15
+Received:
+ 2026-10-27 14:20
+Reported:
+ 2026-10-28 15:03
+Sex Hormones
+Test
+Result
+Units
+Reference Range
+Flag
+Testosterone
+12.3
+nmol/L
+Male
+8.64 – 29.00
+Female
+0.29 – 1.67
+High
+Progesterone
+2.2
+nmol/L
+0.616 – 46.3
+Prolactin
+333
+mIU/L
+102 – 496
+17-Beta Oestradiol
+555
+pmol/L
+Male
+41.4 – 159
+Female
+Follicular: 114 – 332
+Luteal: 222 – 854
+Liver Function
+Alanine Transferase
+23
+U/L
+< 33
+Aspartate Transferase
+26
+U/L
+< 32
+Alkaline Phosphatase
+77
+U/L
+30 – 130
+Gamma GT
+18
+U/L
+< 40
+Total Bilirubin
+8
+umol/L
+< 21
+Total Protein
+72
+g/L
+60 – 80
+Albumin
+45
+g/L
+35 – 50
+Globulin
+27
+g/L
+21 – 35
+Lipids
+Triglyceride
+1.2
+mmol/L
+< 1.7
+Total Cholesterol
+4.4
+mmol/L
+< 5.0
+HDL Cholesterol
+1.7
+mmol/L
+> 1.0
+LDL Cholesterol
+2.4
+mmol/L
+< 3.0
+Non-HDL Cholesterol
+2.6
+mmol/L
+< 4.0
+Understanding Your Results
+We've put together a handy resource on reading this results sheet.
+"#;
+
+    fn marker(extracted: &OcrExtraction, marker: MetabolicMarker) -> Option<f64> {
+        marker.get(&extracted.metabolic)
+    }
+
+    #[test]
+    fn table_layout_reads_every_hormone_and_unit() {
+        let extracted = extract_ocr_values(TABLE_LAYOUT);
+        assert_eq!(value(&extracted, BandedHormone::Testosterone).as_deref(), Some("12.3"));
+        assert_eq!(
+            unit_of(&extracted, BandedHormone::Testosterone).as_deref(),
+            Some("nmol/L")
+        );
+        assert_eq!(value(&extracted, BandedHormone::Progesterone).as_deref(), Some("2.2"));
+        assert_eq!(value(&extracted, BandedHormone::Prolactin).as_deref(), Some("333"));
+        assert_eq!(
+            unit_of(&extracted, BandedHormone::Prolactin).as_deref(),
+            Some("mIU/L")
+        );
+        assert_eq!(value(&extracted, BandedHormone::Estradiol).as_deref(), Some("555"));
+        assert_eq!(
+            unit_of(&extracted, BandedHormone::Estradiol).as_deref(),
+            Some("pmol/L")
+        );
+        assert_eq!(extracted.sample_date.as_deref(), Some("2026-10-26T09:15"));
+    }
+
+    #[test]
+    fn table_layout_reads_the_liver_panel() {
+        let extracted = extract_ocr_values(TABLE_LAYOUT);
+        assert_eq!(marker(&extracted, MetabolicMarker::Alt), Some(23.0));
+        assert_eq!(marker(&extracted, MetabolicMarker::Ast), Some(26.0));
+        assert_eq!(marker(&extracted, MetabolicMarker::AlkalinePhosphatase), Some(77.0));
+        assert_eq!(marker(&extracted, MetabolicMarker::Ggt), Some(18.0));
+        assert_eq!(marker(&extracted, MetabolicMarker::Bilirubin), Some(8.0));
+        assert_eq!(marker(&extracted, MetabolicMarker::TotalProtein), Some(72.0));
+        assert_eq!(marker(&extracted, MetabolicMarker::Albumin), Some(45.0));
+        // "Globulin" must come from its own row, not from the squeezed name
+        // "Sex Hormone Binding Globulin".
+        assert_eq!(marker(&extracted, MetabolicMarker::Globulin), Some(27.0));
+        assert!(extracted.metabolic.has_liver_values());
+    }
+
+    #[test]
+    fn table_layout_reads_the_lipid_panel() {
+        let extracted = extract_ocr_values(TABLE_LAYOUT);
+        assert_eq!(marker(&extracted, MetabolicMarker::Triglyceride), Some(1.2));
+        assert_eq!(marker(&extracted, MetabolicMarker::TotalCholesterol), Some(4.4));
+        assert_eq!(marker(&extracted, MetabolicMarker::HdlCholesterol), Some(1.7));
+        assert_eq!(marker(&extracted, MetabolicMarker::LdlCholesterol), Some(2.4));
+        assert_eq!(marker(&extracted, MetabolicMarker::NonHdlCholesterol), Some(2.6));
+        assert!(extracted.metabolic.has_lipid_values());
+    }
+
+    #[test]
+    fn table_layout_row_without_a_result_borrows_nothing() {
+        let text = "\
+Liver Function
+Alanine Transferase
+U/L
+< 33
+Aspartate Transferase
+26
+U/L
+< 32
+";
+        let extracted = extract_ocr_values(text);
+        assert_eq!(
+            marker(&extracted, MetabolicMarker::Alt),
+            None,
+            "a row with no result must stay empty"
+        );
+        assert_eq!(marker(&extracted, MetabolicMarker::Ast), Some(26.0));
+    }
+
+    #[test]
+    fn table_layout_survives_ocr_merged_rows_and_noise() {
+        // A screenshot OCR squashes each row onto one line and misreads the
+        // litre as "I"; the values must still land.
+        let text = "\
+Collected: 2026-10-26 09:15
+Alanine Transferase 23 U/I < 33
+Gamma GT 18 U/I < 40
+Total Cholesterol 4.4 mmol/l < 5.0
+Non-HDL Cholesterol 2.6 mmol/l < 4.0
+";
+        let extracted = extract_ocr_values(text);
+        assert_eq!(marker(&extracted, MetabolicMarker::Alt), Some(23.0));
+        assert_eq!(marker(&extracted, MetabolicMarker::Ggt), Some(18.0));
+        assert_eq!(marker(&extracted, MetabolicMarker::TotalCholesterol), Some(4.4));
+        assert_eq!(marker(&extracted, MetabolicMarker::NonHdlCholesterol), Some(2.6));
+        assert_eq!(extracted.sample_date.as_deref(), Some("2026-10-26T09:15"));
+    }
+
+    #[test]
+    fn table_layout_skips_units_it_cannot_convert() {
+        // mg/dL bilirubin needs a conversion this app does not carry, so the
+        // field stays empty instead of storing a number in the wrong unit.
+        let text = "\
+Total Bilirubin
+0.9
+mg/dL
+< 21
+Total Protein
+72
+g/L
+60 – 80
+";
+        let extracted = extract_ocr_values(text);
+        assert_eq!(marker(&extracted, MetabolicMarker::Bilirubin), None);
+        assert_eq!(marker(&extracted, MetabolicMarker::TotalProtein), Some(72.0));
+    }
+
+    #[test]
+    fn table_marker_names_respect_word_boundaries() {
+        assert_eq!(
+            table_marker_at("Non-HDL Cholesterol"),
+            Some(TableTarget::Metabolic(MetabolicMarker::NonHdlCholesterol))
+        );
+        assert_eq!(
+            table_marker_at("HDL Cholesterol"),
+            Some(TableTarget::Metabolic(MetabolicMarker::HdlCholesterol))
+        );
+        assert_eq!(
+            table_marker_at("Sex Hormone Binding Globulin"),
+            Some(TableTarget::Shbg)
+        );
+        assert_eq!(
+            table_marker_at("Alternatives to consider"),
+            None,
+            "a word that merely starts with a marker name is not a marker"
+        );
+        assert_eq!(
+            table_marker_at("Test"),
+            None,
+            "the template's column heading is not testosterone"
+        );
+    }
+
+    #[test]
+    fn oestradiol_means_the_same_as_17_beta_oestradiol() {
+        let text = "\
+17-Beta Oestradiol
+555
+pmol/L
+Male
+41.4 – 159
+";
+        let extracted = extract_ocr_values(text);
+        assert_eq!(value(&extracted, BandedHormone::Estradiol).as_deref(), Some("555"));
+    }
+
     #[test]
     fn numbers_still_strip_threshold_symbols() {
         assert_eq!(parse_ocr_number("<0.30").as_deref(), Some("0.30"));
@@ -2517,3 +3239,4 @@ Oestradiol
     }
 
 }
+

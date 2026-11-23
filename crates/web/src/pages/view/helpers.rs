@@ -3,9 +3,9 @@ use wasm_bindgen::JsValue;
 
 use crate::utils::{fmt_decimal, hormone_unit_label, parse_decimal};
 use hrt_shared::types::{
-    Antiandrogens, DosageHistoryEntry, DosagePhoto, HormoneUnits, InjectableEstradiols,
-    InjectionSites, LengthUnit, Measurement, OralEstradiols, ProgesteroneRoutes, Progesterones,
-    SyringeKinds, WeightUnit,
+    Antiandrogens, BloodTest, DosageHistoryEntry, DosagePhoto, HormoneUnits, InjectableEstradiols,
+    InjectionSites, LengthUnit, Measurement, MetabolicMarker, MetabolicPanel, OralEstradiols,
+    ProgesteroneRoutes, Progesterones, SyringeKinds, WeightUnit,
 };
 
 use super::types::{PhotoView, INJECTION_SITE_OPTIONS};
@@ -349,9 +349,162 @@ pub(super) fn dosage_entry_matches_key(entry: &DosageHistoryEntry, key: &str) ->
     }
 }
 
+/// One row of the liver and lipid card.
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct MetabolicRow {
+    pub marker: MetabolicMarker,
+    pub date: i64,
+    pub value: f64,
+    pub previous: Option<f64>,
+    /// `Some(true)` above the typical range, `Some(false)` below it.
+    pub flag: Option<bool>,
+}
+
+/// Newest liver and lipid values, with the previous test beside each marker.
+///
+/// The liver half is dropped unless the person takes estradiol as a tablet, or
+/// already has liver results recorded: a tablet is swallowed and reaches the
+/// liver before the blood, while an injection does not, and recorded results
+/// are never hidden.
+pub(super) fn metabolic_rows(tests: &[BloodTest], show_liver: bool) -> Vec<MetabolicRow> {
+    let mut panels: Vec<(i64, MetabolicPanel)> = tests
+        .iter()
+        .filter_map(|test| test.metabolic.clone().map(|panel| (test.date, panel)))
+        .filter(|(_, panel)| !panel.is_empty())
+        .collect();
+    panels.sort_by_key(|(date, _)| *date);
+    let Some((date, newest)) = panels.last().cloned() else {
+        return Vec::new();
+    };
+    let previous = panels.iter().rev().nth(1).map(|(_, panel)| panel.clone());
+    let mut rows = Vec::new();
+    for marker in MetabolicMarker::ALL {
+        if marker.is_liver() && !show_liver {
+            continue;
+        }
+        let Some(value) = marker.get(&newest) else {
+            continue;
+        };
+        rows.push(MetabolicRow {
+            marker,
+            date,
+            value,
+            previous: previous.as_ref().and_then(|panel| marker.get(panel)),
+            flag: marker.above_range(value),
+        });
+    }
+    rows
+}
+
+/// Whether the liver half of the panel should be on screen at all.
+pub(super) fn shows_liver_markers(tests: &[BloodTest], on_tablets: bool) -> bool {
+    on_tablets || tests.iter().any(|test| {
+        test.metabolic
+            .as_ref()
+            .is_some_and(|panel| panel.has_liver_values())
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_with_panel(date: i64, markers: &[(MetabolicMarker, f64)]) -> BloodTest {
+        let mut panel = MetabolicPanel::default();
+        for (marker, value) in markers {
+            marker.set(&mut panel, Some(*value));
+        }
+        BloodTest {
+            date,
+            estradiolLevel: None,
+            testLevel: None,
+            estradiolUnit: None,
+            testUnit: None,
+            progesteroneLevel: None,
+            progesteroneUnit: None,
+            fshLevel: None,
+            fshUnit: None,
+            lhLevel: None,
+            lhUnit: None,
+            prolactinLevel: None,
+            prolactinUnit: None,
+            shbgLevel: None,
+            shbgUnit: None,
+            freeAndrogenIndex: None,
+            estrannaiseNumber: None,
+            fudgeFactor: None,
+            notes: None,
+            estrogenType: None,
+            pdfFiles: None,
+            metabolic: Some(panel),
+        }
+    }
+
+    #[test]
+    fn liver_rows_are_hidden_for_injections_unless_already_recorded() {
+        let tests = vec![test_with_panel(
+            1_000,
+            &[
+                (MetabolicMarker::Alt, 23.0),
+                (MetabolicMarker::TotalCholesterol, 4.4),
+            ],
+        )];
+        // On injections with nothing recorded: lipids only.
+        let rows = metabolic_rows(&tests, false);
+        assert!(rows.iter().all(|row| !row.marker.is_liver()));
+        assert!(rows.iter().any(|row| row.marker == MetabolicMarker::TotalCholesterol));
+
+        // On tablets the liver rows appear.
+        let rows = metabolic_rows(&tests, true);
+        assert!(rows.iter().any(|row| row.marker == MetabolicMarker::Alt));
+
+        // Injections but the result is already recorded: still shown.
+        let rows = metabolic_rows(&tests, shows_liver_markers(&tests, false));
+        assert!(rows.iter().any(|row| row.marker == MetabolicMarker::Alt));
+        assert!(shows_liver_markers(&tests, false));
+        assert!(!shows_liver_markers(&[], false));
+    }
+
+    #[test]
+    fn the_newest_panel_wins_and_shows_the_previous_result() {
+        let tests = vec![
+            test_with_panel(1_000, &[(MetabolicMarker::Alt, 20.0)]),
+            test_with_panel(2_000, &[(MetabolicMarker::Alt, 60.0)]),
+        ];
+        let rows = metabolic_rows(&tests, true);
+        let alt = rows
+            .iter()
+            .find(|row| row.marker == MetabolicMarker::Alt)
+            .expect("ALT row");
+        assert_eq!(alt.date, 2_000);
+        assert_eq!(alt.value, 60.0);
+        assert_eq!(alt.previous, Some(20.0));
+        assert_eq!(alt.flag, Some(true), "60 U/L is above the typical range");
+    }
+
+    #[test]
+    fn a_marker_missing_from_the_newer_test_falls_back_to_nothing() {
+        let tests = vec![
+            test_with_panel(1_000, &[(MetabolicMarker::Alt, 20.0), (MetabolicMarker::Ggt, 18.0)]),
+            test_with_panel(2_000, &[(MetabolicMarker::Alt, 22.0)]),
+        ];
+        let rows = metabolic_rows(&tests, true);
+        assert!(rows.iter().all(|row| row.marker != MetabolicMarker::Ggt));
+        let alt = rows
+            .iter()
+            .find(|row| row.marker == MetabolicMarker::Alt)
+            .expect("ALT row");
+        assert_eq!(alt.previous, Some(20.0));
+        assert_eq!(alt.flag, None);
+    }
+
+    #[test]
+    fn tests_without_a_panel_are_skipped() {
+        let mut empty = test_with_panel(1_000, &[]);
+        empty.metabolic = None;
+        assert!(metabolic_rows(&[empty], true).is_empty());
+    }
+
 
     #[test]
     fn regimen_summaries_read_as_labels_not_debug() {

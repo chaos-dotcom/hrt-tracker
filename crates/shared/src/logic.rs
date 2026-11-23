@@ -3,11 +3,41 @@ use std::collections::HashSet;
 
 use crate::estrannaise::e2_multidose_3c;
 use crate::types::{
-    DosageHistoryEntry, EstrannaiseModel, HormoneUnits, HrtData, InjectableEstradiols,
-    ProgesteroneSchedule, UnixTime,
+    DosageHistoryEntry, EstrogenType, EstrannaiseModel, HormoneUnits, HrtData,
+    InjectableEstradiols, ProgesteroneSchedule, UnixTime,
 };
 
 const DAY_MS: i64 = 24 * 60 * 60 * 1000;
+
+/// How estradiol went in at the last recorded dose, or `None` when nothing is
+/// recorded yet. Tablets are swallowed, so they reach the liver before the
+/// blood; injections do not, which is why the liver panel only matters for the
+/// first.
+pub fn latest_estrogen_route(data: &HrtData) -> Option<EstrogenType> {
+    data.dosageHistory
+        .iter()
+        .filter_map(|entry| match entry {
+            DosageHistoryEntry::InjectableEstradiol { date, kind, .. } => {
+                Some((*date, EstrogenType::Injection { kind: kind.clone() }))
+            }
+            DosageHistoryEntry::OralEstradiol { date, kind, .. } => {
+                Some((*date, EstrogenType::Oral { kind: kind.clone() }))
+            }
+            _ => None,
+        })
+        .max_by_key(|(date, _)| *date)
+        .map(|(_, route)| route)
+}
+
+/// True when estradiol is currently taken as a tablet, which is when the liver
+/// markers of a blood test are worth tracking.
+pub fn uses_oral_estradiol(data: &HrtData) -> bool {
+    match latest_estrogen_route(data) {
+        Some(EstrogenType::Oral { .. }) => true,
+        Some(EstrogenType::Injection { .. }) => false,
+        None => data.oralEstradiol.is_some(),
+    }
+}
 
 fn map_estrannaise_model(kind: &InjectableEstradiols) -> Option<EstrannaiseModel> {
     match kind {
@@ -536,10 +566,78 @@ mod tests {
             notes: None,
             estrogenType: None,
             pdfFiles: None,
+            metabolic: None,
         });
         // Already has fudge factor, should not migrate
         assert!(!migrate_blood_tests_fudge_factor(&mut data));
         assert_eq!(data.bloodTests[0].fudgeFactor, Some(1.5));
+    }
+
+    fn oral_dose(date: UnixTime) -> DosageHistoryEntry {
+        DosageHistoryEntry::OralEstradiol {
+            date,
+            id: None,
+            kind: crate::types::OralEstradiols::Hemihydrate,
+            dose: 2.0,
+            unit: HormoneUnits::Mg,
+            pillQuantity: None,
+            note: None,
+        }
+    }
+
+    fn injected_dose(date: UnixTime) -> DosageHistoryEntry {
+        DosageHistoryEntry::InjectableEstradiol {
+            date,
+            id: None,
+            kind: InjectableEstradiols::Valerate,
+            dose: 5.0,
+            unit: HormoneUnits::Mg,
+            note: None,
+            bonusDose: None,
+            injectionSite: None,
+            vialId: None,
+            subVialId: None,
+            syringeKind: None,
+            needleLength: None,
+            needleGauge: None,
+            photos: None,
+        }
+    }
+
+    #[test]
+    fn the_liver_panel_follows_the_last_estrogen_route() {
+        let mut data = HrtData::default();
+        assert!(!uses_oral_estradiol(&data), "nothing recorded yet");
+        assert_eq!(latest_estrogen_route(&data), None);
+
+        data.dosageHistory.push(oral_dose(1_000));
+        assert!(uses_oral_estradiol(&data));
+        assert!(matches!(
+            latest_estrogen_route(&data),
+            Some(EstrogenType::Oral { .. })
+        ));
+
+        // A later injection means the liver no longer gets the first pass.
+        data.dosageHistory.push(injected_dose(2_000));
+        assert!(!uses_oral_estradiol(&data));
+
+        // Switching back to tablets counts again.
+        data.dosageHistory.push(oral_dose(3_000));
+        assert!(uses_oral_estradiol(&data));
+    }
+
+    #[test]
+    fn without_history_the_schedule_decides() {
+        let mut data = HrtData::default();
+        data.oralEstradiol = Some(crate::types::OralSchedule {
+            kind: crate::types::OralEstradiols::Hemihydrate,
+            dose: 2.0,
+            unit: HormoneUnits::Mg,
+            frequency: 1.0,
+            nextDoseDate: None,
+            startDate: None,
+        });
+        assert!(uses_oral_estradiol(&data));
     }
 
     #[test]
@@ -573,6 +671,7 @@ mod tests {
             notes: None,
             estrogenType: None,
             pdfFiles: None,
+            metabolic: None,
         });
         assert!(migrate_blood_tests_fudge_factor(&mut data));
         assert!(data.bloodTests[0].fudgeFactor.is_some());
@@ -611,6 +710,7 @@ mod tests {
             notes: None,
             estrogenType: None,
             pdfFiles: None,
+            metabolic: None,
         });
         assert!(migrate_blood_tests_fudge_factor(&mut data));
         let ff = data.bloodTests[0].fudgeFactor.unwrap();

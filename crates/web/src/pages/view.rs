@@ -17,19 +17,23 @@ use self::helpers::{
     antiandrogen_label, bloodtest_pdf_url, dosage_entry_date, dosage_entry_matches_key,
     dosage_photo_view, dose_mg, hormone_unit_labels, injectable_estradiol_label,
     injection_site_from_label, injection_site_label, length_unit_label, measurement_key,
-    measurement_matches_target, oral_estradiol_label, parse_date_only, parse_datetime_local,
+    measurement_matches_target, metabolic_rows, oral_estradiol_label, parse_date_only,
+    parse_datetime_local,
     parse_optional_num, parse_weight_unit, pill_detail, progesterone_label,
     progesterone_route_label, progesterone_route_word, regimen_summary_antiandrogen,
     remove_history_entry,
     regimen_summary_injection, regimen_summary_oral_estradiol, regimen_summary_progesterone,
-    syringe_kind_label, to_local_input_value, update_photo_note, weight_unit_label,
+    shows_liver_markers, syringe_kind_label, to_local_input_value, update_photo_note,
+    weight_unit_label,
 };
 use self::scheduling::{generate_estrannaise_url, get_next_scheduled_candidate};
 use self::types::{
     RegimenKey, UploadResponse, DAY_MS, INJECTION_SITE_OPTIONS, SYRINGE_KIND_OPTIONS,
 };
 
-use crate::charts::view::{compute_view_chart_state, draw_view_chart, find_nearest_point};
+use crate::charts::view::{
+    compute_view_chart_state, draw_view_chart, find_nearest_point, ChartOptions,
+};
 use crate::charts::{
     chart_padding, clamp_zoom, compute_chart_bounds, ChartTooltip, DragState, ViewZoom,
 };
@@ -39,7 +43,7 @@ use crate::utils::{
     compute_fudge_factor, fmt_blood_value, fmt_date_label, fmt_decimal, format_injectable_dose,
     hormone_unit_label, injectable_dose_from_iu, parse_hormone_unit, parse_length_unit,
 };
-use hrt_shared::logic::{predict_e2_pg_ml, snap_to_next_injection_boundary};
+use hrt_shared::logic::{uses_oral_estradiol, predict_e2_pg_ml, snap_to_next_injection_boundary};
 use hrt_shared::types::{
     DiaryEntry, DosageHistoryEntry, DosagePhoto, HormoneUnits, HrtData, ProgesteroneRoutes,
 };
@@ -218,6 +222,18 @@ pub fn ViewPage() -> impl IntoView {
         let mut tests = data.get().bloodTests.clone();
         tests.sort_by(|a, b| b.date.cmp(&a.date));
         tests
+    });
+
+    // A tablet is swallowed, so it reaches the liver before the blood; an
+    // injection does not. That is the only reason to watch the liver panel.
+    let on_tablets = create_memo(move |_| uses_oral_estradiol(&data.get()));
+
+    let show_liver_panel = create_memo(move |_| {
+        shows_liver_markers(&data.get().bloodTests, on_tablets.get())
+    });
+
+    let panel_rows = create_memo(move |_| {
+        metabolic_rows(&data.get().bloodTests, show_liver_panel.get())
     });
 
     let sorted_measurements = create_memo(move |_| {
@@ -661,7 +677,7 @@ pub fn ViewPage() -> impl IntoView {
             if !state.has_data {
                 return;
             }
-            draw_view_chart(VIEW_CANVAS_ID, &state, view_zoom.get());
+            draw_view_chart(VIEW_CANVAS_ID, &state, view_zoom.get(), &ChartOptions::default());
         }
     });
 
@@ -676,7 +692,7 @@ pub fn ViewPage() -> impl IntoView {
             let listener = EventListener::new(&window, "resize", move |_| {
                 let state = view_chart_state.get();
                 if state.has_data {
-                    draw_view_chart(VIEW_CANVAS_ID, &state, view_zoom.get());
+                    draw_view_chart(VIEW_CANVAS_ID, &state, view_zoom.get(), &ChartOptions::default());
                 }
             });
             view_resize_listener.replace(Some(listener));
@@ -1692,6 +1708,76 @@ pub fn ViewPage() -> impl IntoView {
                         </Show>
                     </div>
                 </div>
+
+                <Show when=move || !panel_rows.get().is_empty()>
+                    <div class="card">
+                        <h3>"Liver & lipids"</h3>
+                        <p class="muted">
+                            {move || {
+                                let head = "Newest result of each marker, with the previous test beside it. Ranges are typical adult ones; your report carries its own.";
+                                if !show_liver_panel.get() {
+                                    format!("{head} The liver markers are hidden because estradiol is not taken as a tablet.")
+                                } else if on_tablets.get() {
+                                    format!("{head} A tablet is swallowed, so it reaches the liver before the blood, which is why the liver markers are here.")
+                                } else {
+                                    format!("{head} These liver results were recorded earlier; your estradiol is an injection now.")
+                                }
+                            }}
+                        </p>
+                        <ul class="history-list">
+                            <For
+                                each=move || panel_rows.get()
+                                key=|row| row.marker.label()
+                                children=move |row| {
+                                    let marker = row.marker;
+                                    let value = row.value;
+                                    let previous = row.previous;
+                                    let flag = row.flag;
+                                    let date = row.date;
+                                    let (low, high) = marker.typical_range();
+                                    let range = match (low, high) {
+                                        (Some(low), Some(high)) => format!("typical {low} to {high}"),
+                                        (Some(low), None) => format!("typical above {low}"),
+                                        (None, Some(high)) => format!("typical below {high}"),
+                                        (None, None) => String::new(),
+                                    };
+                                    let flag_text = match flag {
+                                        Some(true) => "above range",
+                                        Some(false) => "below range",
+                                        None => "",
+                                    };
+                                    let measured = format!("{} {}", fmt_blood_value(value), marker.unit());
+                                    let previous_text = previous
+                                        .map(|value| format!("previous {}", fmt_blood_value(value)))
+                                        .unwrap_or_default();
+                                    let when = move || fmt_date_label(date, &x_axis_mode.get(), first_dose_date.get());
+                                    view! {
+                                        <li class="history-item">
+                                            <div>
+                                                <div>
+                                                    <strong>{marker.label()}</strong>
+                                                    " "
+                                                    <span class="muted">{measured}</span>
+                                                    " "
+                                                    <span class="muted">{range}</span>
+                                                </div>
+                                                <div class="muted">
+                                                    {when}
+                                                    " · "
+                                                    {previous_text}
+                                                    <Show when=move || !flag_text.is_empty()>
+                                                        " · "
+                                                        <span class="muted">{flag_text}</span>
+                                                    </Show>
+                                                </div>
+                                            </div>
+                                        </li>
+                                    }
+                                }
+                            />
+                        </ul>
+                    </div>
+                </Show>
 
                 <div class="card">
                     <h3>"Measurement History"</h3>
