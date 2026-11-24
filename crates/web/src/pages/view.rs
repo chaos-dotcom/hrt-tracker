@@ -32,11 +32,14 @@ use self::types::{
 };
 
 use crate::charts::view::{
-    compute_view_chart_state, draw_view_chart, find_nearest_point, ChartOptions,
+    compute_view_chart_state, displayed_value, draw_view_chart, find_nearest_point, layout_panels,
+    plan_y_axis, plotted_y_range, series_present, ChartOptions, ChartSeries, E2DisplayUnit,
+    ViewChartPoint, ViewChartState,
 };
 use crate::charts::{
-    chart_padding, clamp_zoom, compute_chart_bounds, ChartTooltip, DragState, ViewZoom,
+    chart_padding, clamp_zoom, compute_chart_bounds, data_to_canvas_x, DragState, ViewZoom,
 };
+use plotters::style::RGBColor;
 use crate::layout::page_layout;
 use crate::store::use_store;
 use crate::utils::{
@@ -47,6 +50,539 @@ use hrt_shared::logic::{uses_oral_estradiol, predict_e2_pg_ml, snap_to_next_inje
 use hrt_shared::types::{
     DiaryEntry, DosageHistoryEntry, DosagePhoto, HormoneUnits, HrtData, ProgesteroneRoutes,
 };
+
+// ---------------------------------------------------------------------------
+// Chart interaction
+//
+// The chart itself is drawn by `charts::view`. Everything here is the arithmetic
+// that drives it from the page: the pixel geometry of the plot, snapping the
+// crosshair to an x, the pinned readout, brush-to-zoom and the table rows. None
+// of it touches js_sys, so it is all covered by the tests at the bottom of this
+// file.
+// ---------------------------------------------------------------------------
+
+/// How far a drag has to travel before it counts as a brush rather than a click.
+const BRUSH_MIN_DRAG_PX: f64 = 6.0;
+
+/// Width below which the selection rectangle is not drawn at all.
+const BRUSH_MIN_WIDTH_PX: f64 = 2.0;
+
+/// A drag across the plot, in canvas pixels. Panning keeps the older
+/// `DragState` (it carries the window the drag started from); brushing only
+/// needs the two ends.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct BrushState {
+    start_x: f64,
+    current_x: f64,
+}
+
+impl BrushState {
+    fn span(self) -> f64 {
+        (self.current_x - self.start_x).abs()
+    }
+}
+
+/// The unit estradiol is drawn in: the chip the user picked, or the unit their
+/// settings already put the series in when they have not picked one.
+///
+/// `compute_view_chart_state` normalises estradiol into the settings unit and
+/// stores it as `state.e2_unit`, so seeding the options from it is what keeps a
+/// pg/mL user on pg/mL.
+fn effective_e2_unit(settings_unit: E2DisplayUnit, chosen: Option<E2DisplayUnit>) -> E2DisplayUnit {
+    chosen.unwrap_or(settings_unit)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn chart_options_from(
+    state: &ViewChartState,
+    chosen_e2_unit: Option<E2DisplayUnit>,
+    log_scale: bool,
+    dose_marks: bool,
+    value_band: bool,
+    small_multiples: bool,
+) -> ChartOptions {
+    ChartOptions {
+        e2_unit: effective_e2_unit(state.e2_unit, chosen_e2_unit),
+        log_scale,
+        show_dose_ticks: dose_marks,
+        show_value_band: value_band,
+        separate_panels: small_multiples,
+    }
+}
+
+/// An `aria-pressed` value for a toggle chip.
+fn pressed(value: bool) -> &'static str {
+    if value {
+        "true"
+    } else {
+        "false"
+    }
+}
+
+/// The pixel geometry of the plot area inside the canvas, in CSS pixels. It
+/// mirrors what `draw_view_chart` lays out for a single panel: the same padding,
+/// the same zoom window.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct ChartGeometry {
+    left: f64,
+    top: f64,
+    width: f64,
+    height: f64,
+    x_min: f64,
+    x_max: f64,
+}
+
+impl ChartGeometry {
+    fn x_span(self) -> f64 {
+        (self.x_max - self.x_min).abs().max(1.0)
+    }
+
+    fn x_to_px(self, x: f64) -> f64 {
+        data_to_canvas_x(x, self.x_min, self.x_span(), self.width, self.left)
+    }
+
+    fn px_to_x(self, px: f64) -> f64 {
+        self.x_min + ((px - self.left) / self.width) * self.x_span()
+    }
+
+    fn right(self) -> f64 {
+        self.left + self.width
+    }
+}
+
+fn chart_geometry(
+    state: &ViewChartState,
+    zoom: ViewZoom,
+    canvas_width: f64,
+    canvas_height: f64,
+) -> ChartGeometry {
+    let padding = chart_padding();
+    let x_min = zoom.x_min.unwrap_or(state.domain_min);
+    let x_max = zoom.x_max.unwrap_or(state.domain_max);
+    let (width, height, _, _) = compute_chart_bounds(
+        canvas_width,
+        canvas_height,
+        padding,
+        x_min,
+        x_max,
+        state.y_min,
+        state.y_max,
+    );
+    ChartGeometry {
+        left: padding.0,
+        top: padding.1,
+        width,
+        height,
+        x_min,
+        x_max,
+    }
+}
+
+/// The x column nearest the cursor.
+///
+/// `find_nearest_point` does the y-aware snap while the pointer is on a point;
+/// past its 48px hit radius the crosshair still follows the nearest column,
+/// which is what a readout needs. Recovering the data x from the returned pixel
+/// keeps this using exactly the hit test the chart already had.
+fn snapped_x(
+    state: &ViewChartState,
+    options: &ChartOptions,
+    geometry: ChartGeometry,
+    cursor_x: f64,
+    cursor_y: f64,
+) -> Option<f64> {
+    let padding = chart_padding();
+    let (y_min, y_max) = plotted_y_range(state, options);
+    let y_span = (y_max - y_min).abs().max(1.0);
+    let mut best: Option<(f64, f64)> = None;
+    for points in [&state.points, &state.dosage_points] {
+        if let Some((tooltip, distance)) = find_nearest_point(
+            points,
+            geometry.x_min,
+            geometry.x_span(),
+            y_min,
+            y_span,
+            geometry.width,
+            geometry.height,
+            padding,
+            cursor_x,
+            cursor_y,
+        ) {
+            let x = geometry.px_to_x(tooltip.x);
+            // A point outside a zoomed window is behind the axis, not on it.
+            if x < geometry.x_min || x > geometry.x_max {
+                continue;
+            }
+            if best.map(|(best_distance, _)| distance < best_distance).unwrap_or(true) {
+                best = Some((distance, x));
+            }
+        }
+    }
+    match best {
+        Some((_, x)) => Some(x),
+        None => nearest_column_x(state, geometry, cursor_x),
+    }
+}
+
+/// Fallback snap: the plotted x closest to the cursor horizontally, whatever
+/// the y. Ties keep the first point in chart order.
+fn nearest_column_x(
+    state: &ViewChartState,
+    geometry: ChartGeometry,
+    cursor_x: f64,
+) -> Option<f64> {
+    let cursor_x = cursor_x.clamp(geometry.left, geometry.right());
+    let mut best: Option<(f64, f64)> = None;
+    for point in state.points.iter().chain(state.dosage_points.iter()) {
+        if !point.x.is_finite() || point.x < geometry.x_min || point.x > geometry.x_max {
+            continue;
+        }
+        let distance = (geometry.x_to_px(point.x) - cursor_x).abs();
+        if best.map(|(best_distance, _)| distance < best_distance).unwrap_or(true) {
+            best = Some((distance, point.x));
+        }
+    }
+    best.map(|(_, x)| x)
+}
+
+fn css_color(color: RGBColor) -> String {
+    format!("#{:02x}{:02x}{:02x}", color.0, color.1, color.2)
+}
+
+fn chart_series_css_color(series: ChartSeries) -> String {
+    css_color(series.color())
+}
+
+/// A chart value at readout precision: two decimals, trailing zeros trimmed, so
+/// 340.0 reads as `340` and 90.44 as `90.44`.
+fn format_chart_value(value: f64) -> String {
+    if !value.is_finite() {
+        return "-".to_string();
+    }
+    fmt_decimal(value, 2)
+}
+
+/// The unit a record was made in, when the plotted value was converted out of
+/// it. The chart's own labels read
+/// `"Estradiol: 340 pmol/L -> 90.4 pg/mL (Nov 23)"`, so the part before the
+/// arrow is the recorded unit. A label with no conversion has no note.
+fn recorded_note(label: &str) -> Option<String> {
+    let (before, _) = label.split_once(" -> ")?;
+    let (_, recorded) = before.split_once(": ")?;
+    let recorded = recorded.trim();
+    if recorded.is_empty() {
+        None
+    } else {
+        Some(format!("recorded {recorded}"))
+    }
+}
+
+/// The unit a point is drawn in: the estradiol chip's unit, or the series' own
+/// recorded unit. The readout and the table both go through this, so the two can
+/// never disagree after a unit switch.
+fn plotted_unit(point: &ViewChartPoint, options: &ChartOptions) -> String {
+    if point.series == ChartSeries::Estradiol {
+        options.e2_unit.label().to_string()
+    } else {
+        point.unit.clone()
+    }
+}
+
+/// One line of the pinned readout: a series and the value it is drawn at.
+#[derive(Clone, Debug, PartialEq)]
+struct ReadoutRow {
+    series: ChartSeries,
+    value: String,
+    unit: String,
+    /// What the record said, when it was recorded in another unit.
+    recorded: Option<String>,
+    color: String,
+}
+
+/// One row per visible series that has a point at `x`, in the chart's own
+/// series order, with the value in the unit it is drawn in.
+///
+/// Doses are not levels and are drawn at a scaled height, so a dose column
+/// reports the dose's own text instead of a number.
+fn readout_rows(state: &ViewChartState, options: &ChartOptions, x: f64) -> Vec<ReadoutRow> {
+    let mut rows = Vec::new();
+    for series in series_present(&state.points) {
+        let Some(point) = state
+            .points
+            .iter()
+            .find(|point| point.series == series && (point.x - x).abs() < 1e-6)
+        else {
+            continue;
+        };
+        rows.push(ReadoutRow {
+            series,
+            value: format_chart_value(displayed_value(point, state, options)),
+            unit: plotted_unit(point, options),
+            recorded: recorded_note(&point.label),
+            color: chart_series_css_color(series),
+        });
+    }
+    if let Some(dose) = state
+        .dosage_points
+        .iter()
+        .find(|point| (point.x - x).abs() < 1e-6)
+    {
+        rows.push(ReadoutRow {
+            series: ChartSeries::Dose,
+            value: dose_text(dose),
+            unit: String::new(),
+            recorded: None,
+            color: css_color(dose.color),
+        });
+    }
+    rows
+}
+
+/// A dose marker's label without its trailing date, since the readout names the
+/// date once for the whole column.
+fn dose_text(dose: &ViewChartPoint) -> String {
+    match dose.label.rsplit_once(" (") {
+        Some((text, _)) => text.to_string(),
+        None => dose.label.clone(),
+    }
+}
+
+/// The date column heading for a readout.
+fn readout_date_text(state: &ViewChartState, x: f64) -> String {
+    let Some(point) = state
+        .points
+        .iter()
+        .chain(state.dosage_points.iter())
+        .find(|point| (point.x - x).abs() < 1e-6)
+    else {
+        return String::new();
+    };
+    let axis_mode = if state.use_days { "days" } else { "date" };
+    fmt_date_label(point.timestamp_ms, axis_mode, state.first_dose)
+}
+
+/// How far up an axis a value sits, 0.0 at the floor and 1.0 at the top.
+/// Logarithmic axes space it geometrically, which is where the chart draws it.
+fn y_fraction(value: f64, axis_min: f64, axis_max: f64, logarithmically: bool) -> f64 {
+    if !value.is_finite() || !axis_min.is_finite() || !axis_max.is_finite() || axis_max <= axis_min {
+        return 0.5;
+    }
+    let fraction = if logarithmically {
+        if axis_min <= 0.0 || value <= 0.0 {
+            0.0
+        } else {
+            (value / axis_min).ln() / (axis_max / axis_min).ln()
+        }
+    } else {
+        (value - axis_min) / (axis_max - axis_min)
+    };
+    fraction.clamp(0.0, 1.0)
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct CrosshairDot {
+    x: f64,
+    y: f64,
+    color: String,
+}
+
+/// Where the crosshair dots go: one per plotted point at `x`, inside the panel
+/// that point belongs to. Small multiples split the canvas into equal panels,
+/// each with its own axis, so the dot has to use that panel's range.
+fn crosshair_dots(
+    state: &ViewChartState,
+    options: &ChartOptions,
+    geometry: ChartGeometry,
+    x: f64,
+) -> Vec<CrosshairDot> {
+    let padding = chart_padding();
+    let panels = layout_panels(state, options);
+    let count = panels.len().max(1);
+    let canvas_height = geometry.height + padding.1 + padding.3;
+    let panel_height = canvas_height / count as f64;
+    let mut dots = Vec::new();
+    for (index, panel) in panels.iter().enumerate() {
+        let panel_top = index as f64 * panel_height;
+        let is_bottom = index + 1 == count;
+        let plot_top = panel_top + padding.1;
+        let plot_bottom = panel_top + panel_height
+            - if is_bottom { padding.3 } else { padding.1 };
+        let plot_height = (plot_bottom - plot_top).max(1.0);
+        let values: Vec<f64> = panel.points.iter().map(|point| point.y).collect();
+        let plan = plan_y_axis(options.log_scale, panel.y_min, panel.y_max, &values);
+        let (axis_min, axis_max) = plan.bounds();
+        for point in panel
+            .points
+            .iter()
+            .filter(|point| (point.x - x).abs() < 1e-6)
+        {
+            let fraction = y_fraction(point.y, axis_min, axis_max, plan.is_log());
+            dots.push(CrosshairDot {
+                x: geometry.x_to_px(point.x),
+                y: plot_bottom - fraction * plot_height,
+                color: css_color(point.color),
+            });
+        }
+    }
+    dots
+}
+
+/// The crosshair line, its dots, and the brush rectangle, all in canvas pixels.
+#[derive(Clone, Debug, PartialEq)]
+struct ChartOverlay {
+    /// `(left, top, height)` of the vertical line.
+    crosshair: Option<(f64, f64, f64)>,
+    dots: Vec<CrosshairDot>,
+    /// `(left, width)` of the selection rectangle.
+    brush: Option<(f64, f64)>,
+}
+
+fn chart_overlay(
+    state: &ViewChartState,
+    options: &ChartOptions,
+    zoom: ViewZoom,
+    canvas_width: f64,
+    canvas_height: f64,
+    hover_x: Option<f64>,
+    brush: Option<BrushState>,
+) -> ChartOverlay {
+    let padding = chart_padding();
+    let geometry = chart_geometry(state, zoom, canvas_width, canvas_height);
+    let plot_height = (canvas_height - padding.1 - padding.3).max(1.0);
+    // A crosshair only means something inside the window being drawn.
+    let hover_x = hover_x.filter(|x| *x >= geometry.x_min && *x <= geometry.x_max);
+    ChartOverlay {
+        crosshair: hover_x.map(|x| (geometry.x_to_px(x), padding.1, plot_height)),
+        dots: hover_x
+            .map(|x| crosshair_dots(state, options, geometry, x))
+            .unwrap_or_default(),
+        brush: brush.and_then(|brush| brush_rect(geometry, brush)),
+    }
+}
+
+/// The selection rectangle a brush covers, clamped to the plot area, or `None`
+/// while the drag is too short to be anything but a click.
+fn brush_rect(geometry: ChartGeometry, brush: BrushState) -> Option<(f64, f64)> {
+    let clamp = |px: f64| px.clamp(geometry.left, geometry.right());
+    let left = clamp(brush.start_x.min(brush.current_x));
+    let right = clamp(brush.start_x.max(brush.current_x));
+    if right - left < BRUSH_MIN_WIDTH_PX {
+        None
+    } else {
+        Some((left, right - left))
+    }
+}
+
+/// The x window a drag covers, in data units, always ordered low to high.
+fn brush_window(geometry: ChartGeometry, from_px: f64, to_px: f64) -> (f64, f64) {
+    let clamp = |px: f64| px.clamp(geometry.left, geometry.right());
+    let (a, b) = (clamp(from_px), clamp(to_px));
+    if a <= b {
+        (geometry.px_to_x(a), geometry.px_to_x(b))
+    } else {
+        (geometry.px_to_x(b), geometry.px_to_x(a))
+    }
+}
+
+/// Zoom to the brushed window, through `clamp_zoom` so a drag across the whole
+/// domain falls back to the full domain instead of pinning a tiny window.
+fn brush_zoom(
+    state: &ViewChartState,
+    geometry: ChartGeometry,
+    from_px: f64,
+    to_px: f64,
+) -> ViewZoom {
+    let (min, max) = brush_window(geometry, from_px, to_px);
+    clamp_zoom(state.domain_min, state.domain_max, min, max)
+}
+
+/// The zoom a finished drag asks for, or `None` when the pointer barely moved
+/// and the gesture was a click rather than a brush.
+fn brush_zoom_for_drag(
+    state: &ViewChartState,
+    geometry: ChartGeometry,
+    brush: BrushState,
+) -> Option<ViewZoom> {
+    if brush.span() < BRUSH_MIN_DRAG_PX {
+        return None;
+    }
+    Some(brush_zoom(state, geometry, brush.start_x, brush.current_x))
+}
+
+/// The pinned readout for one x: the date, every series at that x, and where
+/// the crosshair dots land.
+#[derive(Clone, Debug, PartialEq)]
+struct ChartReadout {
+    x_px: f64,
+    date: String,
+    rows: Vec<ReadoutRow>,
+    dots: Vec<CrosshairDot>,
+}
+
+fn chart_readout(
+    state: &ViewChartState,
+    options: &ChartOptions,
+    zoom: ViewZoom,
+    canvas_width: f64,
+    canvas_height: f64,
+    x: f64,
+) -> Option<ChartReadout> {
+    let geometry = chart_geometry(state, zoom, canvas_width, canvas_height);
+    let rows = readout_rows(state, options, x);
+    if rows.is_empty() {
+        return None;
+    }
+    Some(ChartReadout {
+        x_px: geometry.x_to_px(x),
+        date: readout_date_text(state, x),
+        rows,
+        dots: crosshair_dots(state, options, geometry, x),
+    })
+}
+
+/// One row of the table view: a plotted blood value in the unit it is drawn in.
+#[derive(Clone, Debug, PartialEq)]
+struct ChartTableRow {
+    date: String,
+    series: ChartSeries,
+    value: String,
+    unit: String,
+    color: String,
+    timestamp_ms: i64,
+}
+
+/// The plotted blood values, newest first, in the unit each series is drawn in,
+/// so the table and the canvas always agree, including after a unit switch.
+fn chart_table_rows(state: &ViewChartState, options: &ChartOptions) -> Vec<ChartTableRow> {
+    let axis_mode = if state.use_days { "days" } else { "date" };
+    let mut rows: Vec<(usize, ChartTableRow)> = state
+        .points
+        .iter()
+        .map(|point| {
+            let order = ChartSeries::ALL
+                .iter()
+                .position(|series| *series == point.series)
+                .unwrap_or(usize::MAX);
+            (
+                order,
+                ChartTableRow {
+                    date: fmt_date_label(point.timestamp_ms, axis_mode, state.first_dose),
+                    series: point.series,
+                    value: format_chart_value(displayed_value(point, state, options)),
+                    unit: plotted_unit(point, options),
+                    color: chart_series_css_color(point.series),
+                    timestamp_ms: point.timestamp_ms,
+                },
+            )
+        })
+        .collect();
+    rows.sort_by(|(a_order, a), (b_order, b)| {
+        b.timestamp_ms
+            .cmp(&a.timestamp_ms)
+            .then(a_order.cmp(b_order))
+    });
+    rows.into_iter().map(|(_, row)| row).collect()
+}
 
 #[component]
 pub fn ViewPage() -> impl IntoView {
@@ -146,7 +682,19 @@ pub fn ViewPage() -> impl IntoView {
     let show_fai = create_rw_signal(false);
     let show_fudge_factor = create_rw_signal(true);
     let view_zoom = create_rw_signal(ViewZoom::default());
-    let view_tooltip = create_rw_signal(None::<ChartTooltip>);
+    // Chart chips. The estradiol unit starts from whatever the settings put the
+    // series in (see `effective_e2_unit`); there is no settings field behind the
+    // other four, so they live here and reset on reload.
+    let chart_e2_unit = create_rw_signal(None::<E2DisplayUnit>);
+    let chart_log_scale = create_rw_signal(false);
+    let chart_dose_marks = create_rw_signal(false);
+    let chart_value_band = create_rw_signal(false);
+    let chart_small_multiples = create_rw_signal(false);
+    let chart_table_view = create_rw_signal(false);
+    // Hover and drag state for the crosshair, the pinned readout and the brush.
+    let view_hover_x = create_rw_signal(None::<f64>);
+    let view_brush = create_rw_signal(None::<BrushState>);
+    let chart_canvas_size = create_rw_signal((900.0_f64, 420.0_f64));
 
     let view_chart_state = create_memo({
         let settings = store.settings;
@@ -170,6 +718,33 @@ pub fn ViewPage() -> impl IntoView {
                 show_fudge_factor.get(),
             )
         }
+    });
+
+    let chart_options = create_memo(move |_| {
+        let state = view_chart_state.get();
+        chart_options_from(
+            &state,
+            chart_e2_unit.get(),
+            chart_log_scale.get(),
+            chart_dose_marks.get(),
+            chart_value_band.get(),
+            chart_small_multiples.get(),
+        )
+    });
+
+    // Recomputed from the hovered x, so a unit switch rewrites the readout and
+    // the table with it instead of leaving stale numbers behind.
+    let chart_readout_view = create_memo(move |_| {
+        let x = view_hover_x.get()?;
+        let state = view_chart_state.get();
+        let options = chart_options.get();
+        let (width, height) = chart_canvas_size.get();
+        chart_readout(&state, &options, view_zoom.get(), width, height, x)
+    });
+
+    let chart_table_view_rows = create_memo(move |_| {
+        let state = view_chart_state.get();
+        chart_table_rows(&state, &chart_options.get())
     });
 
     let first_dose_date =
@@ -496,216 +1071,246 @@ pub fn ViewPage() -> impl IntoView {
     };
 
     const VIEW_CANVAS_ID: &str = "view-chart-canvas";
-    let view_drag = Rc::new(RefCell::new(None::<DragState>));
+    let view_pan_drag = Rc::new(RefCell::new(None::<DragState>));
 
-    let on_view_mouse_move = {
-        let view_chart_state = view_chart_state;
-        let view_zoom = view_zoom;
-        let view_drag = view_drag.clone();
-        let view_tooltip = view_tooltip;
+    /// The canvas' own size in CSS pixels.
+    fn canvas_metrics(canvas_id: &str) -> Option<(f64, f64)> {
+        let canvas = window()
+            .document()?
+            .get_element_by_id(canvas_id)?
+            .dyn_into::<HtmlCanvasElement>()
+            .ok()?;
+        let rect = canvas.get_bounding_client_rect();
+        Some((rect.width(), rect.height()))
+    }
+
+    /// `(canvas width, canvas height, cursor x, cursor y)`, cursor in canvas
+    /// pixels.
+    fn cursor_in_canvas(canvas_id: &str, ev: &leptos::ev::MouseEvent) -> Option<(f64, f64, f64, f64)> {
+        let canvas = window()
+            .document()?
+            .get_element_by_id(canvas_id)?
+            .dyn_into::<HtmlCanvasElement>()
+            .ok()?;
+        let rect = canvas.get_bounding_client_rect();
+        Some((
+            rect.width(),
+            rect.height(),
+            ev.client_x() as f64 - rect.left(),
+            ev.client_y() as f64 - rect.top(),
+        ))
+    }
+
+    /// The same, for a wheel event (its own position accessors).
+    fn cursor_in_canvas_wheel(canvas_id: &str, ev: &leptos::ev::WheelEvent) -> Option<(f64, f64, f64, f64)> {
+        let canvas = window()
+            .document()?
+            .get_element_by_id(canvas_id)?
+            .dyn_into::<HtmlCanvasElement>()
+            .ok()?;
+        let rect = canvas.get_bounding_client_rect();
+        Some((
+            rect.width(),
+            rect.height(),
+            ev.client_x() as f64 - rect.left(),
+            ev.client_y() as f64 - rect.top(),
+        ))
+    }
+
+    let on_view_mouse_move = StoredValue::new({
+        let view_pan_drag = view_pan_drag.clone();
         move |ev: leptos::ev::MouseEvent| {
-            let Some(canvas) = window()
-                .document()
-                .and_then(|doc| doc.get_element_by_id(VIEW_CANVAS_ID))
-                .and_then(|el| el.dyn_into::<HtmlCanvasElement>().ok())
+            let Some((width, height, cursor_x, cursor_y)) =
+                cursor_in_canvas(VIEW_CANVAS_ID, &ev)
             else {
                 return;
             };
-            let rect = canvas.get_bounding_client_rect();
-            let cursor_x = ev.client_x() as f64 - rect.left();
-            let cursor_y = ev.client_y() as f64 - rect.top();
+            chart_canvas_size.set((width, height));
             let state = view_chart_state.get();
             let zoom = view_zoom.get();
-            let x_min = zoom.x_min.unwrap_or(state.domain_min);
-            let x_max = zoom.x_max.unwrap_or(state.domain_max);
-            let padding = chart_padding();
-            let (width, height, domain_span, y_span) = compute_chart_bounds(
-                rect.width(),
-                rect.height(),
-                padding,
-                x_min,
-                x_max,
-                state.y_min,
-                state.y_max,
-            );
-            if let Some(drag) = view_drag.borrow().as_ref() {
-                view_tooltip.set(None);
+            if let Some(drag) = view_pan_drag.borrow().as_ref() {
+                // Shift-drag pans: the window the drag started from moves with
+                // the pointer, measured in plot pixels.
+                view_hover_x.set(None);
+                let geometry = chart_geometry(&state, zoom, width, height);
                 let delta_px = cursor_x - drag.start_x;
-                let span = x_max - x_min;
-                let delta_domain = -(delta_px / width) * span;
-                let next_min = drag.start_min + delta_domain;
-                let next_max = drag.start_max + delta_domain;
+                let span = drag.start_max - drag.start_min;
+                let delta_domain = -(delta_px / geometry.width) * span;
                 view_zoom.set(clamp_zoom(
                     state.domain_min,
                     state.domain_max,
-                    next_min,
-                    next_max,
+                    drag.start_min + delta_domain,
+                    drag.start_max + delta_domain,
                 ));
+                return;
+            }
+            if let Some(brush) = view_brush.get() {
+                view_brush.set(Some(BrushState {
+                    current_x: cursor_x,
+                    ..brush
+                }));
+                return;
+            }
+            let geometry = chart_geometry(&state, zoom, width, height);
+            let options = chart_options.get();
+            view_hover_x.set(snapped_x(&state, &options, geometry, cursor_x, cursor_y));
+        }
+    });
+
+    let on_view_mouse_leave = StoredValue::new({
+        let view_pan_drag = view_pan_drag.clone();
+        move |_| {
+            view_pan_drag.replace(None);
+            view_brush.set(None);
+            view_hover_x.set(None);
+        }
+    });
+
+    let on_view_mouse_down = StoredValue::new({
+        let view_pan_drag = view_pan_drag.clone();
+        move |ev: leptos::ev::MouseEvent| {
+            let Some((width, height, cursor_x, _)) = cursor_in_canvas(VIEW_CANVAS_ID, &ev) else {
+                return;
+            };
+            chart_canvas_size.set((width, height));
+            if ev.shift_key() {
+                let state = view_chart_state.get();
+                let zoom = view_zoom.get();
+                view_brush.set(None);
+                view_pan_drag.replace(Some(DragState {
+                    start_x: cursor_x,
+                    start_min: zoom.x_min.unwrap_or(state.domain_min),
+                    start_max: zoom.x_max.unwrap_or(state.domain_max),
+                }));
             } else {
-                let mut best = find_nearest_point(
-                    &state.points,
-                    x_min,
-                    domain_span,
-                    state.y_min,
-                    y_span,
-                    width,
-                    height,
-                    padding,
-                    cursor_x,
-                    cursor_y,
-                );
-                if let Some(candidate) = find_nearest_point(
-                    &state.dosage_points,
-                    x_min,
-                    domain_span,
-                    state.y_min,
-                    y_span,
-                    width,
-                    height,
-                    padding,
-                    cursor_x,
-                    cursor_y,
-                ) {
-                    let replace = best
-                        .as_ref()
-                        .map(|(_, dist)| *dist)
-                        .unwrap_or(f64::INFINITY)
-                        > candidate.1;
-                    if replace {
-                        best = Some(candidate);
-                    }
-                }
-                if let Some((candidate, _)) = best.take() {
-                    view_tooltip.set(Some(candidate));
-                } else {
-                    view_tooltip.set(None);
-                }
+                view_pan_drag.replace(None);
+                view_brush.set(Some(BrushState {
+                    start_x: cursor_x,
+                    current_x: cursor_x,
+                }));
             }
         }
-    };
+    });
 
-    let on_view_mouse_leave = {
-        let view_drag = view_drag.clone();
-        let view_tooltip = view_tooltip;
-        move |_| {
-            view_drag.replace(None);
-            view_tooltip.set(None);
-        }
-    };
-
-    let on_view_mouse_down = {
-        let view_drag = view_drag.clone();
-        let view_zoom = view_zoom;
-        let view_chart_state = view_chart_state;
+    let on_view_mouse_up = StoredValue::new({
+        let view_pan_drag = view_pan_drag.clone();
         move |ev: leptos::ev::MouseEvent| {
-            let Some(canvas) = window()
-                .document()
-                .and_then(|doc| doc.get_element_by_id(VIEW_CANVAS_ID))
-                .and_then(|el| el.dyn_into::<HtmlCanvasElement>().ok())
-            else {
+            view_pan_drag.replace(None);
+            let Some(brush) = view_brush.get() else {
                 return;
             };
-            let rect = canvas.get_bounding_client_rect();
-            let cursor_x = ev.client_x() as f64 - rect.left();
+            view_brush.set(None);
+            let Some((width, height, _, _)) = cursor_in_canvas(VIEW_CANVAS_ID, &ev) else {
+                return;
+            };
             let state = view_chart_state.get();
-            let zoom = view_zoom.get();
-            let x_min = zoom.x_min.unwrap_or(state.domain_min);
-            let x_max = zoom.x_max.unwrap_or(state.domain_max);
-            view_drag.replace(Some(DragState {
-                start_x: cursor_x,
-                start_min: x_min,
-                start_max: x_max,
-            }));
+            let geometry = chart_geometry(&state, view_zoom.get(), width, height);
+            if let Some(zoom) = brush_zoom_for_drag(&state, geometry, brush) {
+                view_zoom.set(zoom);
+            }
         }
-    };
+    });
 
-    let on_view_mouse_up = {
-        let view_drag = view_drag.clone();
+    let on_view_double_click = StoredValue::new({
+        let view_pan_drag = view_pan_drag.clone();
         move |_| {
-            view_drag.replace(None);
+            view_pan_drag.replace(None);
+            view_brush.set(None);
+            view_zoom.set(ViewZoom::default());
         }
-    };
+    });
 
-    let on_view_wheel = {
-        let view_zoom = view_zoom;
-        let view_chart_state = view_chart_state;
+    let on_view_wheel = StoredValue::new({
         move |ev: leptos::ev::WheelEvent| {
             ev.prevent_default();
-            let Some(canvas) = window()
-                .document()
-                .and_then(|doc| doc.get_element_by_id(VIEW_CANVAS_ID))
-                .and_then(|el| el.dyn_into::<HtmlCanvasElement>().ok())
+            let Some((width, height, cursor_x, _)) = cursor_in_canvas_wheel(VIEW_CANVAS_ID, &ev)
             else {
                 return;
             };
-            let rect = canvas.get_bounding_client_rect();
-            let cursor_x = ev.client_x() as f64 - rect.left();
+            chart_canvas_size.set((width, height));
             let state = view_chart_state.get();
-            let zoom = view_zoom.get();
-            let x_min = zoom.x_min.unwrap_or(state.domain_min);
-            let x_max = zoom.x_max.unwrap_or(state.domain_max);
-            let padding = chart_padding();
-            let (width, _, domain_span, _) = compute_chart_bounds(
-                rect.width(),
-                rect.height(),
-                padding,
-                x_min,
-                x_max,
-                state.y_min,
-                state.y_max,
-            );
-            let cursor_ratio = ((cursor_x - padding.0) / width).clamp(0.0, 1.0);
+            let geometry = chart_geometry(&state, view_zoom.get(), width, height);
+            let cursor_ratio = ((cursor_x - geometry.left) / geometry.width).clamp(0.0, 1.0);
             let zoom_factor = if ev.delta_y() < 0.0 { 0.85 } else { 1.15 };
-            let new_span = (domain_span * zoom_factor).max(1.0);
-            let center = x_min + domain_span * cursor_ratio;
+            let span = geometry.x_span();
+            let new_span = (span * zoom_factor).max(1.0);
+            let center = geometry.x_min + span * cursor_ratio;
             let new_min = center - new_span * cursor_ratio;
-            let new_max = new_min + new_span;
             view_zoom.set(clamp_zoom(
                 state.domain_min,
                 state.domain_max,
                 new_min,
-                new_max,
+                new_min + new_span,
             ));
         }
-    };
+    });
 
     create_effect({
-        let view_chart_state = view_chart_state;
-        let view_zoom = view_zoom;
+        let canvas_size = chart_canvas_size;
         move |_| {
             let state = view_chart_state.get();
-            if !state.has_data {
+            let options = chart_options.get();
+            let zoom = view_zoom.get();
+            // Reading the table toggle keeps this effect re-running when the canvas
+            // comes back into the page.
+            if chart_table_view.get() || !state.has_data {
                 return;
             }
-            draw_view_chart(VIEW_CANVAS_ID, &state, view_zoom.get(), &ChartOptions::default());
+            if let Some(size) = canvas_metrics(VIEW_CANVAS_ID) {
+                canvas_size.set(size);
+            }
+            draw_view_chart(VIEW_CANVAS_ID, &state, zoom, &options);
+            // This effect can run before the rows above the canvas have settled
+            // their layout, which leaves the canvas backing store sized from a
+            // stale rectangle (a blurred chart until something forces a resize).
+            // Draw once more on the next frame, when the box is final.
+            let state = view_chart_state;
+            let options = chart_options;
+            let zoom = view_zoom;
+            let canvas_size = canvas_size;
+            let _ = window().request_animation_frame(
+                wasm_bindgen::closure::Closure::once_into_js(move || {
+                    let state = state.get();
+                    if chart_table_view.get_untracked() || !state.has_data {
+                        return;
+                    }
+                    if let Some(size) = canvas_metrics(VIEW_CANVAS_ID) {
+                        canvas_size.set(size);
+                    }
+                    draw_view_chart(VIEW_CANVAS_ID, &state, zoom.get_untracked(), &options.get_untracked());
+                })
+                .unchecked_ref(),
+            );
         }
     });
 
     let view_resize_listener: Rc<RefCell<Option<EventListener>>> = Rc::new(RefCell::new(None));
     create_effect({
-        let view_chart_state = view_chart_state;
-        let view_zoom = view_zoom;
         let view_resize_listener = view_resize_listener.clone();
         move |_| {
             view_chart_state.get();
+            chart_options.get();
             let window = window();
             let listener = EventListener::new(&window, "resize", move |_| {
                 let state = view_chart_state.get();
-                if state.has_data {
-                    draw_view_chart(VIEW_CANVAS_ID, &state, view_zoom.get(), &ChartOptions::default());
+                if chart_table_view.get() || !state.has_data {
+                    return;
                 }
+                if let Some(size) = canvas_metrics(VIEW_CANVAS_ID) {
+                    chart_canvas_size.set(size);
+                }
+                draw_view_chart(VIEW_CANVAS_ID, &state, view_zoom.get(), &chart_options.get());
             });
             view_resize_listener.replace(Some(listener));
         }
     });
 
-    let reset_view_zoom = {
-        let view_zoom = view_zoom;
-        move |_| view_zoom.set(ViewZoom::default())
+    let reset_view_zoom = move |_| {
+        view_brush.set(None);
+        view_zoom.set(ViewZoom::default());
     };
 
     let x_axis_days_disabled = move || view_chart_state.get().first_dose.is_none();
-    let view_tooltip_value = move || view_tooltip.get();
     let next_candidate_label = move || {
         next_scheduled_candidate
             .get()
@@ -1276,6 +1881,77 @@ pub fn ViewPage() -> impl IntoView {
                         </div>
                     </div>
 
+                    <div class="chart-toolbar view-chart-options">
+                        <span class="muted">"Estradiol unit:"</span>
+                        <div class="chip-row" role="group" aria-label="Estradiol display unit">
+                            <button
+                                type="button"
+                                class="chip"
+                                class:active=move || chart_options.get().e2_unit == E2DisplayUnit::PmolL
+                                aria-pressed=move || pressed(chart_options.get().e2_unit == E2DisplayUnit::PmolL)
+                                on:click=move |_| chart_e2_unit.set(Some(E2DisplayUnit::PmolL))
+                            >
+                                "pmol/L"
+                            </button>
+                            <button
+                                type="button"
+                                class="chip"
+                                class:active=move || chart_options.get().e2_unit == E2DisplayUnit::PgMl
+                                aria-pressed=move || pressed(chart_options.get().e2_unit == E2DisplayUnit::PgMl)
+                                on:click=move |_| chart_e2_unit.set(Some(E2DisplayUnit::PgMl))
+                            >
+                                "pg/mL"
+                            </button>
+                        </div>
+                        <div class="chip-row" role="group" aria-label="Chart display options">
+                            <button
+                                type="button"
+                                class="chip"
+                                class:active=move || chart_log_scale.get()
+                                aria-pressed=move || pressed(chart_log_scale.get())
+                                on:click=move |_| chart_log_scale.set(!chart_log_scale.get())
+                            >
+                                "Log scale"
+                            </button>
+                            <button
+                                type="button"
+                                class="chip"
+                                class:active=move || chart_dose_marks.get()
+                                aria-pressed=move || pressed(chart_dose_marks.get())
+                                on:click=move |_| chart_dose_marks.set(!chart_dose_marks.get())
+                            >
+                                "Dose marks"
+                            </button>
+                            <button
+                                type="button"
+                                class="chip"
+                                class:active=move || chart_value_band.get()
+                                aria-pressed=move || pressed(chart_value_band.get())
+                                on:click=move |_| chart_value_band.set(!chart_value_band.get())
+                            >
+                                "Recorded range"
+                            </button>
+                            <button
+                                type="button"
+                                class="chip"
+                                class:active=move || chart_small_multiples.get()
+                                aria-pressed=move || pressed(chart_small_multiples.get())
+                                on:click=move |_| chart_small_multiples.set(!chart_small_multiples.get())
+                            >
+                                "Small multiples"
+                            </button>
+                            <button
+                                type="button"
+                                class="chip"
+                                class:active=move || chart_table_view.get()
+                                aria-pressed=move || pressed(chart_table_view.get())
+                                on:click=move |_| chart_table_view.set(!chart_table_view.get())
+                            >
+                                "Table"
+                            </button>
+                        </div>
+                    </div>
+
                     <div class="chart-toolbar view-levels-group">
                         <span class="muted">"Show Levels:"</span>
                         <button class:active=move || show_e2.get() on:click=move |_| show_e2.set(!show_e2.get())>
@@ -1325,32 +2001,185 @@ pub fn ViewPage() -> impl IntoView {
                     <Show when=move || view_chart_state.get().has_data fallback=move || view! {
                         <div class="empty-state">"No data available for the selected time range."</div>
                     }>
-                        <canvas
-                            id=VIEW_CANVAS_ID
-                            width="900"
-                            height="420"
-                            on:mousemove=on_view_mouse_move.clone()
-                            on:mouseleave=on_view_mouse_leave.clone()
-                            on:mousedown=on_view_mouse_down.clone()
-                            on:mouseup=on_view_mouse_up.clone()
-                            on:wheel=on_view_wheel
-                        ></canvas>
-                        <Show when=move || view_tooltip_value().is_some()>
-                            <div
-                                class="chart-tooltip"
-                                style=move || {
-                                    view_tooltip_value()
-                                        .map(|tip| format!("left: {:.0}px; top: {:.0}px;", tip.x + 12.0, tip.y + 12.0))
-                                        .unwrap_or_default()
-                                }
-                            >
-                                {move || view_tooltip_value().map(|tip| tip.text).unwrap_or_default()}
+                        <Show
+                            when=move || !chart_table_view.get()
+                            fallback=move || view! {
+                                <div class="chart-table-scroll">
+                                    <table class="table chart-table">
+                                        <caption class="muted">
+                                            {move || {
+                                                let rows = chart_table_view_rows.get();
+                                                format!(
+                                                    "Blood test values as plotted, newest first ({} rows).",
+                                                    rows.len()
+                                                )
+                                            }}
+                                        </caption>
+                                        <thead>
+                                            <tr>
+                                                <th scope="col">"Date"</th>
+                                                <th scope="col">"Series"</th>
+                                                <th scope="col">"Value"</th>
+                                                <th scope="col">"Unit"</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {move || {
+                                                chart_table_view_rows
+                                                    .get()
+                                                    .into_iter()
+                                                    .map(|row| {
+                                                        view! {
+                                                            <tr>
+                                                                <td>{row.date}</td>
+                                                                <td>
+                                                                    <span
+                                                                        class="chart-table-swatch"
+                                                                        style=format!("background: {};", row.color)
+                                                                    ></span>
+                                                                    {row.series.label()}
+                                                                </td>
+                                                                <td class="chart-table-value">{row.value}</td>
+                                                                <td>{row.unit}</td>
+                                                            </tr>
+                                                        }
+                                                    })
+                                                    .collect_view()
+                                            }}
+                                        </tbody>
+                                    </table>
+                                    <p class="chart-table-note muted">
+                                        "Dose markers are drawn at a scaled height for visibility, so they are not tabulated here; the dosage page lists every dose."
+                                    </p>
+                                </div>
+                            }
+                        >
+                            <div class="chart-canvas-wrap">
+                                <canvas
+                                    id=VIEW_CANVAS_ID
+                                    width="900"
+                                    height="420"
+                                    on:mousemove=move |ev| on_view_mouse_move.with_value(|handler| handler(ev))
+                                    on:mouseleave=move |ev| on_view_mouse_leave.with_value(|handler| handler(ev))
+                                    on:mousedown=move |ev| on_view_mouse_down.with_value(|handler| handler(ev))
+                                    on:mouseup=move |ev| on_view_mouse_up.with_value(|handler| handler(ev))
+                                    on:dblclick=move |ev| on_view_double_click.with_value(|handler| handler(ev))
+                                    on:wheel=move |ev| on_view_wheel.with_value(|handler| handler(ev))
+                                ></canvas>
+                                <div class="chart-overlay" aria-hidden="true">
+                                    {move || {
+                                        let overlay = chart_overlay(
+                                            &view_chart_state.get(),
+                                            &chart_options.get(),
+                                            view_zoom.get(),
+                                            chart_canvas_size.get().0,
+                                            chart_canvas_size.get().1,
+                                            view_hover_x.get(),
+                                            view_brush.get(),
+                                        );
+                                        let padding = chart_padding();
+                                        view! {
+                                            {overlay
+                                                .crosshair
+                                                .map(|(left, top, height)| {
+                                                    view! {
+                                                        <div
+                                                            class="chart-crosshair"
+                                                            style=format!(
+                                                                "left: {left:.1}px; top: {top:.1}px; height: {height:.1}px;",
+                                                            )
+                                                        ></div>
+                                                    }
+                                                })}
+                                            {overlay
+                                                .dots
+                                                .into_iter()
+                                                .map(|dot| {
+                                                    view! {
+                                                        <div
+                                                            class="chart-crosshair-dot"
+                                                            style=format!(
+                                                                "left: {:.1}px; top: {:.1}px; background: {};",
+                                                                dot.x,
+                                                                dot.y,
+                                                                dot.color,
+                                                            )
+                                                        ></div>
+                                                    }
+                                                })
+                                                .collect_view()}
+                                            {overlay
+                                                .brush
+                                                .map(|(left, width)| {
+                                                    view! {
+                                                        <div
+                                                            class="chart-brush"
+                                                            style=format!(
+                                                                "left: {left:.1}px; width: {width:.1}px; top: {}px; bottom: {}px;",
+                                                                padding.1, padding.3,
+                                                            )
+                                                        ></div>
+                                                    }
+                                                })}
+                                        }
+                                    }}
+                                </div>
+                            </div>
+                            <div class="chart-readout">
+                                {move || match chart_readout_view.get() {
+                                    Some(readout) => {
+                                        let date = readout.date.clone();
+                                        let rows = readout
+                                            .rows
+                                            .into_iter()
+                                            .map(|row| {
+                                                view! {
+                                                    <span class="chart-readout-row">
+                                                        <span
+                                                            class="chart-readout-swatch"
+                                                            style=format!("background: {};", row.color)
+                                                        ></span>
+                                                        <span class="chart-readout-series">
+                                                            {row.series.label()}
+                                                        </span>
+                                                        <span class="chart-readout-value">{row.value}</span>
+                                                        <span class="chart-readout-unit">{row.unit}</span>
+                                                        {row
+                                                            .recorded
+                                                            .map(|note| {
+                                                                view! {
+                                                                    <span class="chart-readout-note">{note}</span>
+                                                                }
+                                                            })}
+                                                    </span>
+                                                }
+                                            })
+                                            .collect_view();
+                                        view! {
+                                            <span class="chart-readout-date">{date}</span>
+                                            {rows}
+                                        }
+                                            .into_view()
+                                    }
+                                    None => {
+                                        view! {
+                                            <span class="muted">
+                                                "Hover the chart to read a value. Drag to zoom, shift-drag to pan, double-click to reset."
+                                            </span>
+                                        }
+                                            .into_view()
+                                    }
+                                }}
                             </div>
                         </Show>
                     </Show>
+
                     <div class="chart-note muted">
                         <p>"* Dosage values are scaled for visibility on the chart."</p>
-                        <p>"* Hover over data points for details."</p>
+                        <p>"* Hover for a readout, drag to zoom, shift-drag to pan, double-click to reset."</p>
+                        <Show when=move || chart_small_multiples.get()>
+                            <p>"* Small multiples draw one panel per series; the level chips above choose which panels exist."</p>
+                        </Show>
                         <Show when=move || !store.data.get().bloodTests.is_empty()>
                             <p>"* Hormone measurements are normalized to display units for charting; hover shows recorded units."</p>
                         </Show>
@@ -3294,4 +4123,586 @@ pub fn ViewPage() -> impl IntoView {
         .into_view(),
     )
 
+}
+
+#[cfg(test)]
+mod chart_interaction_tests {
+    use super::*;
+    use crate::charts::view::e2_value_in_unit;
+    use chrono::{Local, TimeZone};
+
+    fn ts(year: i32, month: u32, day: u32) -> i64 {
+        Local
+            .with_ymd_and_hms(year, month, day, 12, 0, 0)
+            .unwrap()
+            .timestamp_millis()
+    }
+
+    fn chart_point(
+        x: f64,
+        y: f64,
+        series: ChartSeries,
+        unit: &str,
+        label: &str,
+        timestamp_ms: i64,
+    ) -> ViewChartPoint {
+        ViewChartPoint {
+            x,
+            y,
+            label: label.to_string(),
+            color: series.color(),
+            series,
+            unit: unit.to_string(),
+            timestamp_ms,
+        }
+    }
+
+    fn test_state(points: Vec<ViewChartPoint>, e2_unit: E2DisplayUnit) -> ViewChartState {
+        let mut domain_min = points.iter().map(|p| p.x).fold(f64::INFINITY, f64::min);
+        let mut domain_max = points
+            .iter()
+            .map(|p| p.x)
+            .fold(f64::NEG_INFINITY, f64::max);
+        if (domain_max - domain_min).abs() < f64::EPSILON {
+            domain_min -= 1.0;
+            domain_max += 1.0;
+        }
+        ViewChartState {
+            domain_min,
+            domain_max,
+            y_min: 0.0,
+            y_max: 100.0,
+            x_label: "Date".to_string(),
+            y_label: "Levels".to_string(),
+            points,
+            dosage_points: Vec::new(),
+            first_dose: None,
+            use_days: false,
+            has_data: true,
+            e2_unit,
+        }
+    }
+
+    fn e2_state(e2_unit: E2DisplayUnit) -> ViewChartState {
+        test_state(
+            vec![
+                chart_point(
+                    0.0,
+                    340.0,
+                    ChartSeries::Estradiol,
+                    "pmol/L",
+                    "Estradiol: 340 pmol/L (Nov 01)",
+                    ts(2026, 11, 1),
+                ),
+                chart_point(
+                    10.0,
+                    410.0,
+                    ChartSeries::Estradiol,
+                    "pmol/L",
+                    "Estradiol: 410 pmol/L (Nov 11)",
+                    ts(2026, 11, 11),
+                ),
+            ],
+            e2_unit,
+        )
+    }
+
+    /// A plot area with round numbers, so pixel arithmetic is checkable by eye:
+    /// x 0..100 across 800px starting at 100px.
+    fn fixed_geometry() -> ChartGeometry {
+        ChartGeometry {
+            left: 100.0,
+            top: 10.0,
+            width: 800.0,
+            height: 400.0,
+            x_min: 0.0,
+            x_max: 100.0,
+        }
+    }
+
+    #[test]
+    fn chart_options_follow_the_settings_unit_until_a_chip_is_chosen() {
+        // The regression: a pg/mL user must stay on pg/mL with no chip pressed.
+        let pg_ml_state = e2_state(E2DisplayUnit::PgMl);
+        let options = chart_options_from(&pg_ml_state, None, false, false, false, false);
+        assert_eq!(options.e2_unit, E2DisplayUnit::PgMl);
+
+        // Choosing a unit wins over the settings.
+        let options = chart_options_from(&pg_ml_state, Some(E2DisplayUnit::PmolL), false, false, false, false);
+        assert_eq!(options.e2_unit, E2DisplayUnit::PmolL);
+
+        // And the default chart is untouched: pmol/L settings with nothing
+        // pressed is exactly `ChartOptions::default()`.
+        let pmol_state = e2_state(E2DisplayUnit::PmolL);
+        let options = chart_options_from(&pmol_state, None, false, false, false, false);
+        assert_eq!(options, ChartOptions::default());
+    }
+
+    #[test]
+    fn a_pg_ml_user_reads_pg_ml_in_the_readout() {
+        let state = test_state(
+            vec![chart_point(
+                0.0,
+                92.6,
+                ChartSeries::Estradiol,
+                "pg/mL",
+                "Estradiol: 340 pmol/L -> 92.6 pg/mL (Nov 01)",
+                ts(2026, 11, 1),
+            )],
+            E2DisplayUnit::PgMl,
+        );
+        let options = chart_options_from(&state, None, false, false, false, false);
+        let rows = readout_rows(&state, &options, 0.0);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].unit, "pg/mL");
+        assert_eq!(rows[0].value, "92.6");
+        assert_eq!(rows[0].recorded.as_deref(), Some("recorded 340 pmol/L"));
+    }
+
+    #[test]
+    fn the_unit_chip_converts_the_readout_and_the_table_together() {
+        let state = e2_state(E2DisplayUnit::PmolL);
+        let pmol_options = chart_options_from(&state, None, false, false, false, false);
+        let pg_ml_options = chart_options_from(&state, Some(E2DisplayUnit::PgMl), false, false, false, false);
+
+        let pmol_rows = readout_rows(&state, &pmol_options, 0.0);
+        let pg_ml_rows = readout_rows(&state, &pg_ml_options, 0.0);
+        let expected = e2_value_in_unit(340.0, E2DisplayUnit::PmolL, E2DisplayUnit::PgMl);
+        assert_eq!(pmol_rows[0].unit, "pmol/L");
+        assert_eq!(pmol_rows[0].value, "340");
+        assert_eq!(pg_ml_rows[0].unit, "pg/mL");
+        assert_eq!(pg_ml_rows[0].value, format_chart_value(expected));
+
+        // The table reports the same numbers as the readout, in both units. It
+        // is newest first, so the old point (x = 0) is its last row.
+        let pmol_table = chart_table_rows(&state, &pmol_options);
+        let pg_ml_table = chart_table_rows(&state, &pg_ml_options);
+        let pmol_oldest = pmol_table.last().expect("table rows");
+        let pg_ml_oldest = pg_ml_table.last().expect("table rows");
+        assert_eq!(pmol_oldest.value, pmol_rows[0].value);
+        assert_eq!(pmol_oldest.unit, "pmol/L");
+        assert_eq!(pg_ml_oldest.value, pg_ml_rows[0].value);
+        assert_eq!(pg_ml_oldest.unit, "pg/mL");
+    }
+
+    #[test]
+    fn readout_lists_every_visible_series_at_the_hovered_x() {
+        let mut state = test_state(
+            vec![
+                chart_point(0.0, 340.0, ChartSeries::Estradiol, "pmol/L", "", ts(2026, 11, 1)),
+                chart_point(0.0, 45.0, ChartSeries::Testosterone, "ng/dL", "", ts(2026, 11, 1)),
+                chart_point(10.0, 410.0, ChartSeries::Estradiol, "pmol/L", "", ts(2026, 11, 11)),
+            ],
+            E2DisplayUnit::PmolL,
+        );
+        let options = ChartOptions::default();
+        let rows = readout_rows(&state, &options, 0.0);
+        assert_eq!(
+            rows.iter().map(|row| row.series).collect::<Vec<_>>(),
+            vec![ChartSeries::Estradiol, ChartSeries::Testosterone]
+        );
+        assert_eq!(rows[1].unit, "ng/dL");
+        assert_eq!(rows[1].value, "45");
+
+        // A column with one series lists one series.
+        assert_eq!(readout_rows(&state, &options, 10.0).len(), 1);
+
+        // A series that is not plotted at all never appears.
+        state.points.retain(|point| point.series == ChartSeries::Estradiol);
+        assert_eq!(readout_rows(&state, &options, 0.0).len(), 1);
+    }
+
+    #[test]
+    fn a_dose_column_reports_the_dose_not_a_scaled_height() {
+        let mut state = test_state(
+            vec![chart_point(5.0, 300.0, ChartSeries::Estradiol, "pmol/L", "", ts(2026, 11, 6))],
+            E2DisplayUnit::PmolL,
+        );
+        state.dosage_points = vec![chart_point(
+            5.0,
+            50.0,
+            ChartSeries::Dose,
+            "",
+            "Injection: 5.00 mg (2026-11-06)",
+            ts(2026, 11, 6),
+        )];
+        let rows = readout_rows(&state, &ChartOptions::default(), 5.0);
+        let dose = rows
+            .iter()
+            .find(|row| row.series == ChartSeries::Dose)
+            .expect("dose row");
+        assert_eq!(dose.value, "Injection: 5.00 mg");
+        assert_eq!(dose.unit, "");
+    }
+
+    #[test]
+    fn recorded_note_keeps_only_a_converted_record() {
+        assert_eq!(
+            recorded_note("Estradiol: 340 pmol/L -> 92.6 pg/mL (Nov 01)").as_deref(),
+            Some("recorded 340 pmol/L")
+        );
+        assert_eq!(recorded_note("Estradiol: 340 pmol/L (Nov 01)"), None);
+        assert_eq!(recorded_note(""), None);
+    }
+
+    #[test]
+    fn chart_geometry_uses_the_padding_the_chart_draws_with() {
+        let state = e2_state(E2DisplayUnit::PmolL);
+        let geometry = chart_geometry(&state, ViewZoom::default(), 900.0, 420.0);
+        let padding = chart_padding();
+        assert_eq!(geometry.left, padding.0);
+        assert_eq!(geometry.top, padding.1);
+        assert!((geometry.width - (900.0 - padding.0 - padding.2)).abs() < 1e-9);
+        assert!((geometry.height - (420.0 - padding.1 - padding.3)).abs() < 1e-9);
+        assert_eq!(geometry.x_min, state.domain_min);
+        assert_eq!(geometry.x_max, state.domain_max);
+    }
+
+    #[test]
+    fn geometry_follows_a_zoomed_window() {
+        let state = e2_state(E2DisplayUnit::PmolL);
+        let zoom = ViewZoom {
+            x_min: Some(2.0),
+            x_max: Some(8.0),
+        };
+        let geometry = chart_geometry(&state, zoom, 900.0, 420.0);
+        assert_eq!(geometry.x_min, 2.0);
+        assert_eq!(geometry.x_max, 8.0);
+        assert!((geometry.x_to_px(2.0) - geometry.left).abs() < 1e-9);
+        assert!((geometry.x_to_px(8.0) - geometry.right()).abs() < 1e-9);
+    }
+
+    #[test]
+    fn nearest_column_snaps_to_the_closest_point() {
+        let state = test_state(
+            vec![
+                chart_point(0.0, 10.0, ChartSeries::Estradiol, "pmol/L", "", 1),
+                chart_point(10.0, 20.0, ChartSeries::Estradiol, "pmol/L", "", 2),
+                chart_point(20.0, 30.0, ChartSeries::Estradiol, "pmol/L", "", 3),
+            ],
+            E2DisplayUnit::PmolL,
+        );
+        let geometry = fixed_geometry();
+        // x 10 sits at px 180; the cursor just to the right of it.
+        assert_eq!(nearest_column_x(&state, geometry, 190.0), Some(10.0));
+        assert_eq!(nearest_column_x(&state, geometry, 395.0), Some(20.0));
+        // Past the end of the domain the cursor still snaps to the last column,
+        // clamped to the plot edge.
+        assert_eq!(nearest_column_x(&state, geometry, 5000.0), Some(20.0));
+    }
+
+    #[test]
+    fn between_two_points_the_nearer_column_wins() {
+        let state = test_state(
+            vec![
+                chart_point(0.0, 10.0, ChartSeries::Estradiol, "pmol/L", "", 1),
+                chart_point(10.0, 20.0, ChartSeries::Estradiol, "pmol/L", "", 2),
+            ],
+            E2DisplayUnit::PmolL,
+        );
+        let geometry = fixed_geometry();
+        let mid_left = (geometry.x_to_px(0.0) + geometry.x_to_px(10.0)) / 2.0 - 1.0;
+        let mid_right = mid_left + 2.0;
+        assert_eq!(nearest_column_x(&state, geometry, mid_left), Some(0.0));
+        assert_eq!(nearest_column_x(&state, geometry, mid_right), Some(10.0));
+    }
+
+    #[test]
+    fn a_cursor_away_from_every_point_still_snaps_to_a_column() {
+        // Two points close together in x but far up the plot; the cursor is at
+        // the foot of the plot, well outside find_nearest_point's 48px radius.
+        let state = test_state(
+            vec![
+                chart_point(0.0, 95.0, ChartSeries::Estradiol, "pmol/L", "", 1),
+                chart_point(10.0, 95.0, ChartSeries::Estradiol, "pmol/L", "", 2),
+            ],
+            E2DisplayUnit::PmolL,
+        );
+        let options = ChartOptions::default();
+        let geometry = chart_geometry(&state, ViewZoom::default(), 900.0, 420.0);
+        let cursor_x = geometry.x_to_px(9.0);
+        let snapped = snapped_x(&state, &options, geometry, cursor_x, geometry.top + geometry.height - 4.0);
+        assert_eq!(snapped, Some(10.0));
+    }
+
+    #[test]
+    fn a_cursor_on_a_point_snaps_to_that_points_x() {
+        let state = test_state(
+            vec![
+                chart_point(0.0, 20.0, ChartSeries::Estradiol, "pmol/L", "", 1),
+                chart_point(10.0, 80.0, ChartSeries::Estradiol, "pmol/L", "", 2),
+            ],
+            E2DisplayUnit::PmolL,
+        );
+        let options = ChartOptions::default();
+        let geometry = chart_geometry(&state, ViewZoom::default(), 900.0, 420.0);
+        let (y_min, y_max) = plotted_y_range(&state, &options);
+        let cursor_x = geometry.x_to_px(10.0);
+        let cursor_y = geometry.top + geometry.height - y_fraction(80.0, y_min, y_max, false) * geometry.height;
+        assert_eq!(
+            snapped_x(&state, &options, geometry, cursor_x, cursor_y),
+            Some(10.0)
+        );
+    }
+
+    #[test]
+    fn no_points_snap_to_nothing() {
+        let state = test_state(vec![], E2DisplayUnit::PmolL);
+        assert_eq!(nearest_column_x(&state, fixed_geometry(), 400.0), None);
+        assert_eq!(
+            snapped_x(&state, &ChartOptions::default(), fixed_geometry(), 400.0, 200.0),
+            None
+        );
+    }
+
+    #[test]
+    fn a_brush_maps_pixels_to_the_domain() {
+        let geometry = fixed_geometry();
+        // 300px -> x 25, 500px -> x 50 on this plot.
+        assert_eq!(brush_window(geometry, 300.0, 500.0), (25.0, 50.0));
+        // Dragging right to left selects the same window.
+        assert_eq!(brush_window(geometry, 500.0, 300.0), (25.0, 50.0));
+        // A drag that leaves the plot clamps to its edges.
+        assert_eq!(brush_window(geometry, -50.0, 2000.0), (0.0, 100.0));
+    }
+
+    #[test]
+    fn a_brush_zooms_through_clamp_zoom() {
+        let state = e2_state(E2DisplayUnit::PmolL);
+        // The state's own domain is 0..10 days.
+        let geometry = ChartGeometry {
+            left: 100.0,
+            top: 10.0,
+            width: 800.0,
+            height: 400.0,
+            x_min: state.domain_min,
+            x_max: state.domain_max,
+        };
+        let zoom = brush_zoom(&state, geometry, geometry.left, geometry.left + 400.0);
+        assert_eq!(zoom.x_min, Some(0.0));
+        assert_eq!(zoom.x_max, Some(5.0));
+
+        // A drag across the whole plot resets rather than pinning the domain.
+        let zoom = brush_zoom(&state, geometry, geometry.left, geometry.right());
+        assert_eq!(zoom, ViewZoom::default());
+    }
+
+    #[test]
+    fn the_selection_rectangle_only_shows_once_the_drag_moves() {
+        let geometry = fixed_geometry();
+        let click = BrushState {
+            start_x: 300.0,
+            current_x: 300.5,
+        };
+        assert_eq!(brush_rect(geometry, click), None);
+
+        let drag = BrushState {
+            start_x: 300.0,
+            current_x: 340.0,
+        };
+        assert_eq!(brush_rect(geometry, drag), Some((300.0, 40.0)));
+
+        // Dragging backwards gives the same rectangle, and it stops at the edge.
+        let drag = BrushState {
+            start_x: 880.0,
+            current_x: 940.0,
+        };
+        assert_eq!(brush_rect(geometry, drag), Some((880.0, 20.0)));
+    }
+
+    #[test]
+    fn a_short_drag_is_a_click_not_a_zoom() {
+        let state = e2_state(E2DisplayUnit::PmolL);
+        let geometry = fixed_geometry();
+        // A click, and a drag shorter than the threshold, ask for no zoom at all.
+        for span in [0.0, 1.0, BRUSH_MIN_DRAG_PX - 0.5] {
+            let click = BrushState {
+                start_x: 300.0,
+                current_x: 300.0 + span,
+            };
+            assert_eq!(brush_zoom_for_drag(&state, geometry, click), None);
+        }
+        // Past the threshold the drag is a brush and zooms.
+        let drag = BrushState {
+            start_x: 300.0,
+            current_x: 340.0,
+        };
+        assert_eq!(
+            brush_zoom_for_drag(&state, geometry, drag),
+            Some(brush_zoom(&state, geometry, 300.0, 340.0))
+        );
+    }
+
+    #[test]
+    fn y_fractions_are_linear_or_geometric_with_the_axis() {
+        assert_eq!(y_fraction(50.0, 0.0, 100.0, false), 0.5);
+        assert_eq!(y_fraction(0.0, 0.0, 100.0, false), 0.0);
+        assert_eq!(y_fraction(100.0, 0.0, 100.0, false), 1.0);
+        // One decade up a two-decade axis.
+        assert_eq!(y_fraction(10.0, 1.0, 100.0, true), 0.5);
+        assert_eq!(y_fraction(1.0, 1.0, 100.0, true), 0.0);
+        // Values a log axis cannot place sit on the floor rather than a NaN.
+        assert_eq!(y_fraction(0.0, 1.0, 100.0, true), 0.0);
+        assert_eq!(y_fraction(f64::NAN, 0.0, 100.0, false), 0.5);
+        assert_eq!(y_fraction(5.0, 10.0, 10.0, false), 0.5);
+    }
+
+    #[test]
+    fn crosshair_dots_land_on_the_plotted_points() {
+        let state = test_state(
+            vec![
+                chart_point(0.0, 20.0, ChartSeries::Estradiol, "pmol/L", "", 1),
+                chart_point(10.0, 80.0, ChartSeries::Estradiol, "pmol/L", "", 2),
+            ],
+            E2DisplayUnit::PmolL,
+        );
+        let options = ChartOptions::default();
+        let geometry = chart_geometry(&state, ViewZoom::default(), 900.0, 420.0);
+        let dots = crosshair_dots(&state, &options, geometry, 0.0);
+        assert_eq!(dots.len(), 1);
+        assert!((dots[0].x - geometry.x_to_px(0.0)).abs() < 1e-9);
+        assert!((dots[0].y - geometry.top).abs() < geometry.height);
+        assert_eq!(dots[0].color, chart_series_css_color(ChartSeries::Estradiol));
+        // Outside the domain nothing is marked.
+        assert!(crosshair_dots(&state, &options, geometry, 99.0).is_empty());
+    }
+
+    #[test]
+    fn small_multiples_put_each_dot_in_its_own_panel() {
+        let state = test_state(
+            vec![
+                chart_point(0.0, 300.0, ChartSeries::Estradiol, "pmol/L", "", 1),
+                chart_point(0.0, 45.0, ChartSeries::Testosterone, "ng/dL", "", 1),
+            ],
+            E2DisplayUnit::PmolL,
+        );
+        let options = chart_options_from(&state, None, false, false, false, true);
+        let geometry = chart_geometry(&state, ViewZoom::default(), 900.0, 420.0);
+        let dots = crosshair_dots(&state, &options, geometry, 0.0);
+        assert_eq!(dots.len(), 2);
+        let canvas_height = geometry.height + chart_padding().1 + chart_padding().3;
+        // Estradiol's panel is the top half, testosterone's the bottom half.
+        assert!(dots[0].y < canvas_height / 2.0);
+        assert!(dots[1].y > canvas_height / 2.0);
+    }
+
+    #[test]
+    fn a_crosshair_outside_the_zoomed_window_is_not_drawn() {
+        let state = e2_state(E2DisplayUnit::PmolL);
+        let options = ChartOptions::default();
+        let zoom = ViewZoom {
+            x_min: Some(2.0),
+            x_max: Some(8.0),
+        };
+        let overlay = chart_overlay(&state, &options, zoom, 900.0, 420.0, Some(9.5), None);
+        assert_eq!(overlay.crosshair, None);
+        assert!(overlay.dots.is_empty());
+
+        let inside = chart_overlay(&state, &options, zoom, 900.0, 420.0, Some(4.0), None);
+        assert!(inside.crosshair.is_some());
+    }
+
+    #[test]
+    fn snapping_ignores_points_behind_a_zoomed_axis() {
+        let state = test_state(
+            vec![
+                chart_point(0.0, 20.0, ChartSeries::Estradiol, "pmol/L", "", 1),
+                chart_point(10.0, 80.0, ChartSeries::Estradiol, "pmol/L", "", 2),
+            ],
+            E2DisplayUnit::PmolL,
+        );
+        let options = ChartOptions::default();
+        // Zoomed to the second half: the point at x = 0 is off screen.
+        let zoom = ViewZoom {
+            x_min: Some(5.0),
+            x_max: Some(10.0),
+        };
+        let geometry = chart_geometry(&state, zoom, 900.0, 420.0);
+        let (y_min, y_max) = plotted_y_range(&state, &options);
+        let cursor_x = geometry.x_to_px(10.0) - 30.0;
+        let cursor_y = geometry.top + geometry.height
+            - y_fraction(80.0, y_min, y_max, false) * geometry.height;
+        assert_eq!(
+            snapped_x(&state, &options, geometry, cursor_x, cursor_y),
+            Some(10.0)
+        );
+    }
+
+    #[test]
+    fn overlay_bundles_the_crosshair_the_dots_and_the_brush() {
+        let state = e2_state(E2DisplayUnit::PmolL);
+        let options = ChartOptions::default();
+        let padding = chart_padding();
+        let empty = chart_overlay(&state, &options, ViewZoom::default(), 900.0, 420.0, None, None);
+        assert_eq!(empty.crosshair, None);
+        assert!(empty.dots.is_empty());
+        assert_eq!(empty.brush, None);
+
+        let hovered = chart_overlay(
+            &state,
+            &options,
+            ViewZoom::default(),
+            900.0,
+            420.0,
+            Some(0.0),
+            Some(BrushState {
+                start_x: 200.0,
+                current_x: 300.0,
+            }),
+        );
+        let (left, top, height) = hovered.crosshair.expect("crosshair");
+        assert_eq!(top, padding.1);
+        assert!((height - (420.0 - padding.1 - padding.3)).abs() < 1e-9);
+        assert!((left - chart_geometry(&state, ViewZoom::default(), 900.0, 420.0).left).abs() < 1e-9);
+        assert_eq!(hovered.dots.len(), 1);
+        assert_eq!(hovered.brush, Some((200.0, 100.0)));
+    }
+
+    #[test]
+    fn table_rows_are_newest_first_with_their_series_and_unit() {
+        let mut state = test_state(
+            vec![
+                chart_point(0.0, 340.0, ChartSeries::Estradiol, "pmol/L", "", ts(2026, 11, 1)),
+                chart_point(10.0, 45.0, ChartSeries::Testosterone, "ng/dL", "", ts(2026, 11, 11)),
+            ],
+            E2DisplayUnit::PmolL,
+        );
+        state.use_days = false;
+        let rows = chart_table_rows(&state, &ChartOptions::default());
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].series, ChartSeries::Testosterone);
+        assert_eq!(rows[0].date, fmt_date_label(ts(2026, 11, 11), "date", None));
+        assert_eq!(rows[0].unit, "ng/dL");
+        assert_eq!(rows[1].series, ChartSeries::Estradiol);
+        assert_eq!(rows[1].unit, "pmol/L");
+    }
+
+    #[test]
+    fn table_rows_keep_chart_order_within_one_date() {
+        let state = test_state(
+            vec![
+                chart_point(0.0, 45.0, ChartSeries::Testosterone, "ng/dL", "", ts(2026, 11, 1)),
+                chart_point(0.0, 340.0, ChartSeries::Estradiol, "pmol/L", "", ts(2026, 11, 1)),
+            ],
+            E2DisplayUnit::PmolL,
+        );
+        let rows = chart_table_rows(&state, &ChartOptions::default());
+        assert_eq!(rows[0].series, ChartSeries::Estradiol);
+        assert_eq!(rows[1].series, ChartSeries::Testosterone);
+    }
+
+    #[test]
+    fn chart_values_read_at_two_decimals_without_trailing_zeros() {
+        assert_eq!(format_chart_value(340.0), "340");
+        assert_eq!(format_chart_value(92.44), "92.44");
+        assert_eq!(format_chart_value(0.1 + 0.2), "0.3");
+        assert_eq!(format_chart_value(f64::NAN), "-");
+        assert_eq!(format_chart_value(f64::INFINITY), "-");
+    }
+
+    #[test]
+    fn pressed_reports_the_toggle_state_for_aria() {
+        assert_eq!(pressed(true), "true");
+        assert_eq!(pressed(false), "false");
+    }
 }

@@ -980,7 +980,7 @@ pub fn draw_view_chart(
         let plan = plan_y_axis(options.log_scale, panel.y_min, panel.y_max, &plotted);
         match plan {
             YAxisPlan::Linear { min, max } => draw_one_panel(
-                &backend, panel, state, options, plan, x_min, x_max, min..max, true,
+                &backend, panel, state, options, plan, x_min, x_max, min..max, true, true,
             ),
             YAxisPlan::Log { min, max } => draw_one_panel(
                 &backend,
@@ -992,6 +992,7 @@ pub fn draw_view_chart(
                 x_max,
                 (min..max).log_scale(),
                 true,
+                true,
             ),
         }
     } else {
@@ -1002,7 +1003,7 @@ pub fn draw_view_chart(
             let plan = plan_y_axis(options.log_scale, panel.y_min, panel.y_max, &plotted);
             match plan {
                 YAxisPlan::Linear { min, max } => draw_one_panel(
-                    area, panel, state, options, plan, x_min, x_max, min..max, is_bottom,
+                    area, panel, state, options, plan, x_min, x_max, min..max, is_bottom, false,
                 ),
                 YAxisPlan::Log { min, max } => draw_one_panel(
                     area,
@@ -1014,6 +1015,7 @@ pub fn draw_view_chart(
                     x_max,
                     (min..max).log_scale(),
                     is_bottom,
+                    false,
                 ),
             }
         }
@@ -1033,21 +1035,35 @@ fn draw_one_panel<YR>(
     x_max: f64,
     y_range: YR,
     is_bottom: bool,
+    is_only_panel: bool,
 ) where
     YR: AsRangedCoord<Value = f64>,
     YR::CoordDescType: ValueFormatter<f64>,
 {
+    // A split panel is short: it gets fewer ticks, a wider gutter for them and a
+    // smaller tick font, so the axis description does not sit on top of the numbers.
+    let y_label_area = if is_only_panel {
+        CHART_Y_LABEL as i32
+    } else {
+        CHART_Y_LABEL as i32 + 16
+    };
+    // dim_in_pixel is in device pixels; a phone at dpr 2 or 3 would otherwise look wide.
+    let canvas_width_css = (area.dim_in_pixel().0 as f64 / window().device_pixel_ratio()) as i32;
+    // A narrow plot needs room on the right for its final date label.
+    let margin_right = if canvas_width_css < 560 { 34 } else { CHART_MARGIN as i32 };
     let mut chart = match ChartBuilder::on(area)
         .margin(CHART_MARGIN as i32)
+        .margin_right(margin_right)
         .x_label_area_size(if is_bottom { CHART_X_LABEL as i32 } else { 0 })
-        .y_label_area_size(CHART_Y_LABEL as i32)
+        .y_label_area_size(y_label_area)
         .build_cartesian_2d(x_min..x_max, y_range)
     {
         Ok(chart) => chart,
         Err(_) => return,
     };
 
-    let label_style = ("Quicksand", 24)
+    let tick_font = if is_only_panel { 24 } else { 16 };
+    let label_style = ("Quicksand", tick_font)
         .into_font()
         .color(&RGBColor(200, 188, 214));
     let axis_desc_style = ("Quicksand", 24)
@@ -1069,8 +1085,9 @@ fn draw_one_panel<YR>(
     };
 
     let mut mesh = chart.configure_mesh();
-    mesh.x_labels(if is_bottom { 6 } else { 0 })
-        .y_labels(6)
+    let x_tick_count = if canvas_width_css < 560 { 3 } else { 6 };
+    mesh.x_labels(if is_bottom { x_tick_count } else { 0 })
+        .y_labels(if is_only_panel { 6 } else { 3 })
         .x_label_formatter(&x_label_formatter)
         .label_style(label_style)
         .axis_desc_style(axis_desc_style)
@@ -1082,8 +1099,25 @@ fn draw_one_panel<YR>(
     if is_bottom {
         mesh.x_desc(state.x_label.clone());
     }
-    mesh.y_desc(panel.title.clone());
+    // One rotated description per panel would stack three labels in the same
+    // gutter on a split chart, so only a lone panel gets one.
+    if is_only_panel {
+        mesh.y_desc(panel.title.clone());
+    }
     mesh.draw().ok();
+
+    if !is_only_panel {
+        let name_style = ("Quicksand", 15)
+            .into_font()
+            .color(&RGBColor(200, 188, 214));
+        // Clear of the tick labels in the gutter, at the top of the plot.
+        area.draw(&Text::new(
+            panel.title.clone(),
+            (CHART_MARGIN as i32 + y_label_area + 8, 6),
+            name_style,
+        ))
+        .ok();
+    }
 
     let (axis_min, axis_max) = plan.bounds();
 
