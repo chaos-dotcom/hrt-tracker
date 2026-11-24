@@ -999,6 +999,14 @@ pub fn draw_view_chart(
         let areas = backend.split_evenly((panels.len(), 1));
         for (index, (area, panel)) in areas.iter().zip(panels.iter()).enumerate() {
             let is_bottom = index + 1 == panels.len();
+            if index > 0 {
+                let panel_w = area.dim_in_pixel().0 as i32;
+                area.draw(&PathElement::new(
+                    vec![(0, 1), (panel_w, 1)],
+                    ShapeStyle::from(&RGBColor(58, 52, 80)).stroke_width(1),
+                ))
+                .ok();
+            }
             let plotted: Vec<f64> = panel.points.iter().map(|point| point.y).collect();
             let plan = plan_y_axis(options.log_scale, panel.y_min, panel.y_max, &plotted);
             match plan {
@@ -1051,8 +1059,14 @@ fn draw_one_panel<YR>(
     let canvas_width_css = (area.dim_in_pixel().0 as f64 / window().device_pixel_ratio()) as i32;
     // A narrow plot needs room on the right for its final date label.
     let margin_right = if canvas_width_css < 560 { 34 } else { CHART_MARGIN as i32 };
+    let margin_bottom = if is_only_panel {
+        CHART_MARGIN as i32
+    } else {
+        CHART_MARGIN as i32 + 14
+    };
     let mut chart = match ChartBuilder::on(area)
         .margin(CHART_MARGIN as i32)
+        .margin_bottom(margin_bottom)
         .margin_right(margin_right)
         .x_label_area_size(if is_bottom { CHART_X_LABEL as i32 } else { 0 })
         .y_label_area_size(y_label_area)
@@ -1070,7 +1084,12 @@ fn draw_one_panel<YR>(
         .into_font()
         .color(&RGBColor(200, 188, 214));
     let bold_grid = ShapeStyle::from(&RGBColor(64, 58, 86)).stroke_width(1);
-    let light_grid = ShapeStyle::from(&RGBColor(42, 38, 60)).stroke_width(1);
+    // Several short panels stacked would turn a dense minor grid into noise.
+    let light_grid = if is_only_panel {
+        ShapeStyle::from(&RGBColor(42, 38, 60)).stroke_width(1)
+    } else {
+        ShapeStyle::from(&RGBColor(30, 28, 44)).stroke_width(1)
+    };
     let use_days = state.use_days;
     let x_label_formatter = move |value: &f64| {
         if use_days {
