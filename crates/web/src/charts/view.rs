@@ -122,8 +122,8 @@ impl ChartSeries {
     pub fn panel_title(self, e2_unit: E2DisplayUnit) -> String {
         let unit = match self {
             ChartSeries::Estradiol => Some(e2_unit.label()),
-            ChartSeries::Testosterone => Some("ng/dL"),
-            ChartSeries::Progesterone => Some("ng/mL"),
+            ChartSeries::Testosterone => Some("nmol/L"),
+            ChartSeries::Progesterone => Some("nmol/L"),
             ChartSeries::Fsh | ChartSeries::Lh => Some("mIU/mL"),
             ChartSeries::Prolactin | ChartSeries::Shbg => Some("recorded unit"),
             ChartSeries::FudgeFactor => Some("%"),
@@ -342,21 +342,27 @@ pub fn compute_view_chart_state(
         }
         if show_t {
             if let Some(value) = test.testLevel {
+                // Testosterone is plotted in nmol/L, the unit labs report and the one
+                // people read. A result recorded in ng/dL is converted once, here.
                 let raw_unit = test.testUnit.clone().unwrap_or(HormoneUnits::TNmolL);
-                let plot_val = convert_testosterone_to_ng_dl(value, &raw_unit);
-                let unit_label = "ng/dL";
-                let tooltip = if raw_unit != HormoneUnits::TNgDl {
+                let plot_val = if raw_unit == HormoneUnits::TNmolL {
+                    value
+                } else {
+                    value / 28.818
+                };
+                let unit_label = "nmol/L";
+                let tooltip = if raw_unit == HormoneUnits::TNmolL {
                     format!(
-                        "Testosterone: {} {} -> {} {} ({})",
-                        fmt_blood_value(value),
-                        hormone_unit_label(&raw_unit),
+                        "Testosterone: {} {} ({})",
                         fmt_blood_value(plot_val),
                         unit_label,
                         date_short
                     )
                 } else {
                     format!(
-                        "Testosterone: {} {} ({})",
+                        "Testosterone: {} {} -> {} {} ({})",
+                        fmt_blood_value(value),
+                        hormone_unit_label(&raw_unit),
                         fmt_blood_value(plot_val),
                         unit_label,
                         date_short
@@ -381,19 +387,37 @@ pub fn compute_view_chart_state(
                     .progesteroneUnit
                     .clone()
                     .unwrap_or(HormoneUnits::TNmolL);
-                let plot_val = convert_progesterone_to_ng_ml(value, &raw_unit);
-                let tooltip = format!(
-                    "Progesterone: {} ng/mL ({})",
-                    fmt_blood_value(plot_val),
-                    date_short
-                );
+                // Progesterone likewise stays in nmol/L rather than ng/mL.
+                let plot_val = if raw_unit == HormoneUnits::TNmolL {
+                    value
+                } else {
+                    value / 0.31
+                };
+                let unit_label = "nmol/L";
+                let tooltip = if raw_unit == HormoneUnits::TNmolL {
+                    format!(
+                        "Progesterone: {} {} ({})",
+                        fmt_blood_value(plot_val),
+                        unit_label,
+                        date_short
+                    )
+                } else {
+                    format!(
+                        "Progesterone: {} {} -> {} {} ({})",
+                        fmt_blood_value(value),
+                        hormone_unit_label(&raw_unit),
+                        fmt_blood_value(plot_val),
+                        unit_label,
+                        date_short
+                    )
+                };
                 points.push(ViewChartPoint {
                     x,
                     y: plot_val,
                     label: tooltip,
                     color: ChartSeries::Progesterone.color(),
                     series: ChartSeries::Progesterone,
-                    unit: "ng/mL".to_string(),
+                    unit: unit_label.to_string(),
                     timestamp_ms: test.date,
                 });
                 all_values.push(plot_val);
@@ -749,7 +773,13 @@ pub fn layout_panels(state: &ViewChartState, options: &ChartOptions) -> Vec<Char
         .collect();
 
     let present = series_present(&plotted);
-    if options.separate_panels && present.len() > 1 {
+    // Series with different units cannot share one axis honestly: a progesterone
+    // result in nmol/L against estradiol in pmol/L reads as a flat line on the
+    // floor. Split those automatically; the chip only forces it for equal units.
+    let units: std::collections::BTreeSet<&str> =
+        plotted.iter().map(|point| point.unit.as_str()).collect();
+    let mixed_units = units.len() > 1;
+    if (options.separate_panels || mixed_units) && present.len() > 1 {
         return present
             .into_iter()
             .map(|series| {
@@ -762,7 +792,19 @@ pub fn layout_panels(state: &ViewChartState, options: &ChartOptions) -> Vec<Char
                 let (y_min, y_max) = padded_y_range(&values);
                 ChartPanel {
                     series: Some(series),
-                    title: series.panel_title(options.e2_unit),
+                    // Name the unit the points really carry, so a panel cannot claim
+                    // ng/dL while its axis reads nmol/L.
+                    title: points
+                        .iter()
+                        .find(|point| point.series == series)
+                        .map(|point| {
+                            if point.unit.is_empty() {
+                                series.label().to_string()
+                            } else {
+                                format!("{} ({})", series.label(), point.unit)
+                            }
+                        })
+                        .unwrap_or_else(|| series.panel_title(options.e2_unit)),
                     y_min,
                     y_max,
                     points,
@@ -954,6 +996,25 @@ pub fn draw_view_chart(
     else {
         return;
     };
+    // A split chart needs roughly 170 px per panel for its plot plus a label row;
+    // at the CSS height of a single chart the panels and their axes overlap.
+    let panels = layout_panels(state, options);
+    let wanted_height = if panels.len() > 1 {
+        (panels.len() as f64 * 170.0).max(280.0)
+    } else {
+        0.0
+    };
+    if wanted_height > 0.0 {
+        let current = canvas.get_bounding_client_rect().height();
+        if (current - wanted_height).abs() > 1.0 {
+            let style = format!("height: {:.0}px;", wanted_height);
+            if canvas.get_attribute("style").as_deref() != Some(style.as_str()) {
+                canvas.set_attribute("style", &style).ok();
+            }
+        }
+    } else if canvas.get_attribute("style").is_some() {
+        canvas.remove_attribute("style").ok();
+    }
     let rect = canvas.get_bounding_client_rect();
     let width = rect.width().max(320.0);
     let height = rect.height().max(280.0);
@@ -968,7 +1029,6 @@ pub fn draw_view_chart(
 
     let x_min = zoom.x_min.unwrap_or(state.domain_min);
     let x_max = zoom.x_max.unwrap_or(state.domain_max);
-    let panels = layout_panels(state, options);
     if panels.is_empty() {
         backend.present().ok();
         return;
@@ -1264,8 +1324,8 @@ mod tests {
     fn two_series_state() -> ViewChartState {
         let mut estradiol = point(10.0, 367.13, ChartSeries::Estradiol);
         estradiol.unit = "pmol/L".to_string();
-        let mut testosterone = point(20.0, 55.0, ChartSeries::Testosterone);
-        testosterone.unit = "ng/dL".to_string();
+        let mut testosterone = point(20.0, 1.91, ChartSeries::Testosterone);
+        testosterone.unit = "nmol/L".to_string();
         let mut estradiol_late = point(30.0, 734.26, ChartSeries::Estradiol);
         estradiol_late.unit = "pmol/L".to_string();
         state(
@@ -1298,24 +1358,33 @@ mod tests {
             e2_unit: E2DisplayUnit::PgMl,
             ..ChartOptions::default()
         };
+        // Estradiol in pg/mL and testosterone in nmol/L cannot share an axis, so
+        // these two series get a panel each.
         let panels = layout_panels(&state, &options);
-        assert_eq!(panels.len(), 1);
-        let estradiol: Vec<&ViewChartPoint> = panels[0]
-            .points
+        assert_eq!(panels.len(), 2);
+        let estradiol_panel = panels
             .iter()
-            .filter(|point| point.series == ChartSeries::Estradiol)
-            .collect();
-        assert_eq!(estradiol.len(), 2);
-        assert!((estradiol[0].y - 100.0).abs() < 0.1, "got {}", estradiol[0].y);
-        assert!((estradiol[1].y - 200.0).abs() < 0.1, "got {}", estradiol[1].y);
-        assert_eq!(estradiol[0].unit, "pg/mL");
-        let testosterone = panels[0]
-            .points
+            .find(|panel| panel.series == Some(ChartSeries::Estradiol))
+            .expect("estradiol panel");
+        assert_eq!(estradiol_panel.points.len(), 2);
+        assert!(
+            (estradiol_panel.points[0].y - 100.0).abs() < 0.1,
+            "got {}",
+            estradiol_panel.points[0].y
+        );
+        assert!(
+            (estradiol_panel.points[1].y - 200.0).abs() < 0.1,
+            "got {}",
+            estradiol_panel.points[1].y
+        );
+        assert_eq!(estradiol_panel.points[0].unit, "pg/mL");
+        let testosterone_panel = panels
             .iter()
-            .find(|point| point.series == ChartSeries::Testosterone)
-            .expect("testosterone point");
-        assert_eq!(testosterone.y, 55.0);
-        assert_eq!(testosterone.unit, "ng/dL");
+            .find(|panel| panel.series == Some(ChartSeries::Testosterone))
+            .expect("testosterone panel");
+        let testosterone = &testosterone_panel.points[0];
+        assert_eq!(testosterone.y, 1.91);
+        assert_eq!(testosterone.unit, "nmol/L");
     }
 
     #[test]
@@ -1382,15 +1451,25 @@ mod tests {
         assert!(!options.show_value_band);
         assert!(!options.separate_panels);
 
-        let state = two_series_state();
-        let panels = layout_panels(&state, &options);
+        // One series, or several that share a unit, keep the single combined plot.
+        let mut only_estradiol = two_series_state();
+        only_estradiol
+            .points
+            .retain(|point| point.series == ChartSeries::Estradiol);
+        let panels = layout_panels(&only_estradiol, &options);
         assert_eq!(panels.len(), 1);
         assert_eq!(panels[0].series, None);
         assert_eq!(panels[0].title, "Levels");
-        assert_eq!(panels[0].points.len(), 3);
+        assert_eq!(panels[0].points.len(), 2);
         // Default options leave every value and unit exactly as computed.
         assert_eq!(panels[0].points[0].y, 367.13);
         assert_eq!(panels[0].points[0].unit, "pmol/L");
+
+        // Series in different units split, because one axis cannot carry pmol/L and
+        // nmol/L honestly.
+        let state = two_series_state();
+        let mixed = layout_panels(&state, &options);
+        assert_eq!(mixed.len(), 2);
         // And the axis range is the one compute_view_chart_state already stored.
         let mut values: Vec<f64> = state.points.iter().map(|point| point.y).collect();
         values.extend(state.dosage_points.iter().map(|point| point.y));
@@ -1416,7 +1495,7 @@ mod tests {
         assert_eq!(panels[0].series, Some(ChartSeries::Estradiol));
         assert_eq!(panels[1].series, Some(ChartSeries::Testosterone));
         assert_eq!(panels[0].title, "Estradiol (pmol/L)");
-        assert_eq!(panels[1].title, "Testosterone (ng/dL)");
+        assert_eq!(panels[1].title, "Testosterone (nmol/L)");
         assert_eq!(panels[0].points.len(), 2);
         assert_eq!(panels[1].points.len(), 1);
         assert!(panels[0]
@@ -1578,7 +1657,7 @@ mod tests {
         );
         assert_eq!(
             ChartSeries::Testosterone.panel_title(E2DisplayUnit::PmolL),
-            "Testosterone (ng/dL)"
+            "Testosterone (nmol/L)"
         );
         assert_eq!(
             ChartSeries::FreeAndrogenIndex.panel_title(E2DisplayUnit::PmolL),

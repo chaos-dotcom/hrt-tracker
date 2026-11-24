@@ -2217,3 +2217,42 @@ input[type="radio"] {
 .main-content > section {
   min-width: 0;
 }
+
+/* The floating readout that follows the pointer, alongside the pinned one. */
+.chart-tooltip {
+  display: grid;
+  gap: 4px;
+  z-index: 3;
+  min-width: 190px;
+}
+
+.chart-tooltip-date {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.chart-tooltip-row {
+  display: grid;
+  grid-template-columns: 10px auto 1fr auto;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.chart-tooltip-swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  align-self: center;
+}
+
+.chart-tooltip-series {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.chart-tooltip-unit {
+  color: var(--muted);
+  font-size: 0.78rem;
+}

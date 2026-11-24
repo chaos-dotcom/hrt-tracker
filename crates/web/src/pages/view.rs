@@ -693,6 +693,8 @@ pub fn ViewPage() -> impl IntoView {
     let chart_table_view = create_rw_signal(false);
     // Hover and drag state for the crosshair, the pinned readout and the brush.
     let view_hover_x = create_rw_signal(None::<f64>);
+    // Where the pointer is, for the floating tooltip that follows it.
+    let view_hover_pos = create_rw_signal(None::<(f64, f64)>);
     let view_brush = create_rw_signal(None::<BrushState>);
     let chart_canvas_size = create_rw_signal((900.0_f64, 420.0_f64));
 
@@ -1132,6 +1134,7 @@ pub fn ViewPage() -> impl IntoView {
                 // Shift-drag pans: the window the drag started from moves with
                 // the pointer, measured in plot pixels.
                 view_hover_x.set(None);
+                view_hover_pos.set(None);
                 let geometry = chart_geometry(&state, zoom, width, height);
                 let delta_px = cursor_x - drag.start_x;
                 let span = drag.start_max - drag.start_min;
@@ -1154,6 +1157,7 @@ pub fn ViewPage() -> impl IntoView {
             let geometry = chart_geometry(&state, zoom, width, height);
             let options = chart_options.get();
             view_hover_x.set(snapped_x(&state, &options, geometry, cursor_x, cursor_y));
+            view_hover_pos.set(Some((cursor_x, cursor_y)));
         }
     });
 
@@ -1163,6 +1167,7 @@ pub fn ViewPage() -> impl IntoView {
             view_pan_drag.replace(None);
             view_brush.set(None);
             view_hover_x.set(None);
+            view_hover_pos.set(None);
         }
     });
 
@@ -2066,6 +2071,50 @@ pub fn ViewPage() -> impl IntoView {
                                     on:dblclick=move |ev| on_view_double_click.with_value(|handler| handler(ev))
                                     on:wheel=move |ev| on_view_wheel.with_value(|handler| handler(ev))
                                 ></canvas>
+                                <Show when=move || {
+                                    view_hover_pos.get().is_some() && chart_readout_view.get().is_some()
+                                }>
+                                    <div
+                                        class="chart-tooltip"
+                                        style=move || {
+                                            view_hover_pos
+                                                .get()
+                                                .map(|(x, y)| format!("left: {:.0}px; top: {:.0}px;", x + 16.0, y + 14.0))
+                                                .unwrap_or_default()
+                                        }
+                                    >
+                                        {move || match chart_readout_view.get() {
+                                            Some(readout) => {
+                                                let date = readout.date.clone();
+                                                let rows = readout
+                                                    .rows
+                                                    .into_iter()
+                                                    .map(|row| {
+                                                        view! {
+                                                            <span class="chart-tooltip-row">
+                                                                <span
+                                                                    class="chart-tooltip-swatch"
+                                                                    style=format!("background: {};", row.color)
+                                                                ></span>
+                                                                <span class="chart-tooltip-series">
+                                                                    {row.series.label()}
+                                                                </span>
+                                                                <strong>{row.value}</strong>
+                                                                <span class="chart-tooltip-unit">{row.unit}</span>
+                                                            </span>
+                                                        }
+                                                    })
+                                                    .collect_view();
+                                                view! {
+                                                    <span class="chart-tooltip-date">{date}</span>
+                                                    {rows}
+                                                }
+                                                    .into_view()
+                                            }
+                                            None => ().into_view(),
+                                        }}
+                                    </div>
+                                </Show>
                                 <div class="chart-overlay" aria-hidden="true">
                                     {move || {
                                         let overlay = chart_overlay(

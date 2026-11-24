@@ -204,6 +204,20 @@ pub fn StatsPage() -> impl IntoView {
             .sum::<f64>()
     };
 
+    // A hundred milligrams a day adds up to grams quickly; printing "1200 mg" is
+    // harder to read than "1.2 g".
+    let fmt_dose_mass = |mg: f64| -> (String, &'static str) {
+        let trim = |value: f64| {
+            let text = format!("{value:.2}");
+            text.trim_end_matches('0').trim_end_matches('.').to_string()
+        };
+        if mg >= 1000.0 {
+            (trim(mg / 1000.0), " g")
+        } else {
+            (trim(mg), " mg")
+        }
+    };
+
     let total_progesterone_mg = move || {
         progesterone_records()
             .iter()
@@ -620,7 +634,7 @@ pub fn StatsPage() -> impl IntoView {
                         <p>
                             "Progesterone boofed:" <strong>{move || fmt(boofed_progesterone_count(), 0)}</strong>
                             <Show when=move || { boofed_progesterone_count() > 0.0 }>
-                                " (" <strong>{move || fmt(boofed_progesterone_mg(), 2)}</strong> " mg)"
+                                " (" <strong>{move || fmt_dose_mass(boofed_progesterone_mg()).0}</strong> {move || fmt_dose_mass(boofed_progesterone_mg()).1} ")"
                             </Show>
                         </p>
                         <p>
@@ -631,7 +645,7 @@ pub fn StatsPage() -> impl IntoView {
                         </p>
                         <Show when=move || { total_progesterone_mg() > 0.0 }>
                             <p class="muted">
-                                "Total progesterone: "<strong>{move || fmt(total_progesterone_mg(), 2)}</strong> " mg"
+                                "Total progesterone: " <strong>{move || fmt_dose_mass(total_progesterone_mg()).0}</strong> {move || fmt_dose_mass(total_progesterone_mg()).1}
                             </p>
                         </Show>
                     </div>
