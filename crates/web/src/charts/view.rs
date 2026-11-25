@@ -342,15 +342,21 @@ pub fn compute_view_chart_state(
         }
         if show_t {
             if let Some(value) = test.testLevel {
-                // Testosterone is plotted in nmol/L, the unit labs report and the one
-                // people read. A result recorded in ng/dL is converted once, here.
+                // Testosterone plots in the unit chosen in Settings (nmol/L by
+                // default); a result recorded in the other unit converts once, here.
                 let raw_unit = test.testUnit.clone().unwrap_or(HormoneUnits::TNmolL);
-                let plot_val = if raw_unit == HormoneUnits::TNmolL {
-                    value
-                } else {
-                    value / 28.818
+                let display_ng_dl = settings
+                    .displayTestosteroneUnit
+                    .clone()
+                    .unwrap_or(HormoneUnits::TNmolL)
+                    == HormoneUnits::TNgDl;
+                let plot_val = match (raw_unit == HormoneUnits::TNmolL, display_ng_dl) {
+                    (true, false) => value,
+                    (true, true) => value * 28.818,
+                    (false, true) => value,
+                    (false, false) => value / 28.818,
                 };
-                let unit_label = "nmol/L";
+                let unit_label = if display_ng_dl { "ng/dL" } else { "nmol/L" };
                 let tooltip = if raw_unit == HormoneUnits::TNmolL {
                     format!(
                         "Testosterone: {} {} ({})",
@@ -387,13 +393,19 @@ pub fn compute_view_chart_state(
                     .progesteroneUnit
                     .clone()
                     .unwrap_or(HormoneUnits::TNmolL);
-                // Progesterone likewise stays in nmol/L rather than ng/mL.
-                let plot_val = if raw_unit == HormoneUnits::TNmolL {
-                    value
-                } else {
-                    value / 0.31
+                // Progesterone likewise plots in the chosen unit, nmol/L by default.
+                let display_ng_ml = settings
+                    .displayProgesteroneUnit
+                    .clone()
+                    .unwrap_or(HormoneUnits::TNmolL)
+                    == HormoneUnits::NgMl;
+                let plot_val = match (raw_unit == HormoneUnits::TNmolL, display_ng_ml) {
+                    (true, false) => value,
+                    (true, true) => value * 0.31,
+                    (false, true) => value,
+                    (false, false) => value / 0.31,
                 };
-                let unit_label = "nmol/L";
+                let unit_label = if display_ng_ml { "ng/mL" } else { "nmol/L" };
                 let tooltip = if raw_unit == HormoneUnits::TNmolL {
                     format!(
                         "Progesterone: {} {} ({})",
@@ -427,15 +439,27 @@ pub fn compute_view_chart_state(
         if show_fsh {
             if let Some(value) = test.fshLevel {
                 let raw_unit = test.fshUnit.clone().unwrap_or(HormoneUnits::UL);
-                let plot_val = convert_fsh_to_miu_ml(value, &raw_unit);
-                let tooltip = format!("FSH: {} mIU/mL ({})", fmt_blood_value(plot_val), date_short);
+                let display_miu_l = settings
+                    .displayFshUnit
+                    .clone()
+                    .unwrap_or(HormoneUnits::MIuMl)
+                    == HormoneUnits::MIuL;
+                let per_ml = convert_fsh_to_miu_ml(value, &raw_unit);
+                let plot_val = if display_miu_l { per_ml * 1000.0 } else { per_ml };
+                let unit_label = if display_miu_l { "mIU/L" } else { "mIU/mL" };
+                let tooltip = format!(
+                    "FSH: {} {} ({})",
+                    fmt_blood_value(plot_val),
+                    unit_label,
+                    date_short
+                );
                 points.push(ViewChartPoint {
                     x,
                     y: plot_val,
                     label: tooltip,
                     color: ChartSeries::Fsh.color(),
                     series: ChartSeries::Fsh,
-                    unit: "mIU/mL".to_string(),
+                    unit: unit_label.to_string(),
                     timestamp_ms: test.date,
                 });
                 all_values.push(plot_val);
@@ -445,15 +469,27 @@ pub fn compute_view_chart_state(
         if show_lh {
             if let Some(value) = test.lhLevel {
                 let raw_unit = test.lhUnit.clone().unwrap_or(HormoneUnits::UL);
-                let plot_val = convert_lh_to_miu_ml(value, &raw_unit);
-                let tooltip = format!("LH: {} mIU/mL ({})", fmt_blood_value(plot_val), date_short);
+                let display_miu_l = settings
+                    .displayLhUnit
+                    .clone()
+                    .unwrap_or(HormoneUnits::MIuMl)
+                    == HormoneUnits::MIuL;
+                let per_ml = convert_lh_to_miu_ml(value, &raw_unit);
+                let plot_val = if display_miu_l { per_ml * 1000.0 } else { per_ml };
+                let unit_label = if display_miu_l { "mIU/L" } else { "mIU/mL" };
+                let tooltip = format!(
+                    "LH: {} {} ({})",
+                    fmt_blood_value(plot_val),
+                    unit_label,
+                    date_short
+                );
                 points.push(ViewChartPoint {
                     x,
                     y: plot_val,
                     label: tooltip,
                     color: ChartSeries::Lh.color(),
                     series: ChartSeries::Lh,
-                    unit: "mIU/mL".to_string(),
+                    unit: unit_label.to_string(),
                     timestamp_ms: test.date,
                 });
                 all_values.push(plot_val);
@@ -1440,6 +1476,20 @@ mod tests {
         // A degenerate or non-finite span cannot be divided, so it stays put.
         assert_eq!(axis_value_at_fraction(5.0, 5.0, true, 0.5), 5.0);
         assert_eq!(axis_value_at_fraction(5.0, 1.0, false, 0.5), 5.0);
+    }
+
+    #[test]
+    fn settings_pick_the_unit_a_hormone_is_shown_in() {
+        // nmol/L converted to ng/dL and back, the two directions the setting allows.
+        let mg_dl: f64 = 1.94 * 28.818;
+        assert!((mg_dl - 55.91).abs() < 0.05);
+        let nmol: f64 = 55.0 / 28.818;
+        assert!((nmol - 1.909).abs() < 0.01);
+        // Progesterone: nmol/L to ng/mL.
+        let ng_ml: f64 = 3.2 * 0.31;
+        assert!((ng_ml - 0.992).abs() < 0.001);
+        let back: f64 = 1.0 / 0.31;
+        assert!((back - 3.226).abs() < 0.01);
     }
 
     #[test]

@@ -7,7 +7,7 @@ use wasm_bindgen::JsCast;
 use crate::layout::page_layout;
 use crate::store;
 use crate::store::use_store;
-use crate::utils::parse_decimal;
+use crate::utils::{hormone_unit_label, parse_decimal, parse_hormone_unit};
 use hrt_shared::types::{HormoneUnits, Settings};
 
 #[component]
@@ -242,6 +242,119 @@ pub fn BackupPage() -> impl IntoView {
                                 <span class="toggle-label">"Include progesterone in the calendar feed"</span>
                             </label>
                         </div>
+                        <h3>"Display units"</h3>
+                        <p class="muted">
+                            "How blood test results are shown on the chart and in the readout. Values stay as they were recorded; only the display changes."
+                        </p>
+                        <div class="unit-settings">
+                            <label class="unit-setting">
+                                <span>"Estradiol"</span>
+                                <select
+                                    on:change={
+                                        let store = store.clone();
+                                        move |ev| {
+                                            if let Some(unit) = parse_hormone_unit(&event_target_value(&ev)) {
+                                                store.settings.update(|s| s.displayEstradiolUnit = Some(unit));
+                                                store.mark_dirty();
+                                            }
+                                        }
+                                    }
+                                    prop:value=move || {
+                                        let unit = store
+                                            .settings
+                                            .get()
+                                            .displayEstradiolUnit
+                                            .clone()
+                                            .unwrap_or(HormoneUnits::E2PmolL);
+                                        hormone_unit_label(&unit).to_string()
+                                    }
+                                >
+                                    <option value="pmol/L">pmol/L</option>
+                                    <option value="pg/mL">pg/mL</option>
+                                </select>
+                            </label>
+                            <label class="unit-setting">
+                                <span>"Testosterone"</span>
+                                <select
+                                    on:change={
+                                        let store = store.clone();
+                                        move |ev| {
+                                            if let Some(unit) = parse_hormone_unit(&event_target_value(&ev)) {
+                                                store.settings.update(|s| s.displayTestosteroneUnit = Some(unit));
+                                                store.mark_dirty();
+                                            }
+                                        }
+                                    }
+                                    prop:value=move || {
+                                        let unit = store
+                                            .settings
+                                            .get()
+                                            .displayTestosteroneUnit
+                                            .clone()
+                                            .unwrap_or(HormoneUnits::TNmolL);
+                                        hormone_unit_label(&unit).to_string()
+                                    }
+                                >
+                                    <option value="nmol/L">nmol/L</option>
+                                    <option value="ng/dL">ng/dL</option>
+                                </select>
+                            </label>
+                            <label class="unit-setting">
+                                <span>"Progesterone"</span>
+                                <select
+                                    on:change={
+                                        let store = store.clone();
+                                        move |ev| {
+                                            if let Some(unit) = parse_hormone_unit(&event_target_value(&ev)) {
+                                                store.settings.update(|s| s.displayProgesteroneUnit = Some(unit));
+                                                store.mark_dirty();
+                                            }
+                                        }
+                                    }
+                                    prop:value=move || {
+                                        let unit = store
+                                            .settings
+                                            .get()
+                                            .displayProgesteroneUnit
+                                            .clone()
+                                            .unwrap_or(HormoneUnits::TNmolL);
+                                        hormone_unit_label(&unit).to_string()
+                                    }
+                                >
+                                    <option value="nmol/L">nmol/L</option>
+                                    <option value="ng/mL">ng/mL</option>
+                                </select>
+                            </label>
+                            <label class="unit-setting">
+                                <span>"FSH and LH"</span>
+                                <select
+                                    on:change={
+                                        let store = store.clone();
+                                        move |ev| {
+                                            if let Some(unit) = parse_hormone_unit(&event_target_value(&ev)) {
+                                                store.settings.update(|s| {
+                                                    s.displayFshUnit = Some(unit.clone());
+                                                    s.displayLhUnit = Some(unit);
+                                                });
+                                                store.mark_dirty();
+                                            }
+                                        }
+                                    }
+                                    prop:value=move || {
+                                        let unit = store
+                                            .settings
+                                            .get()
+                                            .displayFshUnit
+                                            .clone()
+                                            .unwrap_or(HormoneUnits::MIuMl);
+                                        hormone_unit_label(&unit).to_string()
+                                    }
+                                >
+                                    <option value="mIU/mL">"mIU/mL"</option>
+                                    <option value="mIU/L">"mIU/L"</option>
+                                </select>
+                            </label>
+                        </div>
                         <label>"Blood test interval (months)"</label>
                         <input
                             type="text"
@@ -273,29 +386,6 @@ pub fn BackupPage() -> impl IntoView {
                             on:input=move |ev| pdf_password.set(event_target_value(&ev))
                             prop:value=move || pdf_password.get()
                         />
-                        <label>"Estradiol display unit"</label>
-                        <select
-                            on:change={
-                                let store = store.clone();
-                                move |ev| {
-                                    let value = event_target_value(&ev);
-                                    let unit = match value.as_str() {
-                                        "pmol/L" => Some(HormoneUnits::E2PmolL),
-                                        "pg/mL" => Some(HormoneUnits::E2PgMl),
-                                        _ => None,
-                                    };
-                                    store.settings.update(|s| s.displayEstradiolUnit = unit);
-                                    store.mark_dirty();
-                                }
-                            }
-                        >
-                            <option value="pmol/L" selected=move || settings.get().displayEstradiolUnit == Some(HormoneUnits::E2PmolL)>
-                                "pmol/L"
-                            </option>
-                            <option value="pg/mL" selected=move || settings.get().displayEstradiolUnit == Some(HormoneUnits::E2PgMl)>
-                                "pg/mL"
-                            </option>
-                        </select>
                         <label>"Bra size system"</label>
                         <select
                             on:change={

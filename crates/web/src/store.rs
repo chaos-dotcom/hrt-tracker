@@ -204,6 +204,10 @@ fn default_settings() -> Settings {
         bloodTestIntervalMonths: Some(3.0),
         statsBreakdownBySyringeKind: Some(false),
         displayEstradiolUnit: Some(HormoneUnits::E2PmolL),
+        displayTestosteroneUnit: Some(HormoneUnits::TNmolL),
+        displayProgesteroneUnit: Some(HormoneUnits::TNmolL),
+        displayFshUnit: Some(HormoneUnits::MIuMl),
+        displayLhUnit: Some(HormoneUnits::MIuMl),
         displayInjectableInIU: Some(false),
         braSizeSystem: Some("uk".to_string()),
         pdfPassword: None,
@@ -228,6 +232,18 @@ fn merge_settings(base: &mut Settings, incoming: Settings) {
     }
     if incoming.displayEstradiolUnit.is_some() {
         base.displayEstradiolUnit = incoming.displayEstradiolUnit;
+    }
+    if incoming.displayTestosteroneUnit.is_some() {
+        base.displayTestosteroneUnit = incoming.displayTestosteroneUnit;
+    }
+    if incoming.displayProgesteroneUnit.is_some() {
+        base.displayProgesteroneUnit = incoming.displayProgesteroneUnit;
+    }
+    if incoming.displayFshUnit.is_some() {
+        base.displayFshUnit = incoming.displayFshUnit;
+    }
+    if incoming.displayLhUnit.is_some() {
+        base.displayLhUnit = incoming.displayLhUnit;
     }
     if incoming.displayInjectableInIU.is_some() {
         base.displayInjectableInIU = incoming.displayInjectableInIU;
@@ -336,6 +352,10 @@ mod tests {
             bloodTestIntervalMonths: None,
             statsBreakdownBySyringeKind: None,
             displayEstradiolUnit: None,
+            displayTestosteroneUnit: None,
+            displayProgesteroneUnit: None,
+            displayFshUnit: None,
+            displayLhUnit: None,
             displayInjectableInIU: None,
             braSizeSystem: None,
             pdfPassword: None,
@@ -359,6 +379,10 @@ mod tests {
             bloodTestIntervalMonths: Some(6.0),
             statsBreakdownBySyringeKind: Some(true),
             displayEstradiolUnit: Some(HormoneUnits::E2PgMl),
+            displayTestosteroneUnit: Some(HormoneUnits::TNgDl),
+            displayProgesteroneUnit: Some(HormoneUnits::NgMl),
+            displayFshUnit: Some(HormoneUnits::MIuL),
+            displayLhUnit: Some(HormoneUnits::MIuL),
             displayInjectableInIU: Some(true),
             braSizeSystem: Some("us".to_string()),
             pdfPassword: Some("pass".to_string()),
@@ -372,6 +396,10 @@ mod tests {
         assert_eq!(base.bloodTestIntervalMonths, Some(6.0));
         assert_eq!(base.statsBreakdownBySyringeKind, Some(true));
         assert_eq!(base.displayEstradiolUnit, Some(HormoneUnits::E2PgMl));
+        assert_eq!(base.displayTestosteroneUnit, Some(HormoneUnits::TNgDl));
+        assert_eq!(base.displayProgesteroneUnit, Some(HormoneUnits::NgMl));
+        assert_eq!(base.displayFshUnit, Some(HormoneUnits::MIuL));
+        assert_eq!(base.displayLhUnit, Some(HormoneUnits::MIuL));
         assert_eq!(base.displayInjectableInIU, Some(true));
         assert_eq!(base.braSizeSystem, Some("us".to_string()));
         assert_eq!(base.pdfPassword, Some("pass".to_string()));

@@ -2256,3 +2256,22 @@ input[type="radio"] {
   color: var(--muted);
   font-size: 0.78rem;
 }
+
+/* Display-unit choosers on the settings page. */
+.unit-settings {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0 18px;
+  max-width: 420px;
+}
+
+.unit-setting {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.unit-setting select {
+  min-width: 120px;
+}

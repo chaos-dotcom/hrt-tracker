@@ -599,6 +599,17 @@ pub struct Settings {
     pub statsBreakdownBySyringeKind: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub displayEstradiolUnit: Option<HormoneUnits>,
+    /// How to show testosterone results: nmol/L (the default) or ng/dL.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub displayTestosteroneUnit: Option<HormoneUnits>,
+    /// How to show progesterone results: nmol/L (the default) or ng/mL.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub displayProgesteroneUnit: Option<HormoneUnits>,
+    /// How to show FSH and LH results: mIU/mL (the default) or mIU/L.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub displayFshUnit: Option<HormoneUnits>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub displayLhUnit: Option<HormoneUnits>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub displayInjectableInIU: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
